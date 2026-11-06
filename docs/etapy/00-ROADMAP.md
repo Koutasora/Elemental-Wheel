@@ -7,7 +7,7 @@ Statusy: PLANOWANY, W TOKU, ZAMKNIĘTY. W danej chwili najwyżej jeden etap ma s
 | 01 | plan-i-szkielet | ZAMKNIĘTY | 01-plan-i-szkielet.md |
 | 02 | kolo-render | ZAMKNIĘTY | 02-kolo-render.md |
 | 03 | wyzwalacz-ppm | ZAMKNIĘTY | 03-wyzwalacz-ppm.md |
-| 04 | akcje-i-konfiguracja | PLANOWANY | |
+| 04 | akcje-i-konfiguracja | W TOKU | 04-akcje-i-konfiguracja.md |
 | 05 | podmenu | PLANOWANY | |
 | 06 | edytor | PLANOWANY | |
 | 07 | stabilnosc-i-pomiary | PLANOWANY | |
