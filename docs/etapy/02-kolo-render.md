@@ -38,6 +38,8 @@ anulowania, z nazwami kafelków, w przezroczystym oknie, które nie zabiera foku
 - Brak GPU: zapasowo rasteryzer programowy WARP.
 - Kafelki i środek nieprzezroczyste (decyzja użytkownika po zrzutach): półprzezroczyste z makiety mieszały tekst okna pod spodem z nazwami; przezroczyste zostaje tylko tło poza kołem i odstępy.
 - Dopasowanie nazw (decyzja użytkownika): jedna linia, potem dwie przy spacji, potem czcionka zmniejszana do 80%, wielokropek dopiero na końcu; przy 100% nazwy pierścienia wewnętrznego były ucinane.
+- Etykieta w sektorze: ramka może przesunąć się promieniowo (sektor szerszy przy zewnętrznej krawędzi), ale zostaje pośrodku, gdy tam się mieści; odstęp 1 px, czcionka minimum 75%.
+- Domyślna nazwa „Właściwości” skrócona do „Właśc.” (decyzja użytkownika): jedno długie słowo nie mieści się w sektorze wewnętrznym nawet przy 75%, a niższa czcionka jest nieczytelna.
 - Każdy element ma edytowalną nazwę, także komendy edycji w pierścieniu wewnętrznym (prośba użytkownika): nazwy w konfiguracji (etap 04) i w edytorze (etap 06); nazwy demo w `wheel-core` to tylko wartości domyślne, a dopasowanie nazw z tego etapu działa dla dowolnego tekstu.
 
 ## Podsumowanie

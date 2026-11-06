@@ -1,13 +1,15 @@
 //! Wheel rendering: D3D11 device -> DXGI composition swap chain -> Direct2D, shown through
 //! DirectComposition on the window. Text goes through DirectWrite.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::mem::ManuallyDrop;
 
 use wheel_core::{Hit, INNER_LABELS, INNER_SECTORS, Layout, outer_labels};
 
 use windows::Win32::Foundation::{E_FAIL, HMODULE, HWND};
 use windows::Win32::Graphics::Direct2D::Common::{
-    D2D_RECT_F, D2D_SIZE_F, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED,
+    D2D_SIZE_F, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED,
     D2D1_FIGURE_END_CLOSED, D2D1_PIXEL_FORMAT,
 };
 use windows::Win32::Graphics::Direct2D::{
@@ -28,9 +30,10 @@ use windows::Win32::Graphics::DirectComposition::{
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-    DWRITE_FONT_WEIGHT_MEDIUM, DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
-    DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER,
+    DWRITE_FONT_WEIGHT_MEDIUM, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER,
+    DWRITE_TEXT_METRICS, DWRITE_TEXT_RANGE, DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER,
     DWRITE_WORD_WRAPPING_NO_WRAP, DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat,
+    IDWriteTextLayout,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_ALPHA_MODE_PREMULTIPLIED, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC,
@@ -43,6 +46,7 @@ use windows::Win32::Graphics::Dxgi::{
 use windows::core::{Error, Interface, Result, w};
 use windows_numerics::Vector2;
 
+use crate::fit;
 use crate::theme::Palette;
 
 /// Outer radius of the mockup at 100% and 96 DPI; the mockup's other sizes (fonts, gaps,
@@ -68,6 +72,10 @@ pub struct Renderer {
     outer_font: IDWriteTextFormat,
     inner_font: IDWriteTextFormat,
     hub_font: IDWriteTextFormat,
+    dwrite: IDWriteFactory,
+    /// Fitted text layouts per label (kind, text), built on first use: the layout never changes
+    /// for the lifetime of the renderer.
+    layouts: RefCell<HashMap<(Kind, String), FittedLabel>>,
 }
 
 impl Renderer {
@@ -129,6 +137,8 @@ impl Renderer {
                 outer_font: text_format(&dwrite, 15.0 * k)?,
                 inner_font: text_format(&dwrite, 11.5 * k)?,
                 hub_font: text_format(&dwrite, 14.0 * k)?,
+                dwrite,
+                layouts: RefCell::new(HashMap::new()),
             })
         }
     }
@@ -176,6 +186,8 @@ impl Renderer {
         let c = self.size as f32 / 2.0;
         let radii = self.layout.radii();
         let stroke = 1.2 * k;
+        // Keeps label text off the sector edges.
+        let pad = k;
         // Keep the outer stroke inside the window.
         let outer_edge = self.layout.outer_radius() - stroke / 2.0;
         let inner_ring = (radii.center + 4.0 * k, radii.inner - 2.0 * k);
@@ -201,16 +213,23 @@ impl Renderer {
                 )?;
                 let on = hit == Hit::Inner(i);
                 self.fill_tile(&geometry, on, stroke);
-                let mid = (inner_ring.0 + inner_ring.1) / 2.0 + 2.0 * k;
-                let at = polar(c, mid, (a1 + a2) / 2.0);
-                let reach = chord(inner_ring.0 + 0.75 * (inner_ring.1 - inner_ring.0), a2 - a1);
+                let text_ring = (inner_ring.0 + pad, inner_ring.1 - pad);
                 self.label(
+                    Kind::Inner(i),
                     INNER_LABELS[i as usize],
                     &self.inner_font,
-                    at,
-                    (reach, (inner_ring.1 - inner_ring.0) * 0.9),
+                    &|h, need| {
+                        let (w, at) = fit::sector_slot(
+                            text_ring,
+                            a1 + INNER_HALF_GAP_DEG,
+                            a2 - INNER_HALF_GAP_DEG,
+                            h,
+                            need + pad,
+                        );
+                        (w - pad, (c + at.0, c + at.1))
+                    },
                     if on { p.accent_fg } else { p.fg },
-                );
+                )?;
             }
 
             for (i, name) in (0..n).zip(outer_labels(n)) {
@@ -223,15 +242,23 @@ impl Renderer {
                 )?;
                 let on = hit == Hit::Outer(i);
                 self.fill_tile(&geometry, on, stroke);
-                let at = polar(c, (outer_ring.0 + outer_ring.1) / 2.0, (a1 + a2) / 2.0);
-                let reach = chord(outer_ring.0 + 0.75 * (outer_ring.1 - outer_ring.0), a2 - a1);
+                let text_ring = (outer_ring.0 + pad, outer_ring.1 - pad);
                 self.label(
+                    Kind::Outer(i),
                     name,
                     &self.outer_font,
-                    at,
-                    (reach, (outer_ring.1 - outer_ring.0) * 0.9),
+                    &|h, need| {
+                        let (w, at) = fit::sector_slot(
+                            text_ring,
+                            a1 + OUTER_HALF_GAP_DEG,
+                            a2 - OUTER_HALF_GAP_DEG,
+                            h,
+                            need + pad,
+                        );
+                        (w - pad, (c + at.0, c + at.1))
+                    },
                     if on { p.accent_fg } else { p.fg },
-                );
+                )?;
             }
 
             // Center: cancel; while a sector is highlighted it shows that sector's name.
@@ -257,12 +284,12 @@ impl Renderer {
                 Hit::Outer(i) => outer_labels(n).get(i as usize).copied().unwrap_or(""),
             };
             self.label(
+                Kind::Hub,
                 text,
                 &self.hub_font,
-                (c, c),
-                (radii.center * 1.6, radii.center * 0.9),
+                &|h, _| (fit::circle_width(radii.center - pad, h) - pad, (c, c)),
                 p.fg,
-            );
+            )?;
         }
         Ok(())
     }
@@ -328,43 +355,112 @@ impl Renderer {
         }
     }
 
-    /// Draws `text` centred at `at` in a box of `extent`; long names go on two lines like in the
-    /// mockup and anything still too wide is trimmed with an ellipsis.
+    /// Draws `text` fitted by `fit::fit`: `slot(height, need)` gives the width available for a block of
+    /// that height and the point it is centred on. The fitted layout is built once per label and
+    /// reused on later frames.
     ///
     /// # Safety
     /// Must be called between `BeginDraw` and `EndDraw` of `self.ctx`.
     unsafe fn label(
         &self,
+        kind: Kind,
         text: &str,
         font: &IDWriteTextFormat,
-        at: (f32, f32),
-        extent: (f32, f32),
+        slot: &dyn Fn(f32, f32) -> (f32, (f32, f32)),
         color: D2D1_COLOR_F,
-    ) {
-        let text = match text.split_once(' ') {
-            Some((a, b)) if text.chars().count() > 11 => format!("{a}\n{b}"),
-            _ => text.to_string(),
-        };
-        let wide: Vec<u16> = text.encode_utf16().collect();
-        let rect = D2D_RECT_F {
-            left: at.0 - extent.0 / 2.0,
-            top: at.1 - extent.1 / 2.0,
-            right: at.0 + extent.0 / 2.0,
-            bottom: at.1 + extent.1 / 2.0,
-        };
+    ) -> Result<()> {
+        let mut layouts = self.layouts.borrow_mut();
+        let key = (kind, text.to_string());
+        if !layouts.contains_key(&key) {
+            layouts.insert(key.clone(), self.fit_label(text, font, slot)?);
+        }
+        let fitted = &layouts[&key];
         // SAFETY: guaranteed by the caller.
         unsafe {
             self.brush.SetColor(&color);
-            self.ctx.DrawText(
-                &wide,
-                font,
-                &rect,
+            self.ctx.DrawTextLayout(
+                Vector2 {
+                    X: fitted.at.0 - fitted.width / 2.0,
+                    Y: fitted.at.1 - fitted.height / 2.0,
+                },
+                &fitted.layout,
                 &self.brush,
                 D2D1_DRAW_TEXT_OPTIONS_CLIP,
-                DWRITE_MEASURING_MODE_NATURAL,
             );
         }
+        Ok(())
     }
+
+    /// Measures `text` with DirectWrite and builds the layout `fit::fit` chose for it.
+    fn fit_label(
+        &self,
+        text: &str,
+        font: &IDWriteTextFormat,
+        slot: &dyn Fn(f32, f32) -> (f32, (f32, f32)),
+    ) -> Result<FittedLabel> {
+        // SAFETY: plain COM call.
+        let base = unsafe { font.GetFontSize() };
+        let measure = |t: &str, scale: f32| {
+            self.text_layout(t, font, base * scale, 10_000.0, 10_000.0)
+                .and_then(|l| {
+                    let mut m = DWRITE_TEXT_METRICS::default();
+                    // SAFETY: `m` is a valid out pointer for the call.
+                    unsafe { l.GetMetrics(&mut m)? };
+                    Ok((m.width, m.height))
+                })
+                .unwrap_or((f32::INFINITY, f32::INFINITY))
+        };
+        let fitted = fit::fit(text, measure, |h| slot(h, f32::INFINITY).0);
+        let (text_width, height) = measure(&fitted.text, fitted.scale);
+        let (width, at) = slot(height, text_width);
+        let width = width.max(1.0);
+        let layout = self.text_layout(&fitted.text, font, base * fitted.scale, width, height)?;
+        Ok(FittedLabel {
+            layout,
+            width,
+            height,
+            at,
+        })
+    }
+
+    fn text_layout(
+        &self,
+        text: &str,
+        font: &IDWriteTextFormat,
+        size: f32,
+        width: f32,
+        height: f32,
+    ) -> Result<IDWriteTextLayout> {
+        let wide: Vec<u16> = text.encode_utf16().collect();
+        // SAFETY: plain COM calls with valid arguments.
+        unsafe {
+            let layout = self.dwrite.CreateTextLayout(&wide, font, width, height)?;
+            layout.SetFontSize(
+                size,
+                DWRITE_TEXT_RANGE {
+                    startPosition: 0,
+                    length: wide.len() as u32,
+                },
+            )?;
+            Ok(layout)
+        }
+    }
+}
+
+/// Which label a cached layout belongs to; the index tells sectors with equal text apart.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Kind {
+    Inner(u8),
+    Outer(u8),
+    Hub,
+}
+
+struct FittedLabel {
+    layout: IDWriteTextLayout,
+    /// Layout box size and the point it is drawn centred on.
+    width: f32,
+    height: f32,
+    at: (f32, f32),
 }
 
 /// Size relative to the mockup (100% scale at 96 DPI is 1.0).
@@ -377,11 +473,6 @@ fn scale_factor(layout: &Layout) -> f32 {
 fn polar(c: f32, r: f32, deg: f32) -> (f32, f32) {
     let a = deg.to_radians();
     (c + r * a.sin(), c - r * a.cos())
-}
-
-/// Width of a sector spanning `span_deg` at radius `r`, less a small margin.
-fn chord(r: f32, span_deg: f32) -> f32 {
-    2.0 * r * (span_deg.to_radians() / 2.0).sin() - 4.0
 }
 
 fn text_format(factory: &IDWriteFactory, size: f32) -> Result<IDWriteTextFormat> {

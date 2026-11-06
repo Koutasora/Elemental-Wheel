@@ -1,4 +1,5 @@
 mod args;
+mod fit;
 mod render;
 mod theme;
 mod window;

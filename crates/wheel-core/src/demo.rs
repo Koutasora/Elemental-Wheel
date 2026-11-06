@@ -12,7 +12,7 @@ pub const INNER_LABELS: [&str; 12] = [
     "Zapisz",
     "Znajdź",
     "Usuń",
-    "Właściwości",
+    "Właśc.",
     "Zmień nazwę",
     "Cofnij",
     "Zaznacz wszystko",
