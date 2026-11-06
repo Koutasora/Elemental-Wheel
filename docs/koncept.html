@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>body{margin:0}[hidden]{display:none!important}</style>
+<title>Elemental Wheel</title>
+<style>
+/* Layout: narrow header, demo (desk + side panel), then reference tables in one column */
+:root {
+  --bg: #f2f4f8; --surface: #ffffff; --fg: #141821; --muted: #586074; --line: #d3d8e2;
+  --accent: #2851d0; --accent-fg: #ffffff; --accent-soft: #dfe6fb;
+  --desk: #e4e8f0; --desk-dot: #cdd3df;
+  --tile: #ffffff; --tile-line: #c3cad8; --tile-empty: #eef1f6; --center: #f6f7fa;
+  --font-ui: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", Consolas, ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0c0f15; --surface: #151922; --fg: #e7eaf1; --muted: #9aa3b6; --line: #293041;
+  --accent: #7f9cff; --accent-fg: #0c0f15; --accent-soft: #1f2a4a;
+  --desk: #10141c; --desk-dot: #222938;
+  --tile: #1b202b; --tile-line: #333b4e; --tile-empty: #141821; --center: #11151d;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0c0f15; --surface: #151922; --fg: #e7eaf1; --muted: #9aa3b6; --line: #293041;
+  --accent: #7f9cff; --accent-fg: #0c0f15; --accent-soft: #1f2a4a;
+  --desk: #10141c; --desk-dot: #222938;
+  --tile: #1b202b; --tile-line: #333b4e; --tile-empty: #141821; --center: #11151d;
+  color-scheme: dark; }
+
+html { background: var(--bg); }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 40px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; line-height: 1.2; }
+h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 20px; font-weight: 600; }
+h3 { font-size: 15px; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--font-mono); font-size: 13px; }
+
+header { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; justify-content: space-between; }
+header .lead { display: flex; flex-direction: column; gap: 6px; }
+.theme, .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; align-self: flex-start; }
+.theme button, .seg button { font: inherit; font-size: 13px; background: var(--surface); color: var(--fg); border: 0; padding: 6px 12px; cursor: pointer; }
+.theme button + button, .seg button + button { border-left: 1px solid var(--line); }
+.theme button[aria-pressed="true"], .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type="range"] { accent-color: var(--accent); width: 100%; }
+
+section { display: flex; flex-direction: column; gap: 14px; }
+
+/* Demo */
+.demo { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+@media (max-width: 860px) { .demo { grid-template-columns: minmax(0, 1fr); } }
+.side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.desk-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.desk { position: relative; height: min(600px, max(380px, 92vw)); background-color: var(--desk);
+  background-image: radial-gradient(var(--desk-dot) 1px, transparent 1px); background-size: 22px 22px;
+  border: 1px solid var(--line); border-radius: 8px; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+.desk svg { position: absolute; overflow: visible; }
+.desk-bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; }
+.status { font-size: 13px; color: var(--muted); min-height: 1.5em; flex: 1 1 300px; }
+.status b { color: var(--fg); font-weight: 600; }
+.btn { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.btn.small { padding: 3px 8px; font-size: 12px; }
+
+.tile { fill: var(--tile); stroke: var(--tile-line); stroke-width: 1.2; transition: fill .08s; }
+.tile.empty { fill: var(--tile-empty); stroke-dasharray: 4 4; }
+.tile.sub { fill: var(--surface); }
+.tile.hover { fill: var(--accent); stroke: var(--accent); }
+.tile.sel { stroke: var(--accent); stroke-width: 3; }
+.lbl { fill: var(--fg); font-family: var(--font-ui); font-weight: 500; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.lbl.dim { fill: var(--muted); }
+.lbl.on { fill: var(--accent-fg); }
+.lbl.mg-t { font-weight: 700; }
+.ico { fill: none; stroke: var(--fg); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.ico.on { stroke: var(--accent-fg); }
+.mg { fill: none; stroke: var(--fg); stroke-width: 1.6; pointer-events: none; }
+.mg.on { stroke: var(--accent-fg); }
+.notch { fill: var(--muted); pointer-events: none; }
+.notch.on { fill: var(--accent-fg); }
+.hub { fill: var(--center); stroke: var(--tile-line); stroke-width: 1.2; }
+.hub.hover { stroke: var(--accent); stroke-width: 2.5; }
+@media (prefers-reduced-motion: reduce) { .tile { transition: none; } }
+
+.ctx { position: absolute; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 4px 0; min-width: 170px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.18); font-size: 13px; }
+.ctx div { padding: 5px 14px; }
+.ctx hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+
+/* Side panels */
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.panel .meta { font-size: 12px; color: var(--muted); font-family: var(--font-mono); }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field > label, .field > .flabel { font-size: 12px; color: var(--muted); letter-spacing: .02em; }
+.field input:not([type="range"]), .field select { font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); color: var(--fg); min-width: 0; }
+.subs { display: flex; flex-direction: column; gap: 6px; }
+.subrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+.subrow input { font: inherit; font-size: 14px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); color: var(--fg); min-width: 0; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; }
+.panel .note { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; }
+
+/* Reference */
+.cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 32px; }
+@media (max-width: 860px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+.stack { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+ul.plain { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; max-width: 70ch; }
+ol.plain { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 4px; }
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; vertical-align: top; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+tr:last-child td { border-bottom: 0; }
+th { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; }
+td.num { font-family: var(--font-mono); font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+tr.pick td { background: var(--accent-soft); }
+tr.pick td:first-child { box-shadow: inset 3px 0 0 var(--accent); font-weight: 600; }
+.arch { display: grid; grid-template-columns: minmax(0, 1.3fr) auto minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: stretch; }
+@media (max-width: 860px) { .arch { grid-template-columns: minmax(0, 1fr); } .arch .arrow { transform: rotate(90deg); justify-self: center; } }
+.box { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.box.main { border-color: var(--accent); }
+.box ul { margin: 0; padding-left: 16px; font-size: 13px; color: var(--muted); }
+.arrow { align-self: center; color: var(--muted); font-family: var(--font-mono); }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="lead">
+      <h1>Elemental Wheel</h1>
+      <p class="muted">Koło akcji pod prawym przyciskiem myszy, Windows 10/11. Koncept do etapu 01: układ, wyzwalacz, technologia, zasoby, niezawodność.</p>
+    </div>
+    <div class="theme" role="group" aria-label="Motyw">
+      <button type="button" id="th-light" data-t="light">Jasny</button>
+      <button type="button" id="th-dark" data-t="dark">Ciemny</button>
+      <button type="button" id="th-sys" data-t="">Systemowy</button>
+    </div>
+  </header>
+
+  <section aria-labelledby="h-demo">
+    <h2 id="h-demo">Podgląd działania</h2>
+    <div class="demo">
+      <div class="desk-col">
+        <div class="desk" id="desk" aria-label="Symulowany pulpit">
+          <svg id="wheel" viewBox="-295 -295 590 590" role="img" aria-label="Koło akcji"></svg>
+          <div class="ctx" id="ctx" hidden>
+            <div>Widok</div><div>Sortuj według</div><div>Odśwież</div><hr><div>Nowy</div><hr><div>Ustawienia ekranu</div>
+          </div>
+        </div>
+        <div class="desk-bar">
+          <div class="status" id="status" aria-live="polite">Przytrzymaj prawy przycisk na polu, puść nad kafelkiem. Krótkie kliknięcie prawym daje zwykłe menu. Lewy przycisk wybiera kafelek do edycji.</div>
+          <button type="button" class="btn" id="reopen">Pokaż koło</button>
+        </div>
+      </div>
+      <aside class="side">
+        <div class="panel" id="opts" aria-label="Opcje koła">
+          <h3>Opcje koła</h3>
+          <div class="field">
+            <span class="flabel" id="vw-lbl">Widok kafelków</span>
+            <div class="seg" role="group" aria-labelledby="vw-lbl">
+              <button type="button" id="vw-names" data-v="names" aria-pressed="true">Nazwy</button>
+              <button type="button" id="vw-icons" data-v="icons" aria-pressed="false">Ikony</button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="opt-scale">Rozmiar koła <span id="scale-val" class="mono">100%</span></label>
+            <input type="range" id="opt-scale" min="60" max="140" step="10" value="100">
+          </div>
+        </div>
+        <div class="panel" id="editor" aria-label="Edytor kafelka"></div>
+      </aside>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-uklad">
+    <h2 id="h-uklad">Układ i wyzwalacz</h2>
+    <div class="cols">
+      <div class="stack">
+        <h3>Układ jak koło kwintowe</h3>
+        <ul class="plain">
+          <li>12 sektorów co 30°, pierwszy u góry. Liczy się kierunek ruchu: puszczenie poza kołem wybiera sektor w tym kierunku, więc po kilku dniach wybór idzie z pamięci ruchu.</li>
+          <li>Pierścień zewnętrzny: 12 głównych elementów. Kreska przy zewnętrznej krawędzi oznacza podmenu.</li>
+          <li>Pierścień wewnętrzny, jak tonacje molowe pod durowymi: domyślnie 12 komend edycji (wytnij, kopiuj, wklej, usuń, cofnij, ponów…). Trafiają do okna, które było pod kursorem. Cofnij po lewej, ponów po prawej. Każdy slot można zmienić.</li>
+          <li>Podmenu: po najechaniu na kafelek wysuwa się łuk do 5 dodatkowych kafelków w tym samym kierunku.</li>
+          <li>Środek: puszczenie tutaj zostawia koło otwarte do wyboru kliknięciem. Esc albo klik poza kołem zamyka. Środek pokazuje nazwę wskazanego kafelka, także w widoku ikon.</li>
+          <li>Widok: nazwy albo ikony. Ikona programu pochodzi z jego pliku .exe, komendy i akcje mają ikony wbudowane (systemowa czcionka Segoe Fluent Icons), brak ikony daje pierwszą literę nazwy.</li>
+          <li>Rozmiar: 60–140%, liczony względem DPI monitora. Napisy i ikony skalują się razem z kołem.</li>
+        </ul>
+      </div>
+      <div class="stack">
+        <h3>Wyzwalacz: prawy przycisk</h3>
+        <div class="tbl"><table>
+          <thead><tr><th>Sytuacja</th><th>Wynik</th></tr></thead>
+          <tbody>
+            <tr><td>Wciśnięcie prawego</td><td>Zdarzenie wstrzymane, start licznika <span class="mono">180 ms</span></td></tr>
+            <tr><td>Puszczenie przed czasem, ruch &lt; <span class="mono">6 px</span></td><td>Kliknięcie odtworzone: zwykłe menu kontekstowe programu</td></tr>
+            <tr><td>Ruch &gt; <span class="mono">6 px</span> przed czasem</td><td>Przeciąganie prawym przekazane do programu</td></tr>
+            <tr><td>Przytrzymanie <span class="mono">180 ms</span> bez ruchu</td><td>Koło otwiera się pod kursorem</td></tr>
+            <tr><td>Program z listy wykluczeń, gra w pełnym ekranie, okno administratora</td><td>Prawy przycisk przechodzi bez zmian</td></tr>
+          </tbody>
+        </table></div>
+        <p class="muted" style="font-size:13px">Próg czasu i ruchu, wykluczenia i ewentualny klawisz pomocniczy (np. prawy + Ctrl) ustawiane w edytorze.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-arch">
+    <h2 id="h-arch">Architektura</h2>
+    <div class="arch">
+      <div class="box main">
+        <h3>wheel.exe <span class="muted mono">stale w tle</span></h3>
+        <ul>
+          <li>wątek haka myszy: tylko automat stanów, odpowiedź w mikrosekundach</li>
+          <li>wątek okna: przezroczyste okno bez aktywacji, Direct2D + DirectComposition</li>
+          <li>wątek akcji: programy, skróty, komendy edycji, polecenia</li>
+          <li>ikona w zasobniku: wyłącz, edytor, zakończ</li>
+        </ul>
+      </div>
+      <div class="arrow">czyta</div>
+      <div class="box">
+        <h3>config.json</h3>
+        <ul>
+          <li><span class="mono">%APPDATA%\Elemental-Wheel</span></li>
+          <li>sloty, widok, rozmiar, progi, wykluczenia</li>
+          <li>wersja schematu, walidacja</li>
+          <li>zapis atomowy + kopia <span class="mono">.bak</span></li>
+        </ul>
+      </div>
+      <div class="arrow">zapisuje</div>
+      <div class="box">
+        <h3>wheel-editor.exe <span class="muted mono">na żądanie</span></h3>
+        <ul>
+          <li>osobny proces, uruchamiany z zasobnika</li>
+          <li>podgląd koła na żywo</li>
+          <li>przeciągnij plik lub program na slot</li>
+        </ul>
+      </div>
+    </div>
+    <p class="muted" style="font-size:13px">Edytor działa tylko, gdy jest otwarty, więc jego pamięć nie obciąża pracy w tle. Awaria edytora nie dotyka koła. Koło przeładowuje konfigurację po zapisie pliku.</p>
+  </section>
+
+  <section aria-labelledby="h-tech">
+    <h2 id="h-tech">Technologie i zasoby</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>Wariant</th><th>RAM w tle</th><th>RAM, koło otwarte</th><th>Otwarcie koła</th><th>Start przy logowaniu</th><th>Instalator</th><th>Główne ryzyko</th></tr></thead>
+      <tbody>
+        <tr class="pick"><td>Rust + Win32 + Direct2D (rekomendacja)</td><td class="num">5–15 MB</td><td class="num">15–30 MB</td><td class="num">&lt; 16 ms</td><td class="num">&lt; 0,1 s</td><td class="num">1–3 MB</td><td>wolniejsze pisanie interfejsu</td></tr>
+        <tr><td>C++ + Win32 + Direct2D</td><td class="num">5–15 MB</td><td class="num">15–30 MB</td><td class="num">&lt; 16 ms</td><td class="num">&lt; 0,1 s</td><td class="num">0,5–2 MB</td><td>błędy pamięci kończą się awarią</td></tr>
+        <tr><td>C# .NET 8 + WPF</td><td class="num">50–90 MB</td><td class="num">70–120 MB</td><td class="num">16–50 ms</td><td class="num">0,5–1,5 s</td><td class="num">70–150 MB</td><td>pauzy GC, większa pamięć</td></tr>
+        <tr><td>Tauri 2 (WebView2)</td><td class="num">70–140 MB</td><td class="num">80–160 MB</td><td class="num">30–100 ms</td><td class="num">1–2 s</td><td class="num">3–10 MB</td><td>kilka procesów, przezroczystość okna</td></tr>
+        <tr><td>Electron</td><td class="num">150–300 MB</td><td class="num">160–320 MB</td><td class="num">50–150 ms</td><td class="num">2–4 s</td><td class="num">&gt; 100 MB</td><td>pamięć</td></tr>
+        <tr><td>AutoHotkey v2</td><td class="num">3–10 MB</td><td class="num">10–20 MB</td><td class="num">20–60 ms</td><td class="num">&lt; 0,2 s</td><td class="num">1–2 MB</td><td>rysowanie GDI+, brak dobrego edytora</td></tr>
+      </tbody>
+    </table></div>
+    <div class="cols">
+      <ul class="plain">
+        <li>Wartości to szacunki dla programów tej klasy, pomiar na LAB w etapie stabilności.</li>
+        <li>Procesor w tle: 0%. Program czeka na zdarzenia, nic nie odpytuje. Każdy ruch myszy to jedno wywołanie haka rzędu mikrosekund.</li>
+        <li>Otwarcie koła mieści się w jednej klatce przy 60 Hz. Animacja wejścia 100 ms, do wyłączenia.</li>
+        <li>Ikony programów czytane raz i trzymane w pamięci podręcznej: około 4–8 KB na ikonę przy 32 px.</li>
+      </ul>
+      <ul class="plain">
+        <li>Rdzeń: Rust (windows-rs), Direct2D + DirectComposition, DirectWrite do napisów, per-monitor DPI.</li>
+        <li>Komendy edycji: SendInput ze skrótem klawiszowym (Ctrl+C, Delete, F2…) do okna spod kursora.</li>
+        <li>Edytor: Rust + egui, osobny proces, 40–80 MB tylko gdy otwarty.</li>
+        <li>Konfiguracja: JSON (serde), wersja schematu.</li>
+        <li>Do instalacji na LAB (za zgodą): rustup oraz Visual Studio 2022 Build Tools z narzędziami C++ (linker MSVC, Windows SDK), około 3–6 GB.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-stab">
+    <h2 id="h-stab">Stabilność i niezawodność</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>Ryzyko</th><th>Skutek</th><th>Zabezpieczenie</th></tr></thead>
+      <tbody>
+        <tr><td>Windows odłącza hak po przekroczeniu limitu czasu</td><td>Koło przestaje reagować</td><td>Hak robi tylko automat stanów i wysyła komunikat. Strażnik porównuje ostatnie wejście systemu z ostatnim zdarzeniem haka i zakłada hak ponownie.</td></tr>
+        <tr><td>Wstrzymany prawy przycisk nie wraca</td><td>Brak menu kontekstowego</td><td>Każdy błąd przepuszcza zdarzenie. Odtworzone kliknięcia mają własny znacznik, więc hak ich nie łapie drugi raz.</td></tr>
+        <tr><td>Okno koła przejmuje fokus</td><td>Komenda edycji trafia w koło zamiast w program, znika zaznaczenie</td><td>Okno koła bez aktywacji (WS_EX_NOACTIVATE). Komenda idzie do okna, które było pod kursorem w chwili wciśnięcia.</td></tr>
+        <tr><td>Gry, Blender, przeciąganie prawym</td><td>Koło przeszkadza</td><td>Próg ruchu, lista wykluczeń po nazwie programu, wyłączenie w pełnym ekranie, skrót do wstrzymania.</td></tr>
+        <tr><td>Okno uruchomione jako administrator</td><td>Odtworzone kliknięcie i komendy nie docierają</td><td>Wykrycie okna o wyższych uprawnieniach i przepuszczenie bez zmian. Opcjonalnie start z uprawnieniami przez Harmonogram zadań.</td></tr>
+        <tr><td>Uszkodzony plik konfiguracji</td><td>Brak koła</td><td>Walidacja, ostatnia dobra wersja zostaje w pamięci, kopia <span class="mono">.bak</span>, komunikat w zasobniku.</td></tr>
+        <tr><td>Akcja się zawiesza</td><td>Koło zamarza</td><td>Koło zamyka się przed startem akcji. Akcje w osobnym wątku lub procesie, limit czasu poleceń.</td></tr>
+        <tr><td>Awaria wheel.exe</td><td>Brak koła do restartu</td><td>System zdejmuje hak razem z procesem, prawy przycisk działa normalnie. Log awarii w <span class="mono">%LOCALAPPDATA%</span>.</td></tr>
+        <tr><td>Kilka monitorów, różne DPI</td><td>Koło poza ekranem albo rozmyte</td><td>Per-monitor DPI v2, koło przycięte do obszaru roboczego monitora pod kursorem.</td></tr>
+        <tr><td>Druga kopia programu</td><td>Dwa koła naraz</td><td>Nazwany mutex, druga kopia otwiera edytor i kończy pracę.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section aria-labelledby="h-etapy">
+    <h2 id="h-etapy">Proponowane etapy</h2>
+    <ol class="plain">
+      <li><b>plan-i-szkielet</b>: koncept, decyzje, szkielet Cargo, test geometrii, licencja MIT, checklista.</li>
+      <li><b>kolo-render</b>: przezroczyste okno, pierścienie, trafianie w sektory, widok nazw i ikon, rozmiar, motyw jasny i ciemny.</li>
+      <li><b>wyzwalacz-ppm</b>: hak myszy, progi, odtwarzanie kliknięcia, wykluczenia, strażnik haka.</li>
+      <li><b>akcje-i-konfiguracja</b>: typy akcji z komendami edycji, config.json, walidacja, przeładowanie.</li>
+      <li><b>podmenu</b>: wysuwany łuk kafelków.</li>
+      <li><b>edytor</b>: wheel-editor.exe z podglądem na żywo.</li>
+      <li><b>stabilnosc-i-pomiary</b>: pomiar RAM i czasu otwarcia, test wielogodzinny, log awarii.</li>
+      <li><b>instalator-i-wydanie</b>: autostart, instalator, wydanie na GitHubie.</li>
+    </ol>
+  </section>
+</div>
+
+<script>
+(function () {
+  // ---- theme ----
+  var root = document.documentElement;
+  function setTheme(t) {
+    if (t) root.setAttribute('data-theme', t); else root.removeAttribute('data-theme');
+    document.querySelectorAll('.theme button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.t === t)); });
+    try { localStorage.setItem('ew-theme', t); } catch (e) {}
+  }
+  var saved = ''; try { saved = localStorage.getItem('ew-theme') || ''; } catch (e) {}
+  setTheme(saved);
+  document.querySelectorAll('.theme button').forEach(function (b) { b.addEventListener('click', function () { setTheme(b.dataset.t); }); });
+
+  // ---- icons (24 x 24 line drawings) ----
+  function C(x, y, r) { return 'M' + (x + r) + ' ' + y + 'a' + r + ' ' + r + ' 0 1 1 ' + (-2 * r) + ' 0a' + r + ' ' + r + ' 0 1 1 ' + (2 * r) + ' 0Z'; }
+  var SPK = 'M4 9h4l5-4v14l-5-4H4Z';
+  var ICONS = {
+    terminal: 'M3 5h18v14H3ZM7 10l3 2-3 2M12 15h5',
+    globe: C(12, 12, 9) + 'M3 12h18M12 3c3.5 3.5 3.5 14.5 0 18M12 3c-3.5 3.5-3.5 14.5 0 18',
+    folder: 'M3 6h6l2 2h10v11H3Z',
+    crop: 'M3 8V3h5M16 3h5v5M21 16v5h-5M8 21H3v-5',
+    speaker: SPK + 'M16 9c1.5 1.5 1.5 4.5 0 6M18.5 6.5c3 3 3 8 0 11',
+    mute: SPK + 'M16 9.5l5 5M21 9.5l-5 5',
+    voldown: SPK + 'M16 12h5',
+    volup: SPK + 'M16 12h5M18.5 9.5v5',
+    clipboard: 'M9 3h6v3H9ZM7 4.5H5V21h14V4.5h-2',
+    close: 'M4 4h16v16H4ZM9 9l6 6M15 9l-6 6',
+    lock: 'M6 11h12v9H6ZM8.5 11V8a3.5 3.5 0 0 1 7 0v3',
+    code: 'M8 7l-5 5 5 5M16 7l5 5-5 5M13.5 5l-3 14',
+    cut: C(6, 6, 2.5) + C(6, 18, 2.5) + 'M8 7.5L20 18M8 16.5L20 6',
+    copy: 'M9 9h11v11H9ZM15 9V4H4v11h5',
+    paste: 'M9 3h6v3H9ZM7 4.5H5V21h14V4.5h-2M9 12h6M9 16h4',
+    pasteplain: 'M9 3h6v3H9ZM7 4.5H5V21h14V4.5h-2M9 11h6M12 11v7',
+    trash: 'M4 6h16M9 6V3.5h6V6M6 6l1 15h10l1-15',
+    undo: 'M9 4L4 9l5 5M4 9h10a5 5 0 0 1 0 10h-4',
+    redo: 'M15 4l5 5-5 5M20 9H10a5 5 0 0 0 0 10h4',
+    selall: 'M8 8h8v8H8ZM3 3h3M9 3h6M18 3h3v3M21 9v6M21 18v3h-3M15 21H9M6 21H3v-3M3 15V9M3 6V3',
+    rename: 'M3 7h11v10H3ZM18 4v16M16 4h4M16 20h4',
+    search: C(10, 10, 6) + 'M14.5 14.5L21 21',
+    save: 'M4 4h13l3 3v13H4ZM8 4v5h7V4M8 20v-6h8v6',
+    info: C(12, 12, 9) + 'M12 11v6M12 7v1',
+    refresh: 'M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5',
+    newfolder: 'M3 6h6l2 2h10v11H3ZM12 11v5M9.5 13.5h5',
+    tab: 'M3 9h18v11H3ZM3 9V5h8v4',
+    private: C(6.5, 14, 3.5) + C(17.5, 14, 3.5) + 'M10 14h4M3 10l2-5h14l2 5',
+    download: 'M12 3v12M7 10l5 5 5-5M4 20h16',
+    doc: 'M6 3h8l4 4v14H6ZM14 3v4h4',
+    desktop: 'M3 4h18v12H3ZM9 20h6M12 16v4',
+    window: 'M3 5h18v14H3ZM3 9h18'
+  };
+  var ICON_PL = { '': 'Z programu (w podglądzie: litera)', terminal: 'Terminal', globe: 'Przeglądarka', folder: 'Folder', crop: 'Zrzut', speaker: 'Głośnik', mute: 'Wycisz',
+    voldown: 'Ciszej', volup: 'Głośniej', clipboard: 'Schowek', close: 'Zamknij', lock: 'Kłódka', code: 'Kod', cut: 'Wytnij', copy: 'Kopiuj', paste: 'Wklej',
+    pasteplain: 'Wklej bez formatu', trash: 'Usuń', undo: 'Cofnij', redo: 'Ponów', selall: 'Zaznacz wszystko', rename: 'Zmień nazwę', search: 'Szukaj', save: 'Zapisz',
+    info: 'Właściwości', refresh: 'Odśwież', newfolder: 'Nowy folder', tab: 'Karta', private: 'Prywatne', download: 'Pobrane', doc: 'Dokument', desktop: 'Ekran', window: 'Okno' };
+
+  // ---- model ----
+  var TYPES = { run: 'Uruchom program', folder: 'Otwórz folder lub plik', url: 'Otwórz adres', keys: 'Skrót klawiszowy', edit: 'Komenda edycji', text: 'Wklej tekst', cmd: 'Polecenie', sys: 'Akcja systemowa' };
+  var HINT = { run: 'np. wt.exe', folder: 'np. %USERPROFILE%\\Downloads', url: 'https://…', keys: 'np. Ctrl+Shift+T', edit: '', text: 'tekst do wklejenia', cmd: 'np. powershell -File skrypt.ps1', sys: 'np. Zablokuj, Wycisz' };
+  var EDIT = [
+    ['Wytnij', 'Ctrl+X', 'cut'], ['Kopiuj', 'Ctrl+C', 'copy'], ['Wklej', 'Ctrl+V', 'paste'], ['Wklej bez formatu', 'Ctrl+Shift+V', 'pasteplain'],
+    ['Usuń', 'Delete', 'trash'], ['Cofnij', 'Ctrl+Z', 'undo'], ['Ponów', 'Ctrl+Y', 'redo'], ['Zaznacz wszystko', 'Ctrl+A', 'selall'],
+    ['Zmień nazwę', 'F2', 'rename'], ['Znajdź', 'Ctrl+F', 'search'], ['Zapisz', 'Ctrl+S', 'save'], ['Właściwości', 'Alt+Enter', 'info'],
+    ['Odśwież', 'F5', 'refresh'], ['Nowy folder', 'Ctrl+Shift+N', 'newfolder']
+  ];
+  function editCmd(name) { for (var i = 0; i < EDIT.length; i++) if (EDIT[i][0] === name) return EDIT[i]; return EDIT[0]; }
+  function it(n, t, c, sub, ic) { return { n: n, t: t, c: c || '', sub: sub || [], ic: ic || '' }; }
+  function ed(label, cmd) { var e = editCmd(cmd || label); return it(label, 'edit', e[0], [], e[2]); }
+  var outer = [
+    it('Terminal', 'run', 'wt.exe', [it('PowerShell', 'run', 'pwsh.exe'), it('CMD', 'run', 'cmd.exe'), it('WSL', 'run', 'wsl.exe')], 'terminal'),
+    it('Przeglądarka', 'run', 'firefox.exe', [it('Nowa karta', 'keys', 'Ctrl+T', [], 'tab'), it('Prywatne', 'keys', 'Ctrl+Shift+P', [], 'private'), it('Przywróć kartę', 'keys', 'Ctrl+Shift+T', [], 'undo')], 'globe'),
+    it('Pliki', 'folder', 'shell:MyComputerFolder', [it('Pobrane', 'folder', 'shell:Downloads', [], 'download'), it('Dokumenty', 'folder', 'shell:Personal', [], 'doc'), it('Projekty', 'folder', 'C:\\Projekty', [], 'folder'), it('Pulpit', 'folder', 'shell:Desktop', [], 'desktop')], 'folder'),
+    it('Zrzut ekranu', 'keys', 'Win+Shift+S', [it('Obszar', 'keys', 'Win+Shift+S', [], 'crop'), it('Okno', 'keys', 'Alt+PrtScn', [], 'window'), it('Cały ekran', 'keys', 'Win+PrtScn', [], 'desktop')], 'crop'),
+    it('Głośność', 'sys', 'Głośność', [it('Wycisz', 'sys', 'Wycisz', [], 'mute'), it('−10%', 'sys', 'Głośność −10', [], 'voldown'), it('+10%', 'sys', 'Głośność +10', [], 'volup')], 'speaker'),
+    it('Schowek', 'keys', 'Win+V', [], 'clipboard'),
+    it('Zamknij okno', 'keys', 'Alt+F4', [], 'close'),
+    it('Blender', 'run', 'blender.exe'),
+    it('Ableton Live', 'run', 'Ableton Live 12 Suite.exe'),
+    it('Godot', 'run', 'godot.exe'),
+    it('VS Code', 'run', 'code', [it('Gra', 'cmd', 'code "C:\\Projekty\\gra"'), it('Strona', 'cmd', 'code "C:\\Projekty\\strona"'), it('Skrypty', 'cmd', 'code "C:\\Projekty\\skrypty"')], 'code'),
+    it('Zablokuj', 'sys', 'Zablokuj', [], 'lock')
+  ];
+  // inner ring: edit commands; undo on the left (270°), redo on the right (90°)
+  var inner = [ed('Kopiuj'), ed('Wklej'), ed('Bez formatu', 'Wklej bez formatu'), ed('Ponów'), ed('Zapisz'), ed('Znajdź'),
+    ed('Usuń'), ed('Właściwości'), ed('Zmień nazwę'), ed('Cofnij'), ed('Zaznacz wszystko'), ed('Wytnij')];
+
+  // ---- geometry (degrees clockwise from top, like the circle of fifths) ----
+  var R = { c: 60, i1: 64, i2: 122, o1: 126, o2: 210, s1: 218, s2: 292 };
+  var SW = 26, MAXSUB = 5, BASE = 420;
+  function P(r, a) { var t = a * Math.PI / 180; return [r * Math.sin(t), -r * Math.cos(t)]; }
+  function f(n) { return n.toFixed(2); }
+  function arc(r1, r2, a1, a2) {
+    var lg = (a2 - a1) > 180 ? 1 : 0, p1 = P(r2, a1), p2 = P(r2, a2), p3 = P(r1, a2), p4 = P(r1, a1);
+    return 'M' + f(p1[0]) + ' ' + f(p1[1]) + 'A' + r2 + ' ' + r2 + ' 0 ' + lg + ' 1 ' + f(p2[0]) + ' ' + f(p2[1]) +
+      'L' + f(p3[0]) + ' ' + f(p3[1]) + 'A' + r1 + ' ' + r1 + ' 0 ' + lg + ' 0 ' + f(p4[0]) + ' ' + f(p4[1]) + 'Z';
+  }
+  function subStart(i) { return i * 30 - outer[i].sub.length * SW / 2; }
+  function hit(x, y, openSub) {
+    var d = Math.hypot(x, y), a = (Math.atan2(x, -y) * 180 / Math.PI + 360) % 360;
+    var s = Math.floor(((a + 15) % 360) / 30);
+    if (d < R.c) return { ring: 'c' };
+    if (d < R.i2 + 2) return { ring: 'i', i: s };
+    if (d < R.o2 + 4) return { ring: 'o', i: s };
+    if (openSub != null && outer[openSub] && outer[openSub].sub.length) {
+      var n = outer[openSub].sub.length, delta = ((a - openSub * 30 + 540) % 360) - 180;
+      if (Math.abs(delta) <= n * SW / 2) return { ring: 's', i: openSub, k: Math.min(n - 1, Math.floor((delta + n * SW / 2) / SW)) };
+    }
+    return { ring: 'o', i: s };
+  }
+  function same(a, b) { return !!a && !!b && a.ring === b.ring && a.i === b.i && a.k === b.k; }
+  function itemOf(h) {
+    if (!h) return null;
+    if (h.ring === 'o') return outer[h.i];
+    if (h.ring === 'i') return inner[h.i];
+    if (h.ring === 's') return outer[h.i] && outer[h.i].sub[h.k];
+    return null;
+  }
+
+  // ---- state ----
+  var desk = document.getElementById('desk'), svg = document.getElementById('wheel'), ctx = document.getElementById('ctx');
+  var statusEl = document.getElementById('status'), editor = document.getElementById('editor');
+  var st = { open: true, mode: 'click', cx: 0, cy: 0, size: 0, hover: { ring: 'o', i: 0 }, openSub: 0, sel: { ring: 'o', i: 0 }, armed: null, view: 'names', scale: 100 };
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function lines(name) {
+    if (name.length <= 11 || name.indexOf(' ') < 0) return [name];
+    var i = name.indexOf(' '); return [name.slice(0, i), name.slice(i + 1)];
+  }
+  function label(x, y, name, size, cls) {
+    var ls = lines(name), out = '';
+    ls.forEach(function (l, j) {
+      var dy = (j - (ls.length - 1) / 2) * size * 1.15;
+      out += '<text class="lbl ' + cls + '" x="' + f(x) + '" y="' + f(y + dy) + '" font-size="' + size + '">' + esc(l) + '</text>';
+    });
+    return out;
+  }
+  function icon(x, y, item, s, on) {
+    var c = on ? ' on' : '';
+    if (item.ic && ICONS[item.ic]) {
+      return '<g transform="translate(' + f(x - s / 2) + ' ' + f(y - s / 2) + ') scale(' + f(s / 24) + ')"><path class="ico' + c + '" d="' + ICONS[item.ic] + '"/></g>';
+    }
+    var letter = (item.n.trim()[0] || '?').toUpperCase();
+    return '<rect class="mg' + c + '" x="' + f(x - s / 2) + '" y="' + f(y - s / 2) + '" width="' + f(s) + '" height="' + f(s) + '" rx="' + f(s * 0.22) + '"/>' +
+      '<text class="lbl mg-t' + c + '" x="' + f(x) + '" y="' + f(y) + '" font-size="' + f(s * 0.55) + '">' + esc(letter) + '</text>';
+  }
+  function face(x, y, item, lblSize, icoSize, on) {
+    return st.view === 'icons' ? icon(x, y, item, icoSize, on) : label(x, y, item.n, lblSize, on ? 'on' : '');
+  }
+
+  function render() {
+    svg.hidden = !st.open;
+    if (!st.open) return;
+    var h = '';
+    for (var i = 0; i < 12; i++) {
+      var o = outer[i], hv = same(st.hover, { ring: 'o', i: i }), sl = same(st.sel, { ring: 'o', i: i });
+      var cls = 'tile' + (o ? '' : ' empty') + (hv ? ' hover' : '') + (sl ? ' sel' : '');
+      h += '<path class="' + cls + '" d="' + arc(R.o1, R.o2, i * 30 - 14.2, i * 30 + 14.2) + '"/>';
+      var pm = P((R.o1 + R.o2) / 2, i * 30);
+      if (o) {
+        h += face(pm[0], pm[1], o, 15, 36, hv);
+        if (o.sub.length) h += '<path class="notch' + (hv ? ' on' : '') + '" d="' + arc(R.o2 - 9, R.o2 - 5, i * 30 - 5, i * 30 + 5) + '"/>';
+      } else h += label(pm[0], pm[1], '+', 18, 'dim');
+      var n = inner[i]; hv = same(st.hover, { ring: 'i', i: i }); sl = same(st.sel, { ring: 'i', i: i });
+      cls = 'tile' + (n ? '' : ' empty') + (hv ? ' hover' : '') + (sl ? ' sel' : '');
+      h += '<path class="' + cls + '" d="' + arc(R.i1, R.i2, i * 30 - 13.6, i * 30 + 13.6) + '"/>';
+      var pi = P((R.i1 + R.i2) / 2 + 2, i * 30);
+      h += n ? face(pi[0], pi[1], n, 11.5, 24, hv) : label(pi[0], pi[1], '+', 15, 'dim');
+    }
+    if (st.openSub != null && outer[st.openSub] && outer[st.openSub].sub.length) {
+      var s0 = subStart(st.openSub), subs = outer[st.openSub].sub;
+      subs.forEach(function (s, k) {
+        var hvs = same(st.hover, { ring: 's', i: st.openSub, k: k }), sls = same(st.sel, { ring: 's', i: st.openSub, k: k });
+        h += '<path class="tile sub' + (hvs ? ' hover' : '') + (sls ? ' sel' : '') + '" d="' + arc(R.s1, R.s2, s0 + k * SW + 0.8, s0 + (k + 1) * SW - 0.8) + '"/>';
+        var ps = P((R.s1 + R.s2) / 2, s0 + (k + 0.5) * SW);
+        h += face(ps[0], ps[1], s, 13.5, 30, hvs);
+      });
+    }
+    var hc = st.hover && st.hover.ring === 'c';
+    h += '<circle class="hub' + (hc ? ' hover' : '') + '" r="' + R.c + '"/>';
+    var hi = itemOf(st.hover);
+    h += label(0, 0, hc ? 'Anuluj' : (hi ? hi.n : 'Wheel'), hi && hi.n.length > 9 ? 12 : 14, hi || hc ? '' : 'dim');
+    svg.innerHTML = h;
+  }
+
+  function place(x, y) {
+    var r = desk.getBoundingClientRect();
+    var size = Math.min(BASE * st.scale / 100, r.width - 8, r.height - 8);
+    var half = size / 2;
+    st.cx = Math.max(half + 4, Math.min(r.width - half - 4, x));
+    st.cy = Math.max(half + 4, Math.min(r.height - half - 4, y));
+    st.size = size;
+    svg.style.width = size + 'px'; svg.style.height = size + 'px';
+    svg.style.left = (st.cx - half) + 'px'; svg.style.top = (st.cy - half) + 'px';
+  }
+  function toWheel(e) {
+    var r = svg.getBoundingClientRect();
+    return [(e.clientX - r.left) / r.width * 590 - 295, (e.clientY - r.top) / r.height * 590 - 295];
+  }
+  function local(e) { var r = desk.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+  function say(html) { statusEl.innerHTML = html; }
+
+  function openAt(x, y, mode) {
+    place(x, y); st.open = true; st.mode = mode; st.hover = null; st.openSub = null; ctx.hidden = true; render();
+  }
+  function close() { st.open = false; st.hover = null; st.openSub = null; render(); }
+  function updateHover(h) {
+    st.hover = h;
+    if (h && h.ring === 'o') st.openSub = (outer[h.i] && outer[h.i].sub.length) ? h.i : null;
+    else if (!h || h.ring !== 's') st.openSub = null;
+    render();
+  }
+  function run(h) {
+    var item = itemOf(h);
+    if (!item) { say('Pusty slot. Wybierz go lewym przyciskiem, żeby dodać element.'); return; }
+    if (item.t === 'edit') {
+      var e = editCmd(item.c);
+      say('Komenda edycji (symulacja): <b>' + esc(e[0]) + '</b>, <span class="mono">' + esc(e[1]) + '</span> do okna pod kursorem');
+      return;
+    }
+    say('Akcja (symulacja): <b>' + esc(item.n) + '</b>, ' + TYPES[item.t].toLowerCase() + (item.c ? ': <span class="mono">' + esc(item.c) + '</span>' : ''));
+  }
+
+  desk.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  desk.addEventListener('pointerdown', function (e) {
+    var p = local(e);
+    if (e.button === 2) {
+      ctx.hidden = true;
+      if (st.open && st.mode === 'click') close();
+      st.armed = { x: p[0], y: p[1], timer: setTimeout(function () {
+        if (!st.armed) return;
+        openAt(st.armed.x, st.armed.y, 'hold'); st.armed = null;
+        say('Koło otwarte. Puść nad kafelkiem, w środku zostaje otwarte.');
+      }, 180) };
+      desk.setPointerCapture(e.pointerId);
+      return;
+    }
+    if (e.button !== 0) return;
+    if (!ctx.hidden) { ctx.hidden = true; return; }
+    if (!st.open) return;
+    var w = toWheel(e), d = Math.hypot(w[0], w[1]);
+    if (d > R.s2 + 4) { close(); say('Koło zamknięte. Przytrzymaj prawy przycisk albo użyj przycisku Pokaż koło.'); return; }
+    var h = hit(w[0], w[1], st.openSub);
+    if (h.ring === 'c') return;
+    if (h.ring === 's' || d <= R.o2 + 4) { st.sel = h; updateHover(h); if (h.ring === 's') st.openSub = h.i; renderEditor(); render(); }
+  });
+  desk.addEventListener('pointermove', function (e) {
+    if (st.armed) {
+      var p = local(e);
+      if (Math.hypot(p[0] - st.armed.x, p[1] - st.armed.y) > 6) {
+        clearTimeout(st.armed.timer); st.armed = null;
+        say('Ruch przed progiem: przeciąganie prawym przekazane do programu, koło się nie otwiera.');
+      }
+      return;
+    }
+    if (!st.open || e.pointerType === 'touch') return;
+    var w = toWheel(e), h = hit(w[0], w[1], st.openSub);
+    if (st.mode === 'click' && Math.hypot(w[0], w[1]) > R.s2 + 4) h = null;
+    if (!same(h, st.hover) || (h === null) !== (st.hover === null)) updateHover(h);
+  });
+  desk.addEventListener('pointerup', function (e) {
+    if (e.button !== 2) return;
+    if (st.armed) {
+      clearTimeout(st.armed.timer);
+      var a = st.armed; st.armed = null;
+      ctx.hidden = false;
+      var r = desk.getBoundingClientRect();
+      ctx.style.left = Math.min(a.x, r.width - ctx.offsetWidth - 6) + 'px';
+      ctx.style.top = Math.min(a.y, r.height - ctx.offsetHeight - 6) + 'px';
+      if (st.open) close();
+      say('Krótkie kliknięcie prawym: odtworzone, program pokazuje swoje menu kontekstowe.');
+      return;
+    }
+    if (st.open && st.mode === 'hold') {
+      var h = st.hover;
+      if (!h || h.ring === 'c') { st.mode = 'click'; say('Puszczone w środku: koło zostaje otwarte. Wybierz kafelek lewym przyciskiem, Esc zamyka.'); return; }
+      run(h); close();
+    }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && (st.open || !ctx.hidden)) { ctx.hidden = true; close(); say('Zamknięte klawiszem Esc.'); }
+  });
+  document.getElementById('reopen').addEventListener('click', function () {
+    var r = desk.getBoundingClientRect(); openAt(r.width / 2, r.height / 2, 'click');
+    say('Koło otwarte na środku pola.');
+  });
+  window.addEventListener('resize', function () { if (st.open) { place(st.cx, st.cy); render(); } });
+
+  // ---- options ----
+  document.querySelectorAll('.seg button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      st.view = b.dataset.v;
+      document.querySelectorAll('.seg button').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      render();
+    });
+  });
+  var scaleEl = document.getElementById('opt-scale'), scaleVal = document.getElementById('scale-val');
+  scaleEl.addEventListener('input', function () {
+    st.scale = +scaleEl.value; scaleVal.textContent = st.scale + '%';
+    if (st.open) { place(st.cx, st.cy); render(); }
+  });
+
+  // ---- editor ----
+  function ringName(h) { return { o: 'pierścień zewnętrzny', i: 'pierścień wewnętrzny', s: 'podmenu' }[h.ring]; }
+  function renderEditor() {
+    var h = st.sel, item = itemOf(h);
+    var meta = ringName(h) + ' · sektor ' + (h.i + 1) + '/12 · ' + (h.i * 30) + '°' + (h.ring === 's' ? ' · kafelek ' + (h.k + 1) : '');
+    var html = '<h3>Kafelek</h3><div class="meta">' + meta + '</div>';
+    if (!item) {
+      html += '<p class="muted" style="font-size:14px">Pusty slot. W działającym kole jest ukryty.</p><div class="row"><button type="button" class="btn primary" id="ed-add">Dodaj element</button></div>';
+    } else {
+      html += '<div class="field"><label for="ed-name">Nazwa</label><input id="ed-name" maxlength="24" value="' + esc(item.n) + '"></div>';
+      html += '<div class="field"><label for="ed-type">Typ akcji</label><select id="ed-type">' +
+        Object.keys(TYPES).map(function (k) { return '<option value="' + k + '"' + (k === item.t ? ' selected' : '') + '>' + TYPES[k] + '</option>'; }).join('') + '</select></div>';
+      if (item.t === 'edit') {
+        html += '<div class="field"><label for="ed-cmd">Komenda</label><select id="ed-cmd">' +
+          EDIT.map(function (e) { return '<option value="' + esc(e[0]) + '"' + (e[0] === item.c ? ' selected' : '') + '>' + esc(e[0]) + ' (' + e[1] + ')</option>'; }).join('') + '</select></div>';
+      } else {
+        html += '<div class="field"><label for="ed-target">Cel</label><input id="ed-target" value="' + esc(item.c) + '" placeholder="' + esc(HINT[item.t]) + '"></div>';
+      }
+      html += '<div class="field"><label for="ed-icon">Ikona</label><select id="ed-icon">' +
+        Object.keys(ICON_PL).map(function (k) { return '<option value="' + k + '"' + (k === item.ic ? ' selected' : '') + '>' + ICON_PL[k] + '</option>'; }).join('') + '</select></div>';
+      if (h.ring === 'o') {
+        html += '<div class="field"><span class="flabel">Podmenu (' + item.sub.length + '/' + MAXSUB + ')</span><div class="subs">' +
+          item.sub.map(function (s, k) { return '<div class="subrow"><input id="ed-sub-' + k + '" data-k="' + k + '" value="' + esc(s.n) + '" aria-label="Kafelek podmenu ' + (k + 1) + '"><button type="button" class="btn small" data-del="' + k + '">Usuń</button></div>'; }).join('') +
+          '</div></div>';
+        html += '<div class="row">' + (item.sub.length < MAXSUB ? '<button type="button" class="btn" id="ed-addsub">Dodaj kafelek podmenu</button>' : '') + '<button type="button" class="btn" id="ed-clear">Opróżnij slot</button></div>';
+      } else if (h.ring === 's') {
+        html += '<div class="row"><button type="button" class="btn" id="ed-delsub">Usuń z podmenu</button></div>';
+      } else {
+        html += '<div class="row"><button type="button" class="btn" id="ed-clear">Opróżnij slot</button></div>';
+      }
+    }
+    html += '<p class="note">W programie: osobne okno edytora, przeciąganie plików na sloty, zapis do config.json. Tu zmiany działają tylko na podglądzie.</p>';
+    editor.innerHTML = html;
+    bindEditor();
+  }
+  function setItem(h, v) { if (h.ring === 'o') outer[h.i] = v; else if (h.ring === 'i') inner[h.i] = v; }
+  function bindEditor() {
+    var h = st.sel, item = itemOf(h);
+    var q = function (id) { return document.getElementById(id); };
+    if (q('ed-add')) q('ed-add').onclick = function () { setItem(h, it('Nowy element', 'run', '')); renderEditor(); render(); q('ed-name').focus(); q('ed-name').select(); };
+    if (!item) return;
+    q('ed-name').oninput = function () { item.n = this.value || ' '; render(); };
+    q('ed-type').onchange = function () {
+      var was = item.t; item.t = this.value;
+      if (item.t === 'edit') { var e = editCmd(item.c); item.c = e[0]; item.ic = e[2]; }
+      else if (was === 'edit') item.c = '';
+      renderEditor(); render();
+    };
+    if (q('ed-target')) q('ed-target').oninput = function () { item.c = this.value; };
+    if (q('ed-cmd')) q('ed-cmd').onchange = function () {
+      var old = editCmd(item.c), e = editCmd(this.value);
+      if (item.n === old[0]) { item.n = e[0]; q('ed-name').value = e[0]; }
+      item.c = e[0]; item.ic = e[2]; q('ed-icon').value = e[2]; render();
+    };
+    q('ed-icon').onchange = function () { item.ic = this.value; render(); };
+    editor.querySelectorAll('[data-k]').forEach(function (inp) { inp.oninput = function () { item.sub[+inp.dataset.k].n = inp.value || ' '; st.openSub = h.i; render(); }; });
+    editor.querySelectorAll('[data-del]').forEach(function (b) { b.onclick = function () { item.sub.splice(+b.dataset.del, 1); st.openSub = item.sub.length ? h.i : null; renderEditor(); render(); }; });
+    if (q('ed-addsub')) q('ed-addsub').onclick = function () { item.sub.push(it('Nowy', 'run', '')); st.openSub = h.i; renderEditor(); render(); var last = q('ed-sub-' + (item.sub.length - 1)); last.focus(); last.select(); };
+    if (q('ed-clear')) q('ed-clear').onclick = function () { setItem(h, null); if (st.openSub === h.i && h.ring === 'o') st.openSub = null; renderEditor(); render(); };
+    if (q('ed-delsub')) q('ed-delsub').onclick = function () { var p = outer[h.i]; p.sub.splice(h.k, 1); st.sel = { ring: 'o', i: h.i }; st.openSub = p.sub.length ? h.i : null; renderEditor(); render(); };
+  }
+
+  function init() {
+    var r = desk.getBoundingClientRect(); place(r.width / 2, r.height / 2);
+    render(); renderEditor();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
+</script>

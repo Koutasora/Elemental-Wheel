@@ -1,0 +1,48 @@
+# Checklista
+
+## 01 plan-i-szkielet
+- [x] Szkielet Cargo workspace (wheel-core, wheel, wheel-editor)
+- [x] Geometria koła: 12 sektorów, środek, pierścienie, wybór po kierunku
+- [x] Test geometrii w wheel-core
+- [x] `wheel.exe --version`
+- [x] `.gitignore`, `LICENSE` (MIT), `README.md`
+- [x] Makieta koncepcji `docs/koncept.html`
+
+## 02 kolo-render
+- [ ] Koło z 12 sektorami (pierścień zewnętrzny i wewnętrzny) rysowane pod kursorem
+- [ ] Okno koła bez aktywacji (nie zabiera fokusu)
+- [ ] Motyw jasny i ciemny
+- [ ] Rozmiar koła 60–140% względem DPI monitora
+
+## 03 wyzwalacz-ppm
+- [ ] Koło otwiera się po przytrzymaniu prawego przycisku
+- [ ] Krótkie kliknięcie prawym działa w programach normalnie
+- [ ] Przeciąganie prawym działa w programach normalnie
+- [ ] Progi 180 ms / 6 px ustawiane w konfiguracji
+- [ ] Środek koła = anuluj / tryb klikania
+
+## 04 akcje-i-konfiguracja
+- [ ] Typy akcji: program, folder/plik, adres, skrót klawiszowy, komenda edycji, wklejenie tekstu, polecenie, akcja systemowa
+- [ ] Pierścień wewnętrzny z komendami edycji (wytnij, kopiuj, wklej, usuń, cofnij, ponów)
+- [ ] Konfiguracja w `%APPDATA%\Elemental-Wheel\config.json` z wersją schematu, zapis atomowy i kopia `.bak`
+- [ ] Lista wykluczonych programów i wyłączenie w pełnym ekranie
+
+## 05 podmenu
+- [ ] Łuk z maksymalnie 5 dodatkowymi kafelkami po najechaniu
+- [ ] Widok kafelków: nazwy albo ikony (ikona z .exe, litera gdy brak)
+
+## 06 edytor
+- [ ] Edytor jako osobny proces z podglądem
+- [ ] Edycja elementu: nazwa, typ akcji, cel, ikona, podmenu
+- [ ] Zapis konfiguracji do JSON
+
+## 07 stabilnosc-i-pomiary
+- [ ] Pomiar zużycia pamięci w tle
+- [ ] Pomiar czasu otwarcia koła
+- [ ] Odporność na awarie edytora i błędną konfigurację
+- [ ] Log awarii i test wielogodzinny
+
+## 08 instalator-i-wydanie
+- [ ] Instalator, który wypisuje zainstalowaną wersję
+- [ ] Autostart przy logowaniu
+- [ ] Wydanie z opisem zgodnym z README

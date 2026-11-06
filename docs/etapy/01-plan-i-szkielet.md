@@ -24,23 +24,25 @@ Program nie robi (wersja 1):
 - obsługi gestów dotykowych i pióra.
 
 ## Kryteria zamknięcia
-- [ ] Cel i zakres opisane w pliku etapu: co robi, czego nie robi
-- [ ] Technologie wybrane, powody w sekcji „Decyzje”
-- [ ] Kolejne etapy dopisane do roadmapy jako PLANOWANY
-- [ ] Szkielet: struktura folderów, `.gitignore`, `LICENSE` (MIT), `cargo build --release` działa, jeden test przechodzi
-- [ ] Checklista po polsku w projekcie (`CHECKLISTA.md`)
+- [x] Cel i zakres opisane w pliku etapu: co robi, czego nie robi
+- [x] Technologie wybrane, powody w sekcji „Decyzje”
+- [x] Kolejne etapy dopisane do roadmapy jako PLANOWANY
+- [x] Szkielet: struktura folderów, `.gitignore`, `LICENSE` (MIT), `cargo build --release` działa, jeden test przechodzi
+- [x] Checklista po polsku w projekcie (`CHECKLISTA.md`)
 
 ## Plan
 - [x] Koncept z makiety zatwierdzony (układ, wyzwalacz, architektura, widok nazw/ikon, rozmiar, komendy edycji)
 - [x] Decyzje wpisane do sekcji „Decyzje”
-- [ ] Instalacja narzędzi na LAB: `rustup` (winget Rustlang.Rustup) i Visual Studio 2022 Build Tools z narzędziami C++
-      (linker MSVC, Windows SDK); wypisać zainstalowane wersje
-- [ ] Szkielet Cargo workspace: `crates/wheel-core` (geometria, trafianie w sektory, model menu),
+- [x] Instalacja narzędzi na LAB: `rustup` (winget Rustlang.Rustup) i Visual Studio 2022 Build Tools z narzędziami C++
+      (linker MSVC, Windows SDK); zainstalowane: rustup 1.29.3, rustc/cargo 1.99.1 (stable MSVC),
+      VS Build Tools 17.14.44, Windows SDK 10.0.26100.0
+- [x] Szkielet Cargo workspace: `crates/wheel-core` (geometria, trafianie w sektory, model menu),
       `apps/wheel` (program w tle, na razie `--version`), `apps/wheel-editor` (zaczątek edytora);
       `.gitignore`, `LICENSE` (MIT), `README.md` (zwięźle), `CHECKLISTA.md`, makieta `docs/koncept.html`
-- [ ] Test w `wheel-core`: punkt na kole trafia we właściwy sektor i pierścień (12 sektorów, środek, poza kołem)
+- [x] Test w `wheel-core`: punkt na kole trafia we właściwy sektor i pierścień (12 sektorów, środek, poza kołem)
 - [x] Etapy 02–08 dopisane do roadmapy jako PLANOWANY
 - Sprawdzenie: `cargo build --release`, `cargo test`, `wheel.exe --version` wypisuje wersję
+  (wynik: build OK, 5 testów OK, `Elemental Wheel 0.1.0`, clippy i fmt czyste, wheel.exe 121 KB)
 
 ## Decyzje
 - Rdzeń w Rust (windows-rs) + Win32 + Direct2D/DirectComposition/DirectWrite: 5–15 MB RAM w tle, otwarcie w jednej
@@ -54,6 +56,7 @@ Program nie robi (wersja 1):
 - Rozmiar koła regulowany w opcjach, 60–140% względem DPI monitora (prośba użytkownika).
 - Wersja 1 tylko Windows 10/11.
 - Licencja MIT (prośba użytkownika).
+- Makieta `docs/koncept.html` bez zewnętrznych czcionek i bez ścieżek z LAB: działa offline, nic nie wysyła.
 - Podglądy i makiety tylko lokalnie (plik HTML otwierany w przeglądarce), bez publikowania na claude.ai.
 
 ## Podsumowanie
