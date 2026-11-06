@@ -18,7 +18,7 @@ anulowania, z nazwami kafelków, w przezroczystym oknie, które nie zabiera foku
 - [ ] `CHECKLISTA.md` i `README.md` zaktualizowane
 
 ## Plan
-- [ ] `crates/wheel-core`: liczba sektorów jako parametr (`sector_at`, `hit_test`; osobno dla pierścienia zewnętrznego i wewnętrznego), moduł `layout.rs` (promienie z DPI i skali, kąty łuków sektorów), model nazw kafelków demo (wewnętrzny: komendy edycji jak w makiecie), testy
+- [x] `crates/wheel-core`: liczba sektorów jako parametr (`sector_at`, `hit_test`; osobno dla pierścienia zewnętrznego i wewnętrznego), moduł `layout.rs` (promienie z DPI i skali, kąty łuków sektorów), model nazw kafelków demo (wewnętrzny: komendy edycji jak w makiecie), testy
 - [ ] `apps/wheel`: zależność `windows` (windows-rs); okno `WS_EX_NOACTIVATE | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP`, DPI Per-Monitor V2
 - [ ] `apps/wheel`: rysowanie Direct2D + DirectComposition (przezroczystość alfa), tekst DirectWrite; kolory motywów z `docs/koncept.html`, jeden akcent
 - [ ] `apps/wheel`: argumenty `--demo`, `--theme`, `--scale`, `--sectors`; motyw systemu z rejestru (`AppsUseLightTheme`); podświetlenie sektora pod kursorem
@@ -31,6 +31,8 @@ anulowania, z nazwami kafelków, w przezroczystym oknie, które nie zabiera foku
 - Ustawienia na razie w argumentach wiersza poleceń; plik konfiguracji w etapie 04 (tam też opcje rozmiaru, motywu i liczby sektorów).
 - Liczba sektorów pierścienia zewnętrznego regulowana (prośba użytkownika): domyślnie 12, zakres 4–12. Minimum 4: mniej daje sektory po 120°+ i koło traci sens wobec zwykłego menu; maksimum 12: przy więcej nazwy przestają się mieścić, a wybór po kierunku robi się niepewny (sektory < 30°).
 - Pierścień wewnętrzny zostaje na 12 sektorach (komendy edycji, stałe kierunki Cofnij lewo / Ponów prawo).
+- Wymiary bazowe (100%, 96 DPI) z makiety `docs/koncept.html`: środek 60 px, granica pierścieni 124 px (środek przerwy 122–126), promień zewnętrzny 210 px (okno 420 px).
+- Nazwy kafelków demo wzięte z makiety (polski tekst UI); `sector_at` traktuje 0 sektorów jak 1, żeby nie dzielić przez zero.
 
 ## Podsumowanie
 (wypełnia /etap-zamknij)

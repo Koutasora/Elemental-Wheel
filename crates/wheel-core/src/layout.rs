@@ -1,0 +1,178 @@
+//! Wheel dimensions in physical pixels, from monitor DPI and user scale.
+//! Angles use the same convention as `geometry`: 0 = up, clockwise; sector 0 is centred at 0.
+
+use crate::geometry::{INNER_SECTORS, Radii, clamp_outer_sectors};
+
+/// Smallest allowed scale, in percent.
+pub const MIN_SCALE_PCT: u16 = 60;
+/// Largest allowed scale, in percent.
+pub const MAX_SCALE_PCT: u16 = 140;
+/// Default scale, in percent.
+pub const DEFAULT_SCALE_PCT: u16 = 100;
+
+// Base dimensions at 100% and 96 DPI, from the mockup in `docs/koncept.html`
+// (R.c = 60, inner ring 64..122, outer ring 126..210). The ring boundary sits in the middle
+// of the 122..126 gap.
+const BASE_CENTER: f32 = 60.0;
+const BASE_INNER: f32 = 124.0;
+const BASE_OUTER: f32 = 210.0;
+
+/// Clamps the scale to `MIN_SCALE_PCT..=MAX_SCALE_PCT`.
+pub fn clamp_scale_pct(pct: u16) -> u16 {
+    pct.clamp(MIN_SCALE_PCT, MAX_SCALE_PCT)
+}
+
+/// Wheel size for a given DPI, scale and outer ring sector count.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Layout {
+    factor: f32,
+    outer_sectors: u8,
+}
+
+impl Layout {
+    /// Clamps `scale_pct` and `outer_sectors`; a `dpi` of 0 is treated as 96.
+    pub fn new(dpi: u32, scale_pct: u16, outer_sectors: u8) -> Layout {
+        let dpi = if dpi == 0 { 96 } else { dpi };
+        Layout {
+            factor: dpi as f32 / 96.0 * clamp_scale_pct(scale_pct) as f32 / 100.0,
+            outer_sectors: clamp_outer_sectors(outer_sectors),
+        }
+    }
+
+    /// Ring boundaries in physical pixels.
+    pub fn radii(&self) -> Radii {
+        Radii {
+            center: BASE_CENTER * self.factor,
+            inner: BASE_INNER * self.factor,
+        }
+    }
+
+    /// Outer edge of the outer ring in physical pixels.
+    pub fn outer_radius(&self) -> f32 {
+        BASE_OUTER * self.factor
+    }
+
+    pub fn outer_sectors(&self) -> u8 {
+        self.outer_sectors
+    }
+
+    /// Start and end angle of an outer ring sector, in degrees.
+    pub fn outer_span(&self, i: u8) -> (f32, f32) {
+        span(i, self.outer_sectors)
+    }
+
+    /// Start and end angle of an inner ring sector, in degrees.
+    pub fn inner_span(&self, i: u8) -> (f32, f32) {
+        span(i, INNER_SECTORS)
+    }
+
+    /// Side length of a square window that fits the whole wheel.
+    pub fn size_px(&self) -> u32 {
+        (self.outer_radius() * 2.0).ceil() as u32
+    }
+}
+
+fn span(i: u8, sectors: u8) -> (f32, f32) {
+    let w = 360.0 / sectors as f32;
+    (i as f32 * w - w / 2.0, i as f32 * w + w / 2.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn close(a: f32, b: f32) -> bool {
+        (a - b).abs() < 1e-3
+    }
+
+    #[test]
+    fn clamps_scale() {
+        for (input, want) in [
+            (0, 60),
+            (59, 60),
+            (60, 60),
+            (100, 100),
+            (140, 140),
+            (141, 140),
+        ] {
+            assert_eq!(clamp_scale_pct(input), want, "input={input}");
+        }
+    }
+
+    #[test]
+    fn new_clamps_inputs() {
+        let l = Layout::new(96, 500, 0);
+        assert_eq!(l.outer_sectors(), 4);
+        assert_eq!(l, Layout::new(96, 140, 4));
+        assert_eq!(Layout::new(96, 0, 99), Layout::new(96, 60, 12));
+    }
+
+    #[test]
+    fn default_scale_96_dpi_matches_base() {
+        let l = Layout::new(96, DEFAULT_SCALE_PCT, 12);
+        assert!(close(l.radii().center, 60.0));
+        assert!(close(l.radii().inner, 124.0));
+        assert!(close(l.outer_radius(), 210.0));
+        assert_eq!(l.size_px(), 420);
+    }
+
+    #[test]
+    fn scales_with_dpi_and_percent() {
+        let base = Layout::new(96, 100, 12);
+        for pct in [60u16, 100, 140] {
+            for dpi in [96u32, 144] {
+                let l = Layout::new(dpi, pct, 12);
+                let k = dpi as f32 / 96.0 * pct as f32 / 100.0;
+                assert!(close(l.radii().center, base.radii().center * k));
+                assert!(close(l.radii().inner, base.radii().inner * k));
+                assert!(close(l.outer_radius(), base.outer_radius() * k));
+            }
+        }
+        let l144 = Layout::new(144, 100, 12);
+        assert!(close(l144.radii().center, base.radii().center * 1.5));
+        assert!(close(l144.outer_radius(), base.outer_radius() * 1.5));
+    }
+
+    #[test]
+    fn dpi_zero_is_96() {
+        assert_eq!(Layout::new(0, 100, 12), Layout::new(96, 100, 12));
+    }
+
+    #[test]
+    fn size_fits_wheel_rounded_up() {
+        for dpi in [96u32, 120, 144, 192] {
+            for pct in [60u16, 77, 100, 140] {
+                let l = Layout::new(dpi, pct, 12);
+                assert!(l.size_px() as f32 >= l.outer_radius() * 2.0);
+                assert!((l.size_px() as f32) < l.outer_radius() * 2.0 + 1.0);
+            }
+        }
+    }
+
+    #[test]
+    fn spans_are_consecutive_and_cover_circle() {
+        for n in [4u8, 6, 8, 12] {
+            let l = Layout::new(96, 100, n);
+            assert!(close(l.outer_span(0).0, -180.0 / n as f32));
+            let mut total = 0.0;
+            for i in 0..n {
+                let (s, e) = l.outer_span(i);
+                total += e - s;
+                if i + 1 < n {
+                    assert!(close(e, l.outer_span(i + 1).0));
+                }
+                assert!(close((s + e) / 2.0, i as f32 * 360.0 / n as f32));
+            }
+            assert!(close(total, 360.0));
+        }
+        let l = Layout::new(96, 100, 5);
+        let mut total = 0.0;
+        for i in 0..INNER_SECTORS {
+            let (s, e) = l.inner_span(i);
+            total += e - s;
+            assert!(close((s + e) / 2.0, i as f32 * 30.0));
+        }
+        assert!(close(total, 360.0));
+        assert!(close(l.inner_span(0).0, -15.0));
+    }
+}

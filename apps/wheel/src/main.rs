@@ -6,7 +6,7 @@ fn main() -> ExitCode {
         None => {
             println!(
                 "Elemental Wheel skeleton (stage 01): {} sectors, nothing to run yet.",
-                wheel_core::SECTORS
+                wheel_core::DEFAULT_OUTER_SECTORS
             );
             ExitCode::SUCCESS
         }
