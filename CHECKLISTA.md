@@ -50,6 +50,7 @@
 ## 08 instalator-i-wydanie
 - [ ] Instalator, który wypisuje zainstalowaną wersję
 - [ ] Autostart przy logowaniu
+- [ ] Ikona w zasobniku systemowym (włącz/wyłącz, edytor, zamknij)
 - [ ] Wydanie z opisem zgodnym z README
 
 ## 09 wyglad-i-animacje
