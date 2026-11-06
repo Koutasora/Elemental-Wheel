@@ -1,36 +1,37 @@
 //! Command line parsing (pure, no Win32).
 
-use wheel_core::{
-    DEFAULT_OUTER_SECTORS, DEFAULT_SCALE_PCT, TriggerSettings, clamp_hold_ms, clamp_move_px,
-    clamp_outer_sectors, clamp_scale_pct,
-};
+use std::path::PathBuf;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Theme {
-    System,
-    Light,
-    Dark,
+use wheel_core::{ThemeChoice, clamp_hold_ms, clamp_move_px, clamp_outer_sectors, clamp_scale_pct};
+
+/// Values given on the command line; they override the config file only when present.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Overrides {
+    pub theme: Option<ThemeChoice>,
+    pub scale_pct: Option<u16>,
+    pub sectors: Option<u8>,
+    pub hold_ms: Option<u32>,
+    pub move_px: Option<i32>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DemoOptions {
-    pub theme: Theme,
-    pub scale_pct: u16,
-    pub sectors: u8,
+    pub overrides: Overrides,
+    /// `--config`; the default is `%APPDATA%\Elemental-Wheel\config.json`.
+    pub config: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunOptions {
-    /// Look of the wheel (the same options as `--demo`).
+    /// Look of the wheel and trigger values (the same options as `--demo`, plus the trigger).
     pub wheel: DemoOptions,
-    pub trigger: TriggerSettings,
     /// Hidden test flag: foreign injected input counts as physical.
     pub accept_injected: bool,
     /// Hidden test flag: stall the mouse hook once so the watchdog has to reinstall it.
     pub stall_hook_once: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     /// No arguments (or options without a command): print the status line.
     Info,
@@ -46,12 +47,8 @@ pub enum Command {
 pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String> {
     let mut args = args.into_iter();
     let (mut demo, mut run, mut quit) = (false, false, false);
-    let mut opts = DemoOptions {
-        theme: Theme::System,
-        scale_pct: DEFAULT_SCALE_PCT,
-        sectors: DEFAULT_OUTER_SECTORS,
-    };
-    let mut trigger = TriggerSettings::default();
+    let mut o = Overrides::default();
+    let mut config = None;
     let mut accept_injected = false;
     let mut stall_hook_once = false;
     while let Some(arg) = args.next() {
@@ -62,29 +59,38 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
             "--quit" => quit = true,
             "--accept-injected" => accept_injected = true,
             "--test-stall-hook" => stall_hook_once = true,
+            "--config" => {
+                let path = value(&mut args, &arg)?;
+                if path.is_empty() {
+                    return Err("Invalid value for --config: empty path".to_string());
+                }
+                config = Some(PathBuf::from(path));
+            }
             "--hold-ms" => {
                 let n = number(&value(&mut args, &arg)?, &arg)?;
-                trigger.hold_ms = clamp_hold_ms(n.clamp(0, u32::MAX.into()) as u32);
+                o.hold_ms = Some(clamp_hold_ms(n.clamp(0, u32::MAX.into()) as u32));
             }
             "--move-px" => {
                 let n = number(&value(&mut args, &arg)?, &arg)?;
-                trigger.move_px = clamp_move_px(n.clamp(i32::MIN.into(), i32::MAX.into()) as i32);
+                o.move_px = Some(clamp_move_px(
+                    n.clamp(i32::MIN.into(), i32::MAX.into()) as i32
+                ));
             }
             "--theme" => {
-                opts.theme = match value(&mut args, &arg)?.as_str() {
-                    "system" => Theme::System,
-                    "light" => Theme::Light,
-                    "dark" => Theme::Dark,
+                o.theme = Some(match value(&mut args, &arg)?.as_str() {
+                    "system" => ThemeChoice::System,
+                    "light" => ThemeChoice::Light,
+                    "dark" => ThemeChoice::Dark,
                     other => return Err(format!("Invalid value for --theme: {other}")),
-                }
+                })
             }
             "--scale" => {
                 let n = number(&value(&mut args, &arg)?, &arg)?;
-                opts.scale_pct = clamp_scale_pct(n.clamp(0, u16::MAX.into()) as u16);
+                o.scale_pct = Some(clamp_scale_pct(n.clamp(0, u16::MAX.into()) as u16));
             }
             "--sectors" => {
                 let n = number(&value(&mut args, &arg)?, &arg)?;
-                opts.sectors = clamp_outer_sectors(n.clamp(0, u8::MAX.into()) as u8);
+                o.sectors = Some(clamp_outer_sectors(n.clamp(0, u8::MAX.into()) as u8));
             }
             other => return Err(format!("Unknown argument: {other}")),
         }
@@ -92,12 +98,15 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
     if [demo, run, quit].iter().filter(|&&c| c).count() > 1 {
         return Err("Use only one of --demo, --run, --quit".to_string());
     }
+    let wheel = DemoOptions {
+        overrides: o,
+        config,
+    };
     Ok(if demo {
-        Command::Demo(opts)
+        Command::Demo(wheel)
     } else if run {
         Command::Run(RunOptions {
-            wheel: opts,
-            trigger,
+            wheel,
             accept_injected,
             stall_hook_once,
         })
@@ -143,12 +152,21 @@ mod tests {
         }
     }
 
+    fn run(args: &[&str]) -> RunOptions {
+        match parse_strs(args) {
+            Ok(Command::Run(o)) => o,
+            other => panic!("expected run, got {other:?}"),
+        }
+    }
+
     #[test]
-    fn defaults() {
+    fn nothing_overrides_by_default() {
         let o = demo(&["--demo"]);
-        assert_eq!(o.theme, Theme::System);
-        assert_eq!(o.scale_pct, 100);
-        assert_eq!(o.sectors, 12);
+        assert_eq!(o.overrides, Overrides::default());
+        assert_eq!(o.config, None);
+        let o = run(&["--run"]);
+        assert_eq!(o.wheel.overrides, Overrides::default());
+        assert!(!o.accept_injected);
     }
 
     #[test]
@@ -167,51 +185,52 @@ mod tests {
             "140",
             "--sectors",
             "6",
-        ]);
-        assert_eq!(o.theme, Theme::Dark);
-        assert_eq!(o.scale_pct, 140);
-        assert_eq!(o.sectors, 6);
-        assert_eq!(demo(&["--theme", "light", "--demo"]).theme, Theme::Light);
-        assert_eq!(demo(&["--demo", "--theme", "system"]).theme, Theme::System);
+        ])
+        .overrides;
+        assert_eq!(o.theme, Some(ThemeChoice::Dark));
+        assert_eq!(o.scale_pct, Some(140));
+        assert_eq!(o.sectors, Some(6));
+        let theme = |args: &[&str]| demo(args).overrides.theme;
+        assert_eq!(
+            theme(&["--theme", "light", "--demo"]),
+            Some(ThemeChoice::Light)
+        );
+        assert_eq!(
+            theme(&["--demo", "--theme", "system"]),
+            Some(ThemeChoice::System)
+        );
+    }
+
+    #[test]
+    fn config_path() {
+        assert_eq!(
+            demo(&["--demo", "--config", "C:\\t\\c.json"]).config,
+            Some(PathBuf::from("C:\\t\\c.json"))
+        );
+        assert_eq!(
+            run(&["--config", "x.json", "--run"]).wheel.config,
+            Some(PathBuf::from("x.json"))
+        );
+        assert!(parse_strs(&["--run", "--config"]).is_err());
+        assert!(parse_strs(&["--run", "--config", ""]).is_err());
     }
 
     #[test]
     fn clamps_out_of_range() {
-        assert_eq!(demo(&["--demo", "--scale", "10"]).scale_pct, 60);
-        assert_eq!(demo(&["--demo", "--scale", "999"]).scale_pct, 140);
-        assert_eq!(demo(&["--demo", "--scale", "70000"]).scale_pct, 140);
-        assert_eq!(demo(&["--demo", "--scale", "-5"]).scale_pct, 60);
-        assert_eq!(demo(&["--demo", "--sectors", "1"]).sectors, 4);
-        assert_eq!(demo(&["--demo", "--sectors", "40"]).sectors, 12);
-        assert_eq!(demo(&["--demo", "--sectors", "300"]).sectors, 12);
+        let scale = |v: &str| demo(&["--demo", "--scale", v]).overrides.scale_pct;
+        let sectors = |v: &str| demo(&["--demo", "--sectors", v]).overrides.sectors;
+        assert_eq!(scale("10"), Some(60));
+        assert_eq!(scale("999"), Some(140));
+        assert_eq!(scale("70000"), Some(140));
+        assert_eq!(scale("-5"), Some(60));
+        assert_eq!(sectors("1"), Some(4));
+        assert_eq!(sectors("40"), Some(12));
+        assert_eq!(sectors("300"), Some(12));
         let huge = "99999999999999999999999999";
-        assert_eq!(demo(&["--demo", "--scale", huge]).scale_pct, 140);
-        assert_eq!(demo(&["--demo", "--sectors", huge]).sectors, 12);
-        assert_eq!(
-            demo(&["--demo", "--scale", "-99999999999999999999999999"]).scale_pct,
-            60
-        );
-        assert_eq!(
-            demo(&["--demo", "--sectors", "-99999999999999999999999999"]).sectors,
-            4
-        );
-    }
-
-    fn run(args: &[&str]) -> RunOptions {
-        match parse_strs(args) {
-            Ok(Command::Run(o)) => o,
-            other => panic!("expected run, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn run_defaults() {
-        let o = run(&["--run"]);
-        assert_eq!(o.wheel.theme, Theme::System);
-        assert_eq!(o.wheel.scale_pct, 100);
-        assert_eq!(o.wheel.sectors, 12);
-        assert_eq!(o.trigger, TriggerSettings::default());
-        assert!(!o.accept_injected);
+        assert_eq!(scale(huge), Some(140));
+        assert_eq!(sectors(huge), Some(12));
+        assert_eq!(scale("-99999999999999999999999999"), Some(60));
+        assert_eq!(sectors("-99999999999999999999999999"), Some(4));
     }
 
     #[test]
@@ -231,26 +250,29 @@ mod tests {
             "--accept-injected",
             "--test-stall-hook",
         ]);
-        assert_eq!(o.wheel.theme, Theme::Dark);
-        assert_eq!(o.wheel.scale_pct, 80);
-        assert_eq!(o.wheel.sectors, 8);
-        assert_eq!(o.trigger.hold_ms, 250);
-        assert_eq!(o.trigger.move_px, 10);
+        let v = o.wheel.overrides;
+        assert_eq!(v.theme, Some(ThemeChoice::Dark));
+        assert_eq!(v.scale_pct, Some(80));
+        assert_eq!(v.sectors, Some(8));
+        assert_eq!(v.hold_ms, Some(250));
+        assert_eq!(v.move_px, Some(10));
         assert!(o.accept_injected);
         assert!(o.stall_hook_once);
     }
 
     #[test]
     fn run_clamps_trigger_values() {
-        assert_eq!(run(&["--run", "--hold-ms", "1"]).trigger.hold_ms, 50);
-        assert_eq!(run(&["--run", "--hold-ms", "99999"]).trigger.hold_ms, 2000);
-        assert_eq!(run(&["--run", "--hold-ms", "-5"]).trigger.hold_ms, 50);
-        assert_eq!(run(&["--run", "--move-px", "0"]).trigger.move_px, 1);
-        assert_eq!(run(&["--run", "--move-px", "500"]).trigger.move_px, 50);
-        assert_eq!(run(&["--run", "--move-px", "-3"]).trigger.move_px, 1);
+        let hold = |v: &str| run(&["--run", "--hold-ms", v]).wheel.overrides.hold_ms;
+        let moved = |v: &str| run(&["--run", "--move-px", v]).wheel.overrides.move_px;
+        assert_eq!(hold("1"), Some(50));
+        assert_eq!(hold("99999"), Some(2000));
+        assert_eq!(hold("-5"), Some(50));
+        assert_eq!(moved("0"), Some(1));
+        assert_eq!(moved("500"), Some(50));
+        assert_eq!(moved("-3"), Some(1));
         let huge = "99999999999999999999999999";
-        assert_eq!(run(&["--run", "--hold-ms", huge]).trigger.hold_ms, 2000);
-        assert_eq!(run(&["--run", "--move-px", huge]).trigger.move_px, 50);
+        assert_eq!(hold(huge), Some(2000));
+        assert_eq!(moved(huge), Some(50));
     }
 
     #[test]

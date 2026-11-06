@@ -7,7 +7,7 @@ use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 use windows::core::w;
 
-use crate::args::Theme;
+use wheel_core::ThemeChoice as Theme;
 
 #[derive(Clone, Copy)]
 pub struct Palette {

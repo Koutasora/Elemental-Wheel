@@ -9,12 +9,17 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
+use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use wheel_core::{Effect, Event, EventKind, Hit, Origin, Point, Trigger, TriggerSettings, Verdict};
-use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM, LRESULT, POINT, WPARAM};
+use wheel_core::{
+    Config as WheelConfig, Effect, Event, EventKind, Hit, Origin, Point, Trigger, Verdict,
+};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Graphics::Gdi::{
+    GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
+};
 use windows::Win32::Security::{
     GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation, TOKEN_MANDATORY_LABEL,
     TOKEN_QUERY, TokenIntegrityLevel,
@@ -22,8 +27,8 @@ use windows::Win32::Security::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::SystemInformation::{GetTickCount, GetTickCount64};
 use windows::Win32::System::Threading::{
-    GetCurrentProcess, GetCurrentThreadId, OpenProcess, OpenProcessToken,
-    PROCESS_QUERY_LIMITED_INFORMATION,
+    GetCurrentProcess, GetCurrentThreadId, OpenProcess, OpenProcessToken, PROCESS_NAME_WIN32,
+    PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     INPUT, INPUT_0, INPUT_MOUSE, MOUSE_EVENT_FLAGS, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_MOVE,
@@ -31,16 +36,17 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_ESCAPE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, GA_ROOT, GetAncestor, GetMessageW, GetSystemMetrics, GetWindowThreadProcessId,
-    HC_ACTION, HHOOK, KBDLLHOOKSTRUCT, KillTimer, LLKHF_INJECTED, LLMHF_INJECTED, MSG,
-    MSLLHOOKSTRUCT, PM_NOREMOVE, PeekMessageW, PostMessageW, PostThreadMessageW,
-    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SetTimer,
-    SetWindowsHookExW, UnhookWindowsHookEx, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_APP, WM_KEYDOWN,
-    WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_QUIT, WM_RBUTTONDOWN, WM_RBUTTONUP,
-    WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_USER, WindowFromPoint,
+    CallNextHookEx, GA_ROOT, GetAncestor, GetClassNameW, GetMessageW, GetSystemMetrics,
+    GetWindowRect, GetWindowThreadProcessId, HC_ACTION, HHOOK, KBDLLHOOKSTRUCT, KillTimer,
+    LLKHF_INJECTED, LLMHF_INJECTED, MSG, MSLLHOOKSTRUCT, PM_NOREMOVE, PeekMessageW, PostMessageW,
+    PostThreadMessageW, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
+    SM_YVIRTUALSCREEN, SetTimer, SetWindowsHookExW, UnhookWindowsHookEx, WH_KEYBOARD_LL,
+    WH_MOUSE_LL, WM_APP, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_QUIT,
+    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_USER, WindowFromPoint,
 };
-use windows::core::{Error, HRESULT, Result};
+use windows::core::{Error, HRESULT, PWSTR, Result};
 
+use crate::actions;
 use crate::watchdog;
 use crate::window::{WM_WHEEL_CLOSE, WM_WHEEL_OPEN, layout_at};
 
@@ -52,27 +58,41 @@ const WM_EFFECTS: u32 = WM_APP + 1;
 /// The timer fires `HoldElapsed` with `GetTickCount`, which is coarser than the event times, so
 /// it is started a little late to make sure the hold time really has elapsed.
 const HOLD_TIMER_SLACK_MS: u32 = 16;
-/// How long the integrity level of a process is remembered.
+/// How long the integrity level and image path of a process are remembered.
 const ELEVATION_CACHE_MS: u64 = 5000;
 const ELEVATION_CACHE_MAX: usize = 64;
 /// Integrity level assumed for this process if it cannot be read (medium).
 const MEDIUM_INTEGRITY: u32 = 0x2000;
 
-/// What the hook thread needs to know.
+/// Startup flags of the hook thread. The settings from the config file travel separately
+/// (see `publish`).
 #[derive(Debug, Clone, Copy)]
-pub struct Config {
-    pub trigger: TriggerSettings,
-    pub scale_pct: u16,
-    pub sectors: u8,
+pub struct HookOptions {
     pub accept_injected: bool,
     /// Hidden test flag: the first right-button press stalls the mouse callback past the system
     /// timeout, so Windows removes the hook and the watchdog has to reinstall it.
     pub stall_hook_once: bool,
 }
 
-/// Set from `Config::stall_hook_once`; cleared by the first stall.
+/// Set from `HookOptions::stall_hook_once`; cleared by the first stall.
 static STALL_PENDING: AtomicBool = AtomicBool::new(false);
 const STALL_MS: u64 = 3000;
+
+/// The configuration in force. The UI thread swaps it after a reload; the hook thread clones the
+/// `Arc` (the lock is held only for that) and never touches the file.
+static SHARED: Mutex<Option<Arc<WheelConfig>>> = Mutex::new(None);
+
+/// Makes `config` the one the hook thread uses from now on.
+pub fn publish(config: Arc<WheelConfig>) {
+    *SHARED.lock().unwrap_or_else(PoisonError::into_inner) = Some(config);
+}
+
+fn current() -> Option<Arc<WheelConfig>> {
+    SHARED
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
 
 /// The running hook thread.
 pub struct HookThread {
@@ -90,7 +110,8 @@ impl HookThread {
 }
 
 /// Starts the hook thread; `window` is the wheel window that receives open / close messages.
-pub fn start(config: Config, window: HWND) -> Result<HookThread> {
+pub fn start(config: HookOptions, window: HWND, settings: Arc<WheelConfig>) -> Result<HookThread> {
+    publish(settings);
     let window = window.0 as isize;
     STALL_PENDING.store(config.stall_hook_once, Ordering::Relaxed);
     let (tx, rx) = mpsc::channel();
@@ -117,7 +138,7 @@ fn with_state<R>(f: impl FnOnce(&mut HookState) -> R) -> Option<R> {
 
 struct HookState {
     trigger: Trigger,
-    config: Config,
+    config: HookOptions,
     window: HWND,
     thread_id: u32,
     mouse_hook: Option<HHOOK>,
@@ -132,8 +153,11 @@ struct HookState {
     /// A physical Escape press was swallowed; swallow its repeats and release too.
     swallow_escape: bool,
     own_integrity: u32,
-    /// (pid, elevated, tick of the check)
-    elevation_cache: Vec<(u32, bool, u64)>,
+    /// Top-level window under the cursor at the last right press (`HWND` bits): the target of
+    /// the action.
+    target: isize,
+    /// (pid, what is known about the process, tick of the check)
+    process_cache: Vec<(u32, ProcessInfo, u64)>,
 }
 
 impl HookState {
@@ -177,7 +201,16 @@ impl HookState {
                 // Every press while the wheel is closed decides afresh, so a release lost after
                 // an elevated press (UAC, secure desktop) cannot leave the flag set.
                 EventKind::RightDown { .. } if !self.trigger.is_wheel_open() => {
-                    self.passthrough_right = self.is_elevated_target(info.pt);
+                    let settings = current();
+                    if let Some(c) = &settings {
+                        let trigger = c.options.trigger();
+                        if self.trigger.settings() != trigger {
+                            self.trigger = Trigger::new(trigger);
+                        }
+                    }
+                    let root = root_window_at(info.pt);
+                    self.target = root.0 as isize;
+                    self.passthrough_right = self.should_pass(root, settings.as_deref());
                     if self.passthrough_right {
                         self.trigger.reset();
                         return false;
@@ -219,40 +252,48 @@ impl HookState {
         }
     }
 
-    /// True if the window under `pt` belongs to a process with a higher integrity level than
-    /// this one (or one that cannot be inspected): the hook could not replay input into it.
-    fn is_elevated_target(&mut self, pt: POINT) -> bool {
-        // SAFETY: plain window queries; the handles come from the calls.
-        let pid = unsafe {
-            let hwnd = WindowFromPoint(pt);
-            if hwnd.0.is_null() {
-                return false;
-            }
-            let root = GetAncestor(hwnd, GA_ROOT);
-            let mut pid = 0u32;
-            GetWindowThreadProcessId(if root.0.is_null() { hwnd } else { root }, Some(&mut pid));
-            pid
-        };
-        if pid == 0 {
+    /// Whether the right button must reach the window `root` unchanged: it belongs to a process
+    /// with a higher integrity level than this one (or one that cannot be inspected), so the
+    /// hook could not replay input into it; or the program is on the exclusion list; or the
+    /// window covers its whole monitor.
+    fn should_pass(&mut self, root: HWND, config: Option<&WheelConfig>) -> bool {
+        let Some(pid) = window_pid(root) else {
             return false;
+        };
+        let info = self.process_info(pid);
+        if info.elevated {
+            return true;
         }
+        let Some(config) = config else {
+            return false;
+        };
+        if config.options.is_excluded(&info.exe) {
+            let name = info.exe.rsplit('\\').next().unwrap_or(&info.exe);
+            eprintln!("pass: excluded {name}");
+            return true;
+        }
+        if config.options.disable_in_fullscreen && is_fullscreen(root) {
+            eprintln!("pass: fullscreen");
+            return true;
+        }
+        false
+    }
+
+    fn process_info(&mut self, pid: u32) -> ProcessInfo {
         // SAFETY: plain call.
         let now = unsafe { GetTickCount64() };
-        if let Some(&(_, elevated, at)) = self.elevation_cache.iter().find(|e| e.0 == pid)
-            && now.wrapping_sub(at) < ELEVATION_CACHE_MS
+        if let Some((_, info, at)) = self.process_cache.iter().find(|e| e.0 == pid)
+            && now.wrapping_sub(*at) < ELEVATION_CACHE_MS
         {
-            return elevated;
+            return info.clone();
         }
-        let elevated = match process_integrity_by_pid(pid) {
-            Some(level) => level > self.own_integrity,
-            None => true,
-        };
-        if self.elevation_cache.len() >= ELEVATION_CACHE_MAX {
-            self.elevation_cache.clear();
+        let info = query_process(pid, self.own_integrity);
+        if self.process_cache.len() >= ELEVATION_CACHE_MAX {
+            self.process_cache.clear();
         }
-        self.elevation_cache.retain(|e| e.0 != pid);
-        self.elevation_cache.push((pid, elevated, now));
-        elevated
+        self.process_cache.retain(|e| e.0 != pid);
+        self.process_cache.push((pid, info.clone(), now));
+        info
     }
 
     fn start_timer(&mut self, ms: u32) {
@@ -361,7 +402,11 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
     unsafe { CallNextHookEx(None, code, wparam, lparam) }
 }
 
-fn thread_main(config: Config, window: isize, ready: mpsc::Sender<std::result::Result<u32, i32>>) {
+fn thread_main(
+    config: HookOptions,
+    window: isize,
+    ready: mpsc::Sender<std::result::Result<u32, i32>>,
+) {
     let mut msg = MSG::default();
     // SAFETY: the first call creates this thread's message queue, so that
     // PostThreadMessage works as soon as the thread id is announced.
@@ -370,7 +415,7 @@ fn thread_main(config: Config, window: isize, ready: mpsc::Sender<std::result::R
         GetCurrentThreadId()
     };
     let mut state = HookState {
-        trigger: Trigger::new(config.trigger),
+        trigger: Trigger::new(current().map(|c| c.options.trigger()).unwrap_or_default()),
         config,
         window: HWND(window as *mut _),
         thread_id,
@@ -383,7 +428,8 @@ fn thread_main(config: Config, window: isize, ready: mpsc::Sender<std::result::R
         passthrough_right: false,
         swallow_escape: false,
         own_integrity: own_integrity(),
-        elevation_cache: Vec::new(),
+        target: 0,
+        process_cache: Vec::new(),
     };
     if let Err(e) = state.install() {
         let _ = ready.send(Err(e.code().0));
@@ -450,14 +496,14 @@ fn run_effect(effect: Effect) {
             mouse_input(current_pos, MOUSE_EVENT_FLAGS(0)),
         ]),
         Effect::OpenWheel { center } => {
-            let Some((window, config)) = with_state(|s| (s.window, s.config)) else {
+            let (Some(window), Some(config)) = (with_state(|s| s.window), current()) else {
                 return;
             };
             let at = POINT {
                 x: center.x,
                 y: center.y,
             };
-            let layout = layout_at(at, config.scale_pct, config.sectors);
+            let layout = layout_at(at, config.options.scale_pct, config.options.outer_sectors);
             with_state(|s| s.trigger.set_layout(layout));
             post_to_window(
                 window,
@@ -469,11 +515,21 @@ fn run_effect(effect: Effect) {
         // The window stays open and follows the cursor by itself; nothing to do.
         Effect::EnterClickMode => {}
         Effect::Select(hit) => {
-            let Some((window, sectors)) = with_state(|s| (s.window, s.config.sectors)) else {
+            let (Some((window, target)), Some(config)) =
+                (with_state(|s| (s.window, s.target)), current())
+            else {
                 return;
             };
-            print_line(&selection_text(hit, sectors));
+            print_line(&selection_text(hit, &config));
             post_to_window(window, WM_WHEEL_CLOSE, 0, 0);
+            let item = match hit {
+                Hit::Outer(i) => config.outer_item(usize::from(i)),
+                Hit::Inner(i) => config.inner_item(usize::from(i)),
+                Hit::Center => None,
+            };
+            if let Some(item) = item {
+                actions::run(&item.action, target, window.0 as isize);
+            }
         }
         Effect::Cancel => {
             let Some(window) = with_state(|s| s.window) else {
@@ -498,23 +554,18 @@ fn print_line(text: &str) {
     let _ = out.flush();
 }
 
-fn selection_text(hit: Hit, sectors: u8) -> String {
+fn selection_text(hit: Hit, config: &WheelConfig) -> String {
+    let name = |item: Option<&wheel_core::Item>| item.map_or("?", |i| i.name.as_str()).to_string();
     match hit {
         Hit::Outer(i) => format!(
             "selected: outer {} \"{}\"",
             i + 1,
-            crate::CONFIG
-                .outer_names(sectors)
-                .get(usize::from(i))
-                .unwrap_or(&"?")
+            name(config.outer_item(usize::from(i)))
         ),
         Hit::Inner(i) => format!(
             "selected: inner {} \"{}\"",
             i + 1,
-            crate::CONFIG
-                .inner_names()
-                .get(usize::from(i))
-                .unwrap_or(&"?")
+            name(config.inner_item(usize::from(i)))
         ),
         Hit::Center => "selected: center".to_string(),
     }
@@ -569,14 +620,103 @@ fn own_integrity() -> u32 {
     process_integrity(unsafe { GetCurrentProcess() }).unwrap_or(MEDIUM_INTEGRITY)
 }
 
-fn process_integrity_by_pid(pid: u32) -> Option<u32> {
-    // SAFETY: the handle comes from OpenProcess and is closed here.
+/// What is known about the process of a window.
+#[derive(Debug, Clone)]
+struct ProcessInfo {
+    /// Higher integrity than this process, or unreadable.
+    elevated: bool,
+    /// Full path of the image, empty if unreadable.
+    exe: String,
+}
+
+fn query_process(pid: u32, own_integrity: u32) -> ProcessInfo {
+    // SAFETY: the handle comes from OpenProcess and is closed here; the buffer outlives the call.
     unsafe {
-        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let Ok(process) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
+            return ProcessInfo {
+                elevated: true,
+                exe: String::new(),
+            };
+        };
         let level = process_integrity(process);
+        let mut buf = [0u16; 1024];
+        let mut len = buf.len() as u32;
+        let exe = QueryFullProcessImageNameW(
+            process,
+            PROCESS_NAME_WIN32,
+            PWSTR(buf.as_mut_ptr()),
+            &mut len,
+        )
+        .map(|()| String::from_utf16_lossy(&buf[..len as usize]))
+        .unwrap_or_default();
         let _ = CloseHandle(process);
-        level
+        ProcessInfo {
+            elevated: level.is_none_or(|l| l > own_integrity),
+            exe,
+        }
     }
+}
+
+/// The top-level window under `pt` (null if there is none).
+fn root_window_at(pt: POINT) -> HWND {
+    // SAFETY: plain window queries.
+    unsafe {
+        let hwnd = WindowFromPoint(pt);
+        if hwnd.0.is_null() {
+            return hwnd;
+        }
+        let root = GetAncestor(hwnd, GA_ROOT);
+        if root.0.is_null() { hwnd } else { root }
+    }
+}
+
+fn window_pid(hwnd: HWND) -> Option<u32> {
+    if hwnd.0.is_null() {
+        return None;
+    }
+    let mut pid = 0u32;
+    // SAFETY: `pid` is a valid out buffer.
+    unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
+    (pid != 0).then_some(pid)
+}
+
+/// (left, top, right, bottom)
+type Edges = (i32, i32, i32, i32);
+
+/// Whether a window with these edges and class counts as full screen on a monitor with these
+/// edges: it covers the monitor (taskbar included) and is not the desktop or the taskbar.
+fn covers_monitor(window: Edges, monitor: Edges, class: &str) -> bool {
+    !matches!(class, "Progman" | "WorkerW" | "Shell_TrayWnd")
+        && window.0 <= monitor.0
+        && window.1 <= monitor.1
+        && window.2 >= monitor.2
+        && window.3 >= monitor.3
+}
+
+fn is_fullscreen(root: HWND) -> bool {
+    let mut rect = RECT::default();
+    let mut monitor = MONITORINFO {
+        cbSize: size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    let mut class = [0u16; 64];
+    // SAFETY: the out buffers are valid; the monitor handle comes from MonitorFromWindow.
+    let (class_len, ok) = unsafe {
+        let ok = GetWindowRect(root, &mut rect).is_ok()
+            && GetMonitorInfoW(
+                MonitorFromWindow(root, MONITOR_DEFAULTTONEAREST),
+                &mut monitor,
+            )
+            .as_bool();
+        (GetClassNameW(root, &mut class).max(0) as usize, ok)
+    };
+    let class = String::from_utf16_lossy(&class[..class_len]);
+    let m = monitor.rcMonitor;
+    ok && covers_monitor(
+        (rect.left, rect.top, rect.right, rect.bottom),
+        (m.left, m.top, m.right, m.bottom),
+        &class,
+    )
 }
 
 /// Integrity level (RID, e.g. 0x2000 medium, 0x3000 high) of a process, if it can be read.
@@ -640,13 +780,38 @@ mod tests {
     #[test]
     fn selection_lines() {
         assert_eq!(
-            selection_text(Hit::Outer(3), 12),
+            selection_text(Hit::Outer(3), &WheelConfig::default()),
             "selected: outer 4 \"Zrzut ekranu\""
         );
         assert_eq!(
-            selection_text(Hit::Inner(9), 12),
+            selection_text(Hit::Inner(9), &WheelConfig::default()),
             "selected: inner 10 \"Cofnij\""
         );
-        assert_eq!(selection_text(Hit::Center, 12), "selected: center");
+        assert_eq!(
+            selection_text(Hit::Center, &WheelConfig::default()),
+            "selected: center"
+        );
+    }
+
+    const MONITOR: Edges = (0, 0, 1920, 1080);
+
+    #[test]
+    fn fullscreen_detection() {
+        // Exactly the monitor, and larger than it (borderless games overshoot).
+        assert!(covers_monitor(MONITOR, MONITOR, "UnityWndClass"));
+        assert!(covers_monitor(
+            (-8, -8, 1928, 1088),
+            MONITOR,
+            "Chrome_WidgetWin_1"
+        ));
+        // Maximized: the taskbar stays visible.
+        assert!(!covers_monitor((-8, -8, 1928, 1040), MONITOR, "Notepad"));
+        // Plain window, and a window on another monitor.
+        assert!(!covers_monitor((100, 100, 800, 600), MONITOR, "Notepad"));
+        assert!(!covers_monitor((1920, 0, 3840, 1080), MONITOR, "Notepad"));
+        // The desktop and the taskbar cover the monitor but are not full screen windows.
+        for class in ["Progman", "WorkerW", "Shell_TrayWnd"] {
+            assert!(!covers_monitor(MONITOR, MONITOR, class), "{class}");
+        }
     }
 }
