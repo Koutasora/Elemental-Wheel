@@ -14,6 +14,18 @@ cargo test
 target\release\wheel.exe --version
 ```
 
+## Demo
+
+```
+target\release\wheel.exe --demo [--theme system|light|dark] [--scale 60..140] [--sectors 4..12]
+```
+
+Shows the wheel centred under the cursor without taking focus; closes on a click or after 10 s.
+
+- `--theme` - `system` (default) follows the Windows app theme
+- `--scale` - size in percent relative to the monitor DPI (default 100)
+- `--sectors` - sectors in the outer ring (default 12); the inner ring always has 12
+
 ## Layout
 
 - `crates/wheel-core` - wheel geometry and logic
