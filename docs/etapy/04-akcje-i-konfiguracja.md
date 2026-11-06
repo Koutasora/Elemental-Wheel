@@ -53,4 +53,33 @@ są w `%APPDATA%\Elemental-Wheel\config.json` z wersją schematu, zapisem atomow
 - Sprawdzenie ręczne fizyczną myszą przeniesione do etapu 05; w 04 zastępuje je pełny test automatyczny na LAB (decyzja użytkownika): logika wyzwalacza dla wejścia fizycznego i wstrzykiwanego z `--accept-injected` jest ta sama, fizyczną mysz sprawdzono w etapie 03.
 
 ## Podsumowanie
-(wypełnia /etap-zamknij)
+
+Decyzje:
+- Konfiguracja JSON (serde) w `%APPDATA%\Elemental-Wheel\config.json`: wersja schematu, walidacja, liczby przycinane z ostrzeżeniem; UTF-8 (z BOM lub bez) albo UTF-16 LE z BOM.
+- Błędny plik: komunikat, potem `.bak` (ostatnia dobra wersja, zapisywana po każdym udanym wczytaniu), potem wartości domyślne; plik użytkownika nigdy nie jest przepisywany; plik domyślny przez `File::create_new`.
+- Plik obserwowany (`FindFirstChangeNotificationW`, bez odpytywania): zmiana działa od następnego wciśnięcia, rozmiar i liczba sektorów od następnego otwarcia.
+- Akcja trafia do okna głównego spod kursora z chwili wciśnięcia; edycja, skróty i wklejanie wyciągają je na pierwszy plan; koło samo fokusu nie zabiera.
+- Wykluczenia po nazwie .exe i pełny ekran (okno bez ramki na cały monitor) przepuszczają prawy przycisk; zmaksymalizowane okno z paskiem tytułu nie jest pełnym ekranem.
+- Domyślna konfiguracja tylko z elementami Windows (decyzja użytkownika); Terminal = `powershell.exe`; pole `submenu` już w schemacie.
+- Sprawdzenie fizyczną myszą przeniesione do etapu 05, w 04 pełny test automatyczny (decyzja użytkownika).
+
+Zrobione:
+- `wheel-core`: `config.rs` (model, walidacja, wczytanie, zapis atomowy, `.bak`, kodowanie), `keys.rs` (skróty), `demo.rs` usunięty; 63 testy.
+- `wheel`: `actions.rs` (8 typów akcji, 12 komend edycji, 8 akcji systemowych), `settings.rs` (`--config`, nakładanie argumentów, odświeżanie), `watch.rs` (obserwator), wykluczenia i pełny ekran w `hook.rs`; wybór numerowany od 1; 35 testów.
+- Razem 98 testów, clippy `-D warnings` i fmt czyste; README i CHECKLISTA zaktualizowane.
+- Test automatyczny na LAB (SendInput, konfiguracja w scratchpadzie, `%APPDATA%` nietknięty), wszystko PASS: komendy edycji w Notatniku i Eksploratorze (zmień nazwę, właściwości, kopiuj/wklej), okno w tle pod kursorem, `paste_text` z przywróceniem schowka, `command` bez okna konsoli, program/folder/adres, zamknij/minimalizuj (pulpit bez okna zamykania systemu), zrzut ekranu, wyciszenie (Core Audio, stan przywrócony), wykluczenia od pierwszego wciśnięcia w obie strony, `.bak`, UTF-16, polskie nazwy na kole (zrzut), Edge w F11, zmaksymalizowany Notatnik, regresje z etapu 03.
+- Dwa przeglądy managera; poprawione: `.bak`, wyścig przy odświeżaniu, kodowanie, schowek, pulpit, pełny ekran, `cmd.exe`, wypisy poza hakiem.
+
+Otwarte sprawy:
+- Etap 05: sprawdzenie fizyczną myszą (kliknięcie, przeciąganie, przytrzymanie, akcje); podmenu i ikony.
+- Etap 06: edytor ma zapisywać przez `save()`, które dziś kopiuje do `.bak` także plik błędny; poprawić przed użyciem.
+- Nieuruchomione na żywo: `lock` (zablokowałby LAB), `show_desktop`, `volume_up`/`volume_down`; komendy edycji w Eksploratorze poza zmianą nazwy, właściwościami, kopiuj i wklej.
+- Pierwsze otwarcie po zmianie pliku ok. 60 ms wolniejsze (odbudowa renderera); zasoby można przygotować od razu po wczytaniu (etap 07).
+- Brak obsługi WM_DPICHANGED; inne DPI, wiele monitorów i programy jako administrator nieprzetestowane.
+- Ślad `pass: excluded` pokazuje nazwę .exe z systemu (np. `Notepad.exe`).
+
+Ryzyka:
+- Obejście przez naciśnięcie Alt przy `SetForegroundWindow` może pokazać pasek menu lub podpowiedzi klawiszy w niektórych programach (Firefox, Office).
+- `paste_text` przywraca tylko tekst; inna zawartość schowka (obraz, pliki) zostaje zastąpiona wklejanym tekstem.
+- Gry z własną obsługą myszy i pełny ekran wyłączny (nie okno bez ramki) nieprzetestowane.
+- Czas otwarcia i pamięć niezmierzone (etap 07).
