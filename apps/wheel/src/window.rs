@@ -77,7 +77,8 @@ pub fn run_demo(options: &DemoOptions) -> Result<()> {
         )?
     };
 
-    // Exactly the cursor position at creation, the wheel center is the window center.
+    // The wheel center is the window center, at the cursor position at creation (off by
+    // half a pixel when the window size is odd).
     let center = (
         left as f32 + size as f32 / 2.0,
         top as f32 + size as f32 / 2.0,

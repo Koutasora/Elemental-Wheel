@@ -15,7 +15,6 @@
 - [x] Motyw jasny i ciemny (domyślnie jak w Windows)
 - [x] Rozmiar koła 60–140% względem DPI monitora
 - [x] Nazwy kafelków dopasowane do sektora (dwie linie, mniejsza czcionka)
-- [ ] Liczba sektorów, motyw i rozmiar w opcjach (konfiguracja w etapie 04)
 
 ## 03 wyzwalacz-ppm
 - [ ] Koło otwiera się po przytrzymaniu prawego przycisku
@@ -28,6 +27,7 @@
 - [ ] Typy akcji: program, folder/plik, adres, skrót klawiszowy, komenda edycji, wklejenie tekstu, polecenie, akcja systemowa
 - [ ] Pierścień wewnętrzny z komendami edycji (wytnij, kopiuj, wklej, usuń, cofnij, ponów)
 - [ ] Nazwa każdego elementu (także komend edycji) zapisana w konfiguracji i wyświetlana zamiast domyślnej
+- [ ] Liczba sektorów, motyw i rozmiar koła w opcjach
 - [ ] Konfiguracja w `%APPDATA%\Elemental-Wheel\config.json` z wersją schematu, zapis atomowy i kopia `.bak`
 - [ ] Lista wykluczonych programów i wyłączenie w pełnym ekranie
 
