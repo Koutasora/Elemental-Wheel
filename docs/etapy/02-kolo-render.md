@@ -19,9 +19,9 @@ anulowania, z nazwami kafelków, w przezroczystym oknie, które nie zabiera foku
 
 ## Plan
 - [x] `crates/wheel-core`: liczba sektorów jako parametr (`sector_at`, `hit_test`; osobno dla pierścienia zewnętrznego i wewnętrznego), moduł `layout.rs` (promienie z DPI i skali, kąty łuków sektorów), model nazw kafelków demo (wewnętrzny: komendy edycji jak w makiecie), testy
-- [ ] `apps/wheel`: zależność `windows` (windows-rs); okno `WS_EX_NOACTIVATE | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP`, DPI Per-Monitor V2
-- [ ] `apps/wheel`: rysowanie Direct2D + DirectComposition (przezroczystość alfa), tekst DirectWrite; kolory motywów z `docs/koncept.html`, jeden akcent
-- [ ] `apps/wheel`: argumenty `--demo`, `--theme`, `--scale`, `--sectors`; motyw systemu z rejestru (`AppsUseLightTheme`); podświetlenie sektora pod kursorem
+- [x] `apps/wheel`: zależność `windows` (windows-rs); okno `WS_EX_NOACTIVATE | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP`, DPI Per-Monitor V2
+- [x] `apps/wheel`: rysowanie Direct2D + DirectComposition (przezroczystość alfa), tekst DirectWrite; kolory motywów z `docs/koncept.html`, jeden akcent
+- [x] `apps/wheel`: argumenty `--demo`, `--theme`, `--scale`, `--sectors`; motyw systemu z rejestru (`AppsUseLightTheme`); podświetlenie sektora pod kursorem
 - [ ] `CHECKLISTA.md` (punkty 02 + liczba sektorów), `README.md` (status, argumenty)
 - Sprawdzenie: tester: build, testy, clippy, fmt; skrypt PowerShell porównuje okno na pierwszym planie przed i po `--demo`; zrzuty ekranu w scratchpadzie pokazane przed zamknięciem
 
@@ -33,6 +33,9 @@ anulowania, z nazwami kafelków, w przezroczystym oknie, które nie zabiera foku
 - Pierścień wewnętrzny zostaje na 12 sektorach (komendy edycji, stałe kierunki Cofnij lewo / Ponów prawo).
 - Wymiary bazowe (100%, 96 DPI) z makiety `docs/koncept.html`: środek 60 px, granica pierścieni 124 px (środek przerwy 122–126), promień zewnętrzny 210 px (okno 420 px).
 - Nazwy kafelków demo wzięte z makiety (polski tekst UI); `sector_at` traktuje 0 sektorów jak 1, żeby nie dzielić przez zero.
+- windows-rs 0.62.2 (przypięty) + windows-numerics 0.3.1 (typy wektorów wymagane przez Direct2D w tej wersji, nie są reeksportowane).
+- Podświetlenie przez odpytywanie kursora co 16 ms (`GetCursorPos`): wybór po kierunku działa też, gdy kursor jest poza oknem koła.
+- Brak GPU: zapasowo rasteryzer programowy WARP.
 
 ## Podsumowanie
 (wypełnia /etap-zamknij)
