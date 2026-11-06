@@ -1,0 +1,36 @@
+# Etap 02: kolo-render
+
+## Cel
+Narysować koło pod kursorem: pierścień zewnętrzny (4–12 sektorów, domyślnie 12), wewnętrzny (12 sektorów) i środek
+anulowania, z nazwami kafelków, w przezroczystym oknie, które nie zabiera fokusu. Motyw jasny i ciemny, rozmiar
+60–140% względem DPI monitora. Bez wyzwalacza prawym przyciskiem (etap 03): koło otwiera polecenie testowe.
+
+## Kryteria zamknięcia
+- [ ] `wheel.exe --demo` otwiera koło ze środkiem pod kursorem; zamyka się kliknięciem albo po 10 s
+- [ ] Rysowane: pierścień zewnętrzny, wewnętrzny (12 sektorów, pierwszy u góry) i środek, z nazwami kafelków; podświetlenie sektora pod kursorem
+- [ ] Liczba sektorów pierścienia zewnętrznego: `--sectors 4..12`, domyślnie 12; pierwszy sektor u góry, wartości spoza zakresu przycinane
+- [ ] Okno bez aktywacji: okno na pierwszym planie (np. Notatnik) to samo przed i po otwarciu koła
+- [ ] Motyw `--theme system|light|dark`, domyślnie `system` (odczyt z ustawień Windows)
+- [ ] Rozmiar `--scale 60..140`; promienie liczone w `wheel-core` z DPI monitora pod kursorem, wartości spoza zakresu przycinane
+- [ ] Testy w `wheel-core`: skalowanie promieni (DPI 96/144, 60/100/140%), przycinanie zakresów, trafianie w sektory dla 4, 6, 8 i 12 sektorów, granice `hit_test` na promieniach i kątach
+- [ ] `cargo build --release`, `cargo test`, clippy `-D warnings` i `cargo fmt --check` czyste
+- [ ] Zrzuty koła (jasny/ciemny, 60/100/140%, 12 i mniej sektorów) pokazane i zaakceptowane
+- [ ] `CHECKLISTA.md` i `README.md` zaktualizowane
+
+## Plan
+- [ ] `crates/wheel-core`: liczba sektorów jako parametr (`sector_at`, `hit_test`; osobno dla pierścienia zewnętrznego i wewnętrznego), moduł `layout.rs` (promienie z DPI i skali, kąty łuków sektorów), model nazw kafelków demo (wewnętrzny: komendy edycji jak w makiecie), testy
+- [ ] `apps/wheel`: zależność `windows` (windows-rs); okno `WS_EX_NOACTIVATE | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP`, DPI Per-Monitor V2
+- [ ] `apps/wheel`: rysowanie Direct2D + DirectComposition (przezroczystość alfa), tekst DirectWrite; kolory motywów z `docs/koncept.html`, jeden akcent
+- [ ] `apps/wheel`: argumenty `--demo`, `--theme`, `--scale`, `--sectors`; motyw systemu z rejestru (`AppsUseLightTheme`); podświetlenie sektora pod kursorem
+- [ ] `CHECKLISTA.md` (punkty 02 + liczba sektorów), `README.md` (status, argumenty)
+- Sprawdzenie: tester: build, testy, clippy, fmt; skrypt PowerShell porównuje okno na pierwszym planie przed i po `--demo`; zrzuty ekranu w scratchpadzie pokazane przed zamknięciem
+
+## Decyzje
+- Widok ikon przeniesiony do etapu 05 (zgodnie z checklistą); w 02 tylko nazwy, bo ikony z .exe wymagają modelu akcji z etapu 04.
+- Środek koła zawsze pod kursorem, także przy krawędzi ekranu (część koła może wyjść poza monitor); wybór i tak działa po kierunku.
+- Ustawienia na razie w argumentach wiersza poleceń; plik konfiguracji w etapie 04 (tam też opcje rozmiaru, motywu i liczby sektorów).
+- Liczba sektorów pierścienia zewnętrznego regulowana (prośba użytkownika): domyślnie 12, zakres 4–12. Minimum 4: mniej daje sektory po 120°+ i koło traci sens wobec zwykłego menu; maksimum 12: przy więcej nazwy przestają się mieścić, a wybór po kierunku robi się niepewny (sektory < 30°).
+- Pierścień wewnętrzny zostaje na 12 sektorach (komendy edycji, stałe kierunki Cofnij lewo / Ponów prawo).
+
+## Podsumowanie
+(wypełnia /etap-zamknij)
