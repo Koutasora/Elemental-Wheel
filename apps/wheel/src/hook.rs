@@ -8,8 +8,10 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::io::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
 use wheel_core::{
     Effect, Event, EventKind, Hit, INNER_LABELS, Origin, Point, Trigger, TriggerSettings, Verdict,
@@ -66,7 +68,14 @@ pub struct Config {
     pub scale_pct: u16,
     pub sectors: u8,
     pub accept_injected: bool,
+    /// Hidden test flag: the first right-button press stalls the mouse callback past the system
+    /// timeout, so Windows removes the hook and the watchdog has to reinstall it.
+    pub stall_hook_once: bool,
 }
+
+/// Set from `Config::stall_hook_once`; cleared by the first stall.
+static STALL_PENDING: AtomicBool = AtomicBool::new(false);
+const STALL_MS: u64 = 3000;
 
 /// The running hook thread.
 pub struct HookThread {
@@ -86,6 +95,7 @@ impl HookThread {
 /// Starts the hook thread; `window` is the wheel window that receives open / close messages.
 pub fn start(config: Config, window: HWND) -> Result<HookThread> {
     let window = window.0 as isize;
+    STALL_PENDING.store(config.stall_hook_once, Ordering::Relaxed);
     let (tx, rx) = mpsc::channel();
     let handle = thread::spawn(move || thread_main(config, window, tx));
     match rx.recv() {
@@ -325,6 +335,13 @@ unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) 
     if code == HC_ACTION as i32 {
         // SAFETY: for HC_ACTION `lparam` points to an MSLLHOOKSTRUCT valid during the call.
         let info = unsafe { &*(lparam.0 as *const MSLLHOOKSTRUCT) };
+        if wparam.0 as u32 == WM_RBUTTONDOWN && STALL_PENDING.swap(false, Ordering::Relaxed) {
+            eprintln!("test: stalling the mouse hook for {STALL_MS} ms");
+            thread::sleep(Duration::from_millis(STALL_MS));
+            // The event is not fed to the trigger: Windows has already passed it on.
+            // SAFETY: passing the arguments on unchanged.
+            return unsafe { CallNextHookEx(None, code, wparam, lparam) };
+        }
         if with_state(|s| s.on_mouse(wparam.0 as u32, info)) == Some(true) {
             return LRESULT(1);
         }

@@ -24,9 +24,9 @@
 - [x] Środek koła = anuluj / tryb klikania
 - [x] Esc zamyka koło; klik poza kołem w trybie klikania zamyka
 - [ ] Okna administratora dostają prawy przycisk bez zmian
-- [ ] Strażnik haka zakłada hak ponownie, gdy Windows go odłączy
+- [x] Strażnik haka zakłada hak ponownie, gdy Windows go odłączy
 - [x] Jedna kopia programu, `wheel.exe --quit` zamyka działającą
-- [ ] Sprawdzenie fizyczną myszą przez użytkownika
+- [x] Sprawdzenie fizyczną myszą przez użytkownika
 
 ## 04 akcje-i-konfiguracja
 - [ ] Typy akcji: program, folder/plik, adres, skrót klawiszowy, komenda edycji, wklejenie tekstu, polecenie, akcja systemowa

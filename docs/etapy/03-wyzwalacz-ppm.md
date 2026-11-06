@@ -13,11 +13,11 @@ zostawia koło otwarte do wyboru lewym, Esc albo klik poza kołem zamyka. Akcje 
 - [x] Puszczenie w środku zostawia koło otwarte; lewy przycisk wybiera, Esc albo klik poza kołem zamyka
 - [x] Okno koła przepuszcza kliknięcia (`WS_EX_TRANSPARENT`, mysz obsługuje tylko hak): zamyka otwarte sprawy z etapu 02 (narożniki okna, puszczenie trafiające do okna pod spodem)
 - [ ] Okno administratora pod kursorem (UIPI, program bez uprawnień administratora): prawy przycisk przechodzi bez zmian
-- [ ] Strażnik haka: porównuje ostatnie wejście systemu (`GetLastInputInfo`) z ostatnim zdarzeniem haka i zakłada hak ponownie
+- [x] Strażnik haka: porównuje ostatnie wejście systemu (`GetLastInputInfo`) z ostatnim zdarzeniem haka i zakłada hak ponownie
 - [x] Progi 180 ms / 6 px w strukturze ustawień (`wheel-core`), na razie z argumentów `--hold-ms`, `--move-px` (zapis w konfiguracji: etap 04)
 - [x] Testy automatu stanów w `wheel-core`: kliknięcie, przytrzymanie, przeciąganie, ruch na samym progu, puszczenie w środku i poza kołem, Esc, zdarzenia własne i obce wstrzyknięte
 - [x] `cargo build --release`, `cargo test`, clippy `-D warnings` i `cargo fmt --check` czyste
-- [ ] Sprawdzenie ręczne na LAB przez użytkownika: kliknięcie, przeciąganie, przytrzymanie, środek, Esc
+- [x] Sprawdzenie ręczne na LAB przez użytkownika: kliknięcie, przeciąganie, przytrzymanie, środek, Esc
 - [x] `CHECKLISTA.md` i `README.md` zaktualizowane
 
 ## Plan
@@ -37,6 +37,7 @@ zostawia koło otwarte do wyboru lewym, Esc albo klik poza kołem zamyka. Akcje 
 - Wypisywanie wyboru z wymuszonym opróżnieniem bufora: przekierowane do pliku linie czekały do zamknięcia programu.
 - Strażnik zakłada hak ponownie także przy otwartym kole: przy martwym haku koła nie dałoby się zamknąć; ryzyko zbędnych ponowień przy dotyku/piórze tylko teoretyczne (ich zdarzenia też przechodzą przez hak myszy).
 - Menu kontekstowe nowego Notatnika (Windows 11) to okno `Microsoft.UI.Content.PopupWindowSiteBridge`, nie `#32768`: testy automatyczne sprawdzają obie klasy.
+- Ukryta flaga `--test-stall-hook` (jednorazowe zatrzymanie haka na 3 s), żeby sprawdzić strażnika: Windows odłącza hak, strażnik zakłada go ponownie ok. 0,1 s po zatrzymaniu (zaległy timer w tym samym wątku), potem wyzwalacz działa normalnie.
 - Ikona w zasobniku systemowym dopisana do etapu 08 (decyzja użytkownika); do tego czasu wyjście przez `wheel.exe --quit`.
 
 ## Podsumowanie

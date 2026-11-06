@@ -26,6 +26,8 @@ pub struct RunOptions {
     pub trigger: TriggerSettings,
     /// Hidden test flag: foreign injected input counts as physical.
     pub accept_injected: bool,
+    /// Hidden test flag: stall the mouse hook once so the watchdog has to reinstall it.
+    pub stall_hook_once: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,6 +53,7 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
     };
     let mut trigger = TriggerSettings::default();
     let mut accept_injected = false;
+    let mut stall_hook_once = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--version" => return Ok(Command::Version),
@@ -58,6 +61,7 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
             "--run" => run = true,
             "--quit" => quit = true,
             "--accept-injected" => accept_injected = true,
+            "--test-stall-hook" => stall_hook_once = true,
             "--hold-ms" => {
                 let n = number(&value(&mut args, &arg)?, &arg)?;
                 trigger.hold_ms = clamp_hold_ms(n.clamp(0, u32::MAX.into()) as u32);
@@ -95,6 +99,7 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
             wheel: opts,
             trigger,
             accept_injected,
+            stall_hook_once,
         })
     } else if quit {
         Command::Quit
@@ -224,6 +229,7 @@ mod tests {
             "--move-px",
             "10",
             "--accept-injected",
+            "--test-stall-hook",
         ]);
         assert_eq!(o.wheel.theme, Theme::Dark);
         assert_eq!(o.wheel.scale_pct, 80);
@@ -231,6 +237,7 @@ mod tests {
         assert_eq!(o.trigger.hold_ms, 250);
         assert_eq!(o.trigger.move_px, 10);
         assert!(o.accept_injected);
+        assert!(o.stall_hook_once);
     }
 
     #[test]

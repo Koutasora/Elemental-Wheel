@@ -319,6 +319,7 @@ pub fn run_background(options: &RunOptions) -> Result<()> {
         scale_pct,
         sectors,
         accept_injected: options.accept_injected,
+        stall_hook_once: options.stall_hook_once,
     };
     let loop_result = hook::start(config, hwnd).and_then(|hook| {
         let result = message_loop();
