@@ -17,7 +17,7 @@ są w `%APPDATA%\Elemental-Wheel\config.json` z wersją schematu, zapisem atomow
 - [x] `--config <ścieżka>` (testy na osobnym pliku); argumenty nadpisują wartości z pliku
 - [x] Testy w `wheel-core`: wczytanie, walidacja, wartości domyślne, zapis i ponowne wczytanie, `.bak`, rozbiór skrótów klawiszowych, dopasowanie wykluczeń
 - [x] `cargo build --release`, `cargo test`, clippy `-D warnings` i `cargo fmt --check` czyste
-- [ ] Sprawdzenie ręczne na LAB przez użytkownika: komendy edycji w Notatniku i Eksploratorze, uruchomienie programu, wykluczenie, pełny ekran
+- [ ] Pełny test automatyczny na LAB (wejście wstrzykiwane, `--accept-injected`): komendy edycji w Notatniku i Eksploratorze, uruchomienie programu, wykluczenie, pełny ekran w prawdziwej przeglądarce, polskie nazwy na kole, stan wyciszenia
 - [x] `CHECKLISTA.md` i `README.md` zaktualizowane
 
 ## Plan
@@ -45,5 +45,6 @@ są w `%APPDATA%\Elemental-Wheel\config.json` z wersją schematu, zapisem atomow
 - Argumenty wiersza poleceń są nakładane na wczytaną konfigurację (`Option` w `Overrides`), także po odświeżeniu pliku.
 - Pełny ekran = okno główne pokrywa cały `rcMonitor` i nie jest klasą `Progman`/`WorkerW`/`Shell_TrayWnd`; maksymalizowane okno przy ukrywanym pasku zadań liczy się jako pełny ekran.
 
+- Sprawdzenie ręczne fizyczną myszą przeniesione do etapu 05; w 04 zastępuje je pełny test automatyczny na LAB (decyzja użytkownika): logika wyzwalacza dla wejścia fizycznego i wstrzykiwanego z `--accept-injected` jest ta sama, fizyczną mysz sprawdzono w etapie 03.
 ## Podsumowanie
 (wypełnia /etap-zamknij)
