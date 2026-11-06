@@ -45,4 +45,29 @@ anulowania, z nazwami kafelków, w przezroczystym oknie, które nie zabiera foku
 - Sprawdzenie na ekranie: 7 wariantów (jasny/ciemny/system, 60/100/140%, 12/6/4 sektory) na własnym oknie testowym z tłem z tekstem; fokus bez zmian, koło zamyka się samo z kodem 0.
 
 ## Podsumowanie
-(wypełnia /etap-zamknij)
+
+Decyzje:
+- Pierścień zewnętrzny 4–12 sektorów (domyślnie 12, prośba użytkownika), wewnętrzny stale 12 (stałe kierunki komend edycji).
+- Okno WS_EX_NOACTIVATE + DirectComposition z alfą; podświetlenie przez odpytywanie kursora co 16 ms, wybór po kierunku także poza kołem.
+- Kafelki nieprzezroczyste; nazwy dopasowywane (dwie linie, czcionka do 75%, przesunięcie ku krawędzi tylko gdy trzeba); „Właściwości” → „Właśc.”.
+- Ustawienia na razie w argumentach; opcje w konfiguracji w etapie 04, edytowalne nazwy wszystkich elementów w 04/06.
+- Wygląd przyjęty jako użytkowy; efekty i animacje w nowym etapie 09 wyglad-i-animacje (dodany przez Claude na prośbę użytkownika).
+
+Zrobione:
+- `wheel-core`: liczba sektorów jako parametr, `layout.rs` (promienie z DPI i skali, łuki sektorów), nazwy demo.
+- `wheel`: `--demo`, `--theme`, `--scale`, `--sectors`; okno bez aktywacji, render Direct2D/DirectComposition/DirectWrite, motyw z rejestru, WARP przy braku GPU; `fit.rs` (dopasowanie nazw).
+- 37 testów, clippy i fmt czyste, wheel.exe ok. 150 KB.
+- Sprawdzenie na ekranie: 7 wariantów, fokus bez zmian, samodzielne zamknięcie z kodem 0; zrzuty zaakceptowane.
+- README (sekcja Demo), CHECKLISTA, roadmapa z etapem 09.
+
+Otwarte sprawy:
+- Etap 03: przezroczyste narożniki kwadratowego okna przechwytują kliknięcia; kliknięcie poza oknem nie zamyka koła.
+- Etap 03: koło znika przy wciśnięciu przycisku, więc puszczenie trafia do okna pod spodem (ryzyko menu kontekstowego).
+- Etap 09: minimalna bezwzględna wielkość czcionki (przy 60% i 75% czcionka wewnętrzna ok. 5 px).
+- Brak obsługi WM_DPICHANGED; rozmiar liczony z DPI monitora pod kursorem.
+- Granice kątów testowane przez `sector_at`, nie bezpośrednio przez `hit_test`.
+
+Ryzyka:
+- Sprawdzenie tylko na jednym monitorze LAB (sesja RDP); różne DPI i wiele monitorów nieprzetestowane.
+- Czas otwarcia i zużycie pamięci niezmierzone (etap 07).
+- `Present` z synchronizacją pionową może opóźnić odświeżenie o jedną klatkę.
