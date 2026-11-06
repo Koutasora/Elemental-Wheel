@@ -60,4 +60,34 @@ Program nie robi (wersja 1):
 - Podglądy i makiety tylko lokalnie (plik HTML otwierany w przeglądarce), bez publikowania na claude.ai.
 
 ## Podsumowanie
-(wypełnia /etap-zamknij)
+
+Decyzje:
+- Rust (windows-rs) + Win32 + Direct2D/DirectComposition: 5–15 MB RAM w tle, otwarcie w jednej klatce, bez runtime i GC;
+  C++ odrzucony (bezpieczeństwo pamięci), .NET/WPF, Tauri i Electron (RAM, czas startu).
+- Edytor w egui jako osobny proces; awaria edytora nie dotyka koła, pamięć zajęta tylko gdy otwarty.
+- Konfiguracja JSON w `%APPDATA%\Elemental-Wheel\config.json`, wersja schematu, zapis atomowy + `.bak`.
+- 12 sektorów jak koło kwintowe, wybór po kierunku; wyzwalacz: przytrzymanie prawego 180 ms, ruch > 6 px = zwykłe przeciąganie.
+- Pierścień wewnętrzny domyślnie z komendami edycji (Cofnij lewo, Ponów prawo); okno koła bez aktywacji.
+- Widok nazwy/ikony i rozmiar 60–140% w opcjach (prośba użytkownika); tylko Windows 10/11; licencja MIT.
+- Makiety i podglądy tylko lokalnie, bez publikowania na claude.ai i bez zewnętrznych zasobów.
+
+Zrobione:
+- Koncept zatwierdzony na interaktywnej makiecie `docs/koncept.html` (układ, wyzwalacz, edytor kafelka, tabele
+  technologii, zasobów i ryzyk).
+- Narzędzia na LAB: rustup 1.29.3, rustc/cargo 1.99.1, VS Build Tools 17.14.44, Windows SDK 10.0.26100.0.
+- Cargo workspace: `wheel-core` (geometria: kąt, sektor, trafienie w środek/pierścienie), stuby `wheel` i `wheel-editor`
+  z `--version`; 5 testów geometrii przechodzi, clippy `-D warnings` i `cargo fmt --check` czyste, wheel.exe 121 KB.
+- `.gitignore`, `LICENSE` (MIT), `README.md`, `CHECKLISTA.md`; roadmapa z etapami 02–08.
+- Repo podpięte do GitHuba (Koutasora/Elemental-Wheel), historia etapu przeniesiona na `origin/main`.
+
+Otwarte sprawy:
+- 02 kolo-render: przezroczyste okno bez aktywacji, rysowanie pierścieni, widok nazw/ikon, rozmiar, motywy.
+- Promienie pierścieni w `wheel-core` będą zależne od rozmiaru i DPI; dziś są tylko w testach.
+- Brak testów `hit_test` na samych granicach kątów i promieni (granice sprawdzone przez `sector_at`).
+- Wartości RAM i czasu otwarcia to szacunki; pomiar w etapie 07.
+
+Ryzyka:
+- Windows po cichu odłącza hak myszy przy przekroczeniu limitu czasu; potrzebny strażnik haka (etap 03).
+- Przechwytywanie prawego przycisku może psuć gry, Blendera i okna administratora; wykluczenia i przepuszczanie (etap 03).
+- Komendy edycji przez SendInput nie dotrą do okien z wyższymi uprawnieniami (UIPI).
+- Ikony z .exe i DirectWrite przy wielu monitorach o różnym DPI wymagają testów na sprzęcie.
