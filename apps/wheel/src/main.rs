@@ -9,7 +9,13 @@ mod window;
 
 use std::process::ExitCode;
 
+use std::sync::LazyLock;
+
 use args::{Command, RunOptions};
+use wheel_core::Config;
+
+/// The configuration the wheel shows until the config file is loaded (step B).
+pub static CONFIG: LazyLock<Config> = LazyLock::new(Config::default);
 
 fn main() -> ExitCode {
     match args::parse(std::env::args().skip(1)) {

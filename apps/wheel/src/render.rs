@@ -5,7 +5,9 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::mem::ManuallyDrop;
 
-use wheel_core::{Hit, INNER_LABELS, INNER_SECTORS, Layout, outer_labels};
+use wheel_core::{Hit, INNER_SECTORS, Layout};
+
+use crate::CONFIG;
 
 use windows::Win32::Foundation::{E_FAIL, HMODULE, HWND};
 use windows::Win32::Graphics::Direct2D::Common::{
@@ -216,7 +218,7 @@ impl Renderer {
                 let text_ring = (inner_ring.0 + pad, inner_ring.1 - pad);
                 self.label(
                     Kind::Inner(i),
-                    INNER_LABELS[i as usize],
+                    CONFIG.inner[i as usize].name.as_str(),
                     &self.inner_font,
                     &|h, need| {
                         let (w, at) = fit::sector_slot(
@@ -232,7 +234,7 @@ impl Renderer {
                 )?;
             }
 
-            for (i, name) in (0..n).zip(outer_labels(n)) {
+            for (i, name) in (0..n).zip(CONFIG.outer_names(n)) {
                 let (a1, a2) = self.layout.outer_span(i);
                 let geometry = self.sector_path(
                     c,
@@ -280,8 +282,8 @@ impl Renderer {
             );
             let text = match hit {
                 Hit::Center => "Anuluj",
-                Hit::Inner(i) => INNER_LABELS[i as usize],
-                Hit::Outer(i) => outer_labels(n).get(i as usize).copied().unwrap_or(""),
+                Hit::Inner(i) => CONFIG.inner[i as usize].name.as_str(),
+                Hit::Outer(i) => CONFIG.outer_names(n).get(i as usize).copied().unwrap_or(""),
             };
             self.label(
                 Kind::Hub,

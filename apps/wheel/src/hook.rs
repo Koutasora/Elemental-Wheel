@@ -13,10 +13,7 @@ use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use wheel_core::{
-    Effect, Event, EventKind, Hit, INNER_LABELS, Origin, Point, Trigger, TriggerSettings, Verdict,
-    outer_labels,
-};
+use wheel_core::{Effect, Event, EventKind, Hit, Origin, Point, Trigger, TriggerSettings, Verdict};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::Security::{
     GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation, TOKEN_MANDATORY_LABEL,
@@ -504,12 +501,20 @@ fn print_line(text: &str) {
 fn selection_text(hit: Hit, sectors: u8) -> String {
     match hit {
         Hit::Outer(i) => format!(
-            "selected: outer {i} \"{}\"",
-            outer_labels(sectors).get(usize::from(i)).unwrap_or(&"?")
+            "selected: outer {} \"{}\"",
+            i + 1,
+            crate::CONFIG
+                .outer_names(sectors)
+                .get(usize::from(i))
+                .unwrap_or(&"?")
         ),
         Hit::Inner(i) => format!(
-            "selected: inner {i} \"{}\"",
-            INNER_LABELS.get(usize::from(i)).unwrap_or(&"?")
+            "selected: inner {} \"{}\"",
+            i + 1,
+            crate::CONFIG
+                .inner_names()
+                .get(usize::from(i))
+                .unwrap_or(&"?")
         ),
         Hit::Center => "selected: center".to_string(),
     }
@@ -636,11 +641,11 @@ mod tests {
     fn selection_lines() {
         assert_eq!(
             selection_text(Hit::Outer(3), 12),
-            "selected: outer 3 \"Zrzut ekranu\""
+            "selected: outer 4 \"Zrzut ekranu\""
         );
         assert_eq!(
             selection_text(Hit::Inner(9), 12),
-            "selected: inner 9 \"Cofnij\""
+            "selected: inner 10 \"Cofnij\""
         );
         assert_eq!(selection_text(Hit::Center, 12), "selected: center");
     }
