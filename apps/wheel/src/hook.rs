@@ -177,12 +177,14 @@ impl HookState {
         let origin = self.origin(info.dwExtraInfo, info.flags & LLMHF_INJECTED != 0);
         if origin == Origin::Physical {
             match kind {
-                EventKind::RightDown { .. }
-                    if !self.trigger.is_wheel_open() && self.is_elevated_target(info.pt) =>
-                {
-                    self.passthrough_right = true;
-                    self.trigger.reset();
-                    return false;
+                // Every press while the wheel is closed decides afresh, so a release lost after
+                // an elevated press (UAC, secure desktop) cannot leave the flag set.
+                EventKind::RightDown { .. } if !self.trigger.is_wheel_open() => {
+                    self.passthrough_right = self.is_elevated_target(info.pt);
+                    if self.passthrough_right {
+                        self.trigger.reset();
+                        return false;
+                    }
                 }
                 EventKind::RightUp { .. } if self.passthrough_right => {
                     self.passthrough_right = false;

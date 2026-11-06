@@ -329,11 +329,13 @@ impl Trigger {
                 })
             }
             EventKind::HoldElapsed { time } => {
-                if time.wrapping_sub(down_time) >= self.settings.hold_ms {
+                let elapsed = time.wrapping_sub(down_time);
+                if elapsed >= self.settings.hold_ms {
                     self.state = State::Open { center: down_pos };
                     Step::pass().with(Effect::OpenWheel { center: down_pos })
                 } else {
-                    Step::pass()
+                    // Too early (coarse timer or a timer from an earlier press): wait the rest.
+                    Step::pass().with(Effect::StartHoldTimer(self.settings.hold_ms - elapsed))
                 }
             }
             _ => Step::pass(),
@@ -573,15 +575,17 @@ mod tests {
     }
 
     #[test]
-    fn stale_or_early_hold_elapsed_is_ignored() {
+    fn stale_or_early_hold_elapsed_restarts_the_timer() {
         let mut t = trigger();
         right_down(&mut t, 1000);
-        assert_eq!(hold_elapsed(&mut t, 1179), Step::pass());
+        let s = hold_elapsed(&mut t, 1179);
+        assert_eq!(s, Step::pass().with(Effect::StartHoldTimer(1)));
         assert!(!t.is_wheel_open());
         // A timer from an earlier press fires during a newer one.
         right_up(&mut t, P, 1100);
         right_down(&mut t, 1150);
-        assert_eq!(hold_elapsed(&mut t, 1180), Step::pass());
+        let s = hold_elapsed(&mut t, 1180);
+        assert_eq!(s, Step::pass().with(Effect::StartHoldTimer(150)));
         assert!(!t.is_wheel_open());
         let s = hold_elapsed(&mut t, 1330);
         assert_eq!(s.effects, vec![open_wheel()]);
@@ -593,7 +597,8 @@ mod tests {
         let start = u32::MAX - 50;
         right_down(&mut t, start);
         // 179 ms later is already past the wrap, and still too early.
-        assert_eq!(hold_elapsed(&mut t, start.wrapping_add(179)), Step::pass());
+        let s = hold_elapsed(&mut t, start.wrapping_add(179));
+        assert_eq!(s, Step::pass().with(Effect::StartHoldTimer(1)));
         let s = hold_elapsed(&mut t, start.wrapping_add(180));
         assert_eq!(s.effects, vec![open_wheel()]);
     }
@@ -808,7 +813,8 @@ mod tests {
         let s = right_down(&mut t, 0);
         assert_eq!(s.effects, vec![Effect::StartHoldTimer(300)]);
         assert_eq!(mv(&mut t, pt(10, 0), 1), Step::pass());
-        assert_eq!(hold_elapsed(&mut t, 299), Step::pass());
-        assert_eq!(hold_elapsed(&mut t, 300).effects.len(), 1);
+        let s = hold_elapsed(&mut t, 299);
+        assert_eq!(s, Step::pass().with(Effect::StartHoldTimer(1)));
+        assert_eq!(hold_elapsed(&mut t, 300).effects, vec![open_wheel()]);
     }
 }

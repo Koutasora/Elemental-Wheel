@@ -38,6 +38,7 @@ zostawia koło otwarte do wyboru lewym, Esc albo klik poza kołem zamyka. Akcje 
 - Strażnik zakłada hak ponownie także przy otwartym kole: przy martwym haku koła nie dałoby się zamknąć; ryzyko zbędnych ponowień przy dotyku/piórze tylko teoretyczne (ich zdarzenia też przechodzą przez hak myszy).
 - Menu kontekstowe nowego Notatnika (Windows 11) to okno `Microsoft.UI.Content.PopupWindowSiteBridge`, nie `#32768`: testy automatyczne sprawdzają obie klasy.
 - Ukryta flaga `--test-stall-hook` (jednorazowe zatrzymanie haka na 3 s), żeby sprawdzić strażnika: Windows odłącza hak, strażnik zakłada go ponownie ok. 0,1 s po zatrzymaniu (zaległy timer w tym samym wątku), potem wyzwalacz działa normalnie.
+- Po przeglądzie managera: każde wciśnięcie prawego przy zamkniętym kole na nowo ustala przepuszczanie dla okna administratora (zgubione puszczenie po UAC nie blokuje wyzwalacza); za wczesny sygnał timera przytrzymania uruchamia timer na pozostały czas zamiast go gubić.
 - Ikona w zasobniku systemowym dopisana do etapu 08 (decyzja użytkownika); do tego czasu wyjście przez `wheel.exe --quit`.
 
 ## Podsumowanie

@@ -35,7 +35,7 @@ target\release\wheel.exe --quit
 
 - Hold the right button for 180 ms without moving: the wheel opens under the cursor; release selects the sector in that direction.
 - Short click and drag with the right button (moved more than 6 px before 180 ms) reach programs unchanged.
-- Release in the centre keeps the wheel open: left click selects, left click outside or Esc closes. Esc while holding cancels.
+- Release in the centre keeps the wheel open: left click selects; left click in the centre or outside, right click or Esc closes. Esc while holding cancels.
 - Windows of programs run as administrator get the right button unchanged.
 - The selection is printed (`selected: outer 3 "Name"`, `cancelled`). One instance at a time; `--quit` stops it.
 - `--hold-ms`, `--move-px` - hold time and movement threshold (defaults 180 and 6).
