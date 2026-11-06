@@ -21,7 +21,7 @@ zostawia koło otwarte do wyboru lewym, Esc albo klik poza kołem zamyka. Akcje 
 - [ ] `CHECKLISTA.md` i `README.md` zaktualizowane
 
 ## Plan
-- [ ] `crates/wheel-core/src/trigger.rs`: automat stanów bez Win32 (wejście: zdarzenie myszy + czas; wyjście: przepuść / połknij / odtwórz kliknięcie / otwórz koło / wybierz / anuluj), `TriggerSettings` (próg czasu i ruchu), testy
+- [x] `crates/wheel-core/src/trigger.rs`: automat stanów bez Win32 (wejście: zdarzenie myszy + czas; wyjście: przepuść / połknij / odtwórz kliknięcie / otwórz koło / wybierz / anuluj), `TriggerSettings` (próg czasu i ruchu), testy
 - [ ] `apps/wheel/src/hook.rs`: hak `WH_MOUSE_LL` + klawiatury (Esc tylko przy otwartym kole); w haku tylko krok automatu i komunikat do wątku okna; własne zdarzenia po `dwExtraInfo`, obce wstrzyknięte przepuszczane; odtwarzanie przez SendInput; wykrycie okna administratora pod kursorem
 - [ ] `apps/wheel/src/window.rs`: `WS_EX_TRANSPARENT`, otwieranie i zamykanie na komunikat z haka (bez limitu 10 s w `--run`), tryb klikania po puszczeniu w środku
 - [ ] `apps/wheel/src/watchdog.rs`: strażnik haka (timer co kilka sekund)
@@ -31,6 +31,9 @@ zostawia koło otwarte do wyboru lewym, Esc albo klik poza kołem zamyka. Akcje 
 
 ## Decyzje
 - Lista wykluczonych programów i wyłączenie w pełnym ekranie w etapie 04 (wymagają pliku konfiguracji); w 03 automatycznie przepuszczane tylko okna administratora, bo bez tego prawy przycisk przestałby w nich działać.
+- Układ koła podawany automatowi przez `set_layout` przy otwarciu (automat bez Win32, DPI liczy program); zdarzenia wstrzyknięte (własne i obce) zawsze przepuszczane bez zmiany stanu.
+- Hak w osobnym wątku, okno i rysowanie w głównym: rysowanie nie może opóźniać haka (limit czasu Windows); efekty (SendInput, otwarcie koła) wykonywane poza wywołaniem haka.
+- Odtworzenie przeciągania: ruch bezwzględny do punktu wciśnięcia, wciśnięcie, powrót do bieżącej pozycji, żeby przeciąganie zaczynało się od elementu pod punktem wciśnięcia.
 - Ikona w zasobniku systemowym dopisana do etapu 08 (decyzja użytkownika); do tego czasu wyjście przez `wheel.exe --quit`.
 
 ## Podsumowanie
