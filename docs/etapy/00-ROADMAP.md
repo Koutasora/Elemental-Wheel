@@ -12,3 +12,4 @@ Statusy: PLANOWANY, W TOKU, ZAMKNIĘTY. W danej chwili najwyżej jeden etap ma s
 | 06 | edytor | PLANOWANY | |
 | 07 | stabilnosc-i-pomiary | PLANOWANY | |
 | 08 | instalator-i-wydanie | PLANOWANY | |
+| 09 | wyglad-i-animacje | PLANOWANY | |

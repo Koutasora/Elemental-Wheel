@@ -2,7 +2,7 @@
 
 Action wheel opened by holding the right mouse button, laid out like the circle of fifths (Windows 10/11).
 
-Status: stage 01, project skeleton only.
+Status: stage 02, the wheel is drawn by a demo command; the right-button trigger and actions come later.
 
 ## Build
 
