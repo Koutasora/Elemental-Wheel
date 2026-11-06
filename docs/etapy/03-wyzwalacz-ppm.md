@@ -12,7 +12,7 @@ zostawia koło otwarte do wyboru lewym, Esc albo klik poza kołem zamyka. Akcje 
 - [x] Ruch > 6 px przed 180 ms przekazuje przeciąganie dalej (przeciąganie prawym w Eksploratorze daje menu „Kopiuj/Przenieś tutaj”)
 - [x] Puszczenie w środku zostawia koło otwarte; lewy przycisk wybiera, Esc albo klik poza kołem zamyka
 - [x] Okno koła przepuszcza kliknięcia (`WS_EX_TRANSPARENT`, mysz obsługuje tylko hak): zamyka otwarte sprawy z etapu 02 (narożniki okna, puszczenie trafiające do okna pod spodem)
-- [ ] Okno administratora pod kursorem (UIPI, program bez uprawnień administratora): prawy przycisk przechodzi bez zmian
+- [x] Okno administratora pod kursorem (UIPI, program bez uprawnień administratora): prawy przycisk przechodzi bez zmian
 - [x] Strażnik haka: porównuje ostatnie wejście systemu (`GetLastInputInfo`) z ostatnim zdarzeniem haka i zakłada hak ponownie
 - [x] Progi 180 ms / 6 px w strukturze ustawień (`wheel-core`), na razie z argumentów `--hold-ms`, `--move-px` (zapis w konfiguracji: etap 04)
 - [x] Testy automatu stanów w `wheel-core`: kliknięcie, przytrzymanie, przeciąganie, ruch na samym progu, puszczenie w środku i poza kołem, Esc, zdarzenia własne i obce wstrzyknięte
