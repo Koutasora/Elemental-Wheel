@@ -93,7 +93,7 @@ impl Settings {
         &self.path
     }
 
-    /// Reloads the file if its modification time changed. A file that vanished is not
+    /// Reloads the file if its modification time changed. A file that vanished is never
     /// recreated: the current configuration stays.
     pub fn refresh(&mut self) -> Option<Arc<Config>> {
         let now = modified(&self.path)?;
@@ -101,7 +101,7 @@ impl Settings {
             return None;
         }
         self.modified = Some(now);
-        let loaded = config::load(&self.path);
+        let loaded = config::load_existing(&self.path)?;
         report(&self.path, &loaded);
         let mut config = loaded.config;
         apply(&mut config, &self.overrides);

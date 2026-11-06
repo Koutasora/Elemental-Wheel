@@ -36,13 +36,14 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_ESCAPE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, GA_ROOT, GetAncestor, GetClassNameW, GetMessageW, GetSystemMetrics,
-    GetWindowRect, GetWindowThreadProcessId, HC_ACTION, HHOOK, KBDLLHOOKSTRUCT, KillTimer,
-    LLKHF_INJECTED, LLMHF_INJECTED, MSG, MSLLHOOKSTRUCT, PM_NOREMOVE, PeekMessageW, PostMessageW,
-    PostThreadMessageW, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
-    SM_YVIRTUALSCREEN, SetTimer, SetWindowsHookExW, UnhookWindowsHookEx, WH_KEYBOARD_LL,
-    WH_MOUSE_LL, WM_APP, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_QUIT,
-    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_USER, WindowFromPoint,
+    CallNextHookEx, GA_ROOT, GWL_STYLE, GetAncestor, GetClassNameW, GetMessageW, GetSystemMetrics,
+    GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, HC_ACTION, HHOOK, IsZoomed,
+    KBDLLHOOKSTRUCT, KillTimer, LLKHF_INJECTED, LLMHF_INJECTED, MSG, MSLLHOOKSTRUCT, PM_NOREMOVE,
+    PeekMessageW, PostMessageW, PostThreadMessageW, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
+    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SetTimer, SetWindowsHookExW, UnhookWindowsHookEx,
+    WH_KEYBOARD_LL, WH_MOUSE_LL, WM_APP, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEMOVE, WM_QUIT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER,
+    WM_USER, WS_CAPTION, WindowFromPoint,
 };
 use windows::core::{Error, HRESULT, PWSTR, Result};
 
@@ -144,6 +145,8 @@ struct HookState {
     mouse_hook: Option<HHOOK>,
     keyboard_hook: Option<HHOOK>,
     effects: VecDeque<Effect>,
+    /// Trace lines (`pass: ...`) printed by the effect loop, not inside the hook callback.
+    notes: VecDeque<String>,
     /// Tick of the last event either hook saw.
     last_event: u32,
     hold_timer: usize,
@@ -252,6 +255,12 @@ impl HookState {
         }
     }
 
+    fn note(&mut self, text: String) {
+        self.notes.push_back(text);
+        // SAFETY: plain call to this thread's own queue.
+        let _ = unsafe { PostThreadMessageW(self.thread_id, WM_EFFECTS, WPARAM(0), LPARAM(0)) };
+    }
+
     /// Whether the right button must reach the window `root` unchanged: it belongs to a process
     /// with a higher integrity level than this one (or one that cannot be inspected), so the
     /// hook could not replay input into it; or the program is on the exclusion list; or the
@@ -269,11 +278,11 @@ impl HookState {
         };
         if config.options.is_excluded(&info.exe) {
             let name = info.exe.rsplit('\\').next().unwrap_or(&info.exe);
-            eprintln!("pass: excluded {name}");
+            self.note(format!("pass: excluded {name}"));
             return true;
         }
         if config.options.disable_in_fullscreen && is_fullscreen(root) {
-            eprintln!("pass: fullscreen");
+            self.note("pass: fullscreen".to_string());
             return true;
         }
         false
@@ -422,6 +431,7 @@ fn thread_main(
         mouse_hook: None,
         keyboard_hook: None,
         effects: VecDeque::new(),
+        notes: VecDeque::new(),
         last_event: 0,
         hold_timer: 0,
         watchdog_timer: 0,
@@ -476,6 +486,9 @@ fn on_timer(id: usize) {
 fn run_effects() {
     while let Some(effect) = with_state(|s| s.effects.pop_front()).flatten() {
         run_effect(effect);
+    }
+    while let Some(note) = with_state(|s| s.notes.pop_front()).flatten() {
+        eprintln!("{note}");
     }
 }
 
@@ -683,10 +696,34 @@ fn window_pid(hwnd: HWND) -> Option<u32> {
 /// (left, top, right, bottom)
 type Edges = (i32, i32, i32, i32);
 
+/// Classes of the desktop and the taskbars.
+pub fn is_shell_class(class: &str) -> bool {
+    matches!(
+        class,
+        "Progman" | "WorkerW" | "Shell_TrayWnd" | "Shell_SecondaryTrayWnd"
+    )
+}
+
+/// Class name of a window (empty if unreadable).
+pub fn window_class(hwnd: HWND) -> String {
+    let mut class = [0u16; 64];
+    // SAFETY: the buffer is valid.
+    let len = unsafe { GetClassNameW(hwnd, &mut class) }.max(0) as usize;
+    String::from_utf16_lossy(&class[..len])
+}
+
 /// Whether a window with these edges and class counts as full screen on a monitor with these
-/// edges: it covers the monitor (taskbar included) and is not the desktop or the taskbar.
-fn covers_monitor(window: Edges, monitor: Edges, class: &str) -> bool {
-    !matches!(class, "Progman" | "WorkerW" | "Shell_TrayWnd")
+/// edges: it covers the monitor (taskbar included), is not the desktop or a taskbar, and is not
+/// a maximized window with a title bar (that is only maximized, even if the taskbar hides).
+fn covers_monitor(
+    window: Edges,
+    monitor: Edges,
+    class: &str,
+    maximized: bool,
+    framed: bool,
+) -> bool {
+    !is_shell_class(class)
+        && !(maximized && framed)
         && window.0 <= monitor.0
         && window.1 <= monitor.1
         && window.2 >= monitor.2
@@ -699,23 +736,27 @@ fn is_fullscreen(root: HWND) -> bool {
         cbSize: size_of::<MONITORINFO>() as u32,
         ..Default::default()
     };
-    let mut class = [0u16; 64];
     // SAFETY: the out buffers are valid; the monitor handle comes from MonitorFromWindow.
-    let (class_len, ok) = unsafe {
+    let (ok, maximized, style) = unsafe {
         let ok = GetWindowRect(root, &mut rect).is_ok()
             && GetMonitorInfoW(
                 MonitorFromWindow(root, MONITOR_DEFAULTTONEAREST),
                 &mut monitor,
             )
             .as_bool();
-        (GetClassNameW(root, &mut class).max(0) as usize, ok)
+        (
+            ok,
+            IsZoomed(root).as_bool(),
+            GetWindowLongPtrW(root, GWL_STYLE) as u32,
+        )
     };
-    let class = String::from_utf16_lossy(&class[..class_len]);
     let m = monitor.rcMonitor;
     ok && covers_monitor(
         (rect.left, rect.top, rect.right, rect.bottom),
         (m.left, m.top, m.right, m.bottom),
-        &class,
+        &window_class(root),
+        maximized,
+        style & WS_CAPTION.0 == WS_CAPTION.0,
     )
 }
 
@@ -798,20 +839,58 @@ mod tests {
     #[test]
     fn fullscreen_detection() {
         // Exactly the monitor, and larger than it (borderless games overshoot).
-        assert!(covers_monitor(MONITOR, MONITOR, "UnityWndClass"));
+        assert!(covers_monitor(
+            MONITOR,
+            MONITOR,
+            "UnityWndClass",
+            false,
+            false
+        ));
         assert!(covers_monitor(
             (-8, -8, 1928, 1088),
             MONITOR,
-            "Chrome_WidgetWin_1"
+            "Chrome_WidgetWin_1",
+            false,
+            false
         ));
+        // A maximized window with a title bar is not full screen, even when the taskbar hides
+        // and the window covers the whole monitor; a frameless one (F11, games) is.
+        assert!(!covers_monitor(MONITOR, MONITOR, "Notepad", true, true));
+        assert!(covers_monitor(MONITOR, MONITOR, "chrome", true, false));
         // Maximized: the taskbar stays visible.
-        assert!(!covers_monitor((-8, -8, 1928, 1040), MONITOR, "Notepad"));
+        assert!(!covers_monitor(
+            (-8, -8, 1928, 1040),
+            MONITOR,
+            "Notepad",
+            true,
+            true
+        ));
         // Plain window, and a window on another monitor.
-        assert!(!covers_monitor((100, 100, 800, 600), MONITOR, "Notepad"));
-        assert!(!covers_monitor((1920, 0, 3840, 1080), MONITOR, "Notepad"));
+        assert!(!covers_monitor(
+            (100, 100, 800, 600),
+            MONITOR,
+            "Notepad",
+            false,
+            true
+        ));
+        assert!(!covers_monitor(
+            (1920, 0, 3840, 1080),
+            MONITOR,
+            "Notepad",
+            false,
+            true
+        ));
         // The desktop and the taskbar cover the monitor but are not full screen windows.
-        for class in ["Progman", "WorkerW", "Shell_TrayWnd"] {
-            assert!(!covers_monitor(MONITOR, MONITOR, class), "{class}");
+        for class in [
+            "Progman",
+            "WorkerW",
+            "Shell_TrayWnd",
+            "Shell_SecondaryTrayWnd",
+        ] {
+            assert!(
+                !covers_monitor(MONITOR, MONITOR, class, false, false),
+                "{class}"
+            );
         }
     }
 }

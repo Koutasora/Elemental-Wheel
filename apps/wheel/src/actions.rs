@@ -17,7 +17,9 @@ use windows::Win32::System::DataExchange::{
     SetClipboardData,
 };
 use windows::Win32::System::Environment::ExpandEnvironmentStringsW;
-use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock};
+use windows::Win32::System::Memory::{
+    GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock,
+};
 use windows::Win32::System::Ole::CF_UNICODETEXT;
 use windows::Win32::System::Shutdown::LockWorkStation;
 use windows::Win32::System::Threading::{
@@ -35,7 +37,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{PCWSTR, PWSTR, w};
 
-use crate::hook::MARKER;
+use crate::hook::{MARKER, is_shell_class, window_class};
 
 /// How long the clipboard keeps the pasted text before the previous text comes back.
 const CLIPBOARD_RESTORE_MS: u64 = 500;
@@ -49,7 +51,7 @@ pub fn run(action: &Action, target: isize, wheel: isize) {
     let action = action.clone();
     let spawned = thread::Builder::new().name("action".into()).spawn(move || {
         wait_hidden(HWND(wheel as *mut _));
-        if let Err(e) = execute(&action, HWND(target as *mut _)) {
+        if let Err(e) = execute(&action, HWND(target as *mut _), HWND(wheel as *mut _)) {
             eprintln!("action failed: {e}");
         }
     });
@@ -68,7 +70,7 @@ fn wait_hidden(wheel: HWND) {
     }
 }
 
-fn execute(action: &Action, target: HWND) -> Result<(), String> {
+fn execute(action: &Action, target: HWND, wheel: HWND) -> Result<(), String> {
     match action {
         Action::None => Ok(()),
         Action::Program {
@@ -92,7 +94,7 @@ fn execute(action: &Action, target: HWND) -> Result<(), String> {
         }
         Action::PasteText { text } => {
             focus(target);
-            paste_text(text)
+            paste_text(text, wheel)
         }
         Action::Command { line } => command(line),
         Action::System { action } => system(*action, target),
@@ -107,10 +109,16 @@ fn system(action: SystemAction, target: HWND) -> Result<(), String> {
             unsafe { LockWorkStation() }.map_err(|e| format!("lock: {e}"))
         }
         SystemAction::CloseWindow => {
+            if is_shell_window(target) {
+                return Ok(());
+            }
             focus(target);
             post(target, WM_CLOSE, 0)
         }
         SystemAction::MinimizeWindow => {
+            if is_shell_window(target) {
+                return Ok(());
+            }
             focus(target);
             post(target, WM_SYSCOMMAND, SC_MINIMIZE as usize)
         }
@@ -120,6 +128,11 @@ fn system(action: SystemAction, target: HWND) -> Result<(), String> {
         SystemAction::VolumeDown => keys("VolumeDown"),
         SystemAction::Screenshot => keys("Win+Shift+S"),
     }
+}
+
+/// The desktop and the taskbars: closing or minimizing them would be wrong, so those do nothing.
+fn is_shell_window(target: HWND) -> bool {
+    !target.0.is_null() && is_shell_class(&window_class(target))
 }
 
 fn post(target: HWND, msg: u32, wparam: usize) -> Result<(), String> {
@@ -188,8 +201,18 @@ fn shell_execute(file: &str, args: &str, dir: Option<&str>) -> Result<(), String
     }
 }
 
+/// `%ComSpec%`, else the cmd.exe in the Windows System32 folder.
+fn cmd_exe() -> String {
+    match std::env::var("ComSpec") {
+        Ok(path) if !path.trim().is_empty() => path,
+        _ => expand(r"%SystemRoot%\System32\cmd.exe"),
+    }
+}
+
 fn command(line: &str) -> Result<(), String> {
-    let mut cmdline = wide(&format!("cmd.exe /c {line}"));
+    let exe = cmd_exe();
+    let exe_w = wide(&exe);
+    let mut cmdline = wide(&format!("\"{exe}\" /c {line}"));
     let startup = STARTUPINFOW {
         cb: size_of::<STARTUPINFOW>() as u32,
         ..Default::default()
@@ -198,7 +221,7 @@ fn command(line: &str) -> Result<(), String> {
     // SAFETY: `cmdline` is a writable NUL-terminated buffer; the handles in `info` are closed.
     unsafe {
         CreateProcessW(
-            PCWSTR::null(),
+            PCWSTR(exe_w.as_ptr()),
             Some(PWSTR(cmdline.as_mut_ptr())),
             None,
             None,
@@ -276,7 +299,8 @@ fn send(keys: &[Key]) -> Result<(), String> {
 }
 
 /// Brings `target` to the foreground if it is not there. Windows may refuse; a tap of Alt
-/// (marked as ours) lets the second try through.
+/// (marked as ours) lets the second try through. Risk: a lone Alt press can activate the menu
+/// bar of the foreground window; it is only sent when the first try failed.
 fn focus(target: HWND) {
     if target.0.is_null() {
         return;
@@ -300,10 +324,10 @@ fn focus(target: HWND) {
 struct Clipboard;
 
 impl Clipboard {
-    fn open() -> Result<Clipboard, String> {
+    fn open(owner: HWND) -> Result<Clipboard, String> {
         for _ in 0..10 {
             // SAFETY: plain call; the clipboard is closed by `Drop`.
-            if unsafe { OpenClipboard(None) }.is_ok() {
+            if unsafe { OpenClipboard(Some(owner)) }.is_ok() {
                 return Ok(Clipboard);
             }
             thread::sleep(Duration::from_millis(20));
@@ -321,8 +345,8 @@ impl Drop for Clipboard {
 
 /// The clipboard text (UTF-16, without the terminator), if there is any.
 fn read_text(_open: &Clipboard) -> Option<Vec<u16>> {
-    // SAFETY: the clipboard is open; the global memory is locked while it is read and the
-    // text ends at its NUL terminator.
+    // SAFETY: the clipboard is open; the global memory is locked while it is read, and the text
+    // ends at its NUL terminator or at the end of the block, whichever comes first.
     unsafe {
         IsClipboardFormatAvailable(u32::from(CF_UNICODETEXT.0)).ok()?;
         let handle = GetClipboardData(u32::from(CF_UNICODETEXT.0)).ok()?;
@@ -331,8 +355,9 @@ fn read_text(_open: &Clipboard) -> Option<Vec<u16>> {
         if ptr.is_null() {
             return None;
         }
+        let max = GlobalSize(global) / 2;
         let mut len = 0;
-        while *ptr.add(len) != 0 {
+        while len < max && *ptr.add(len) != 0 {
             len += 1;
         }
         let text = std::slice::from_raw_parts(ptr, len).to_vec();
@@ -345,7 +370,6 @@ fn write_text(_open: &Clipboard, text: &[u16]) -> Result<(), String> {
     // SAFETY: the clipboard is open; the block is filled while locked and handed to the
     // clipboard, which then owns it (freed here only if that fails).
     unsafe {
-        EmptyClipboard().map_err(|e| format!("clipboard: {e}"))?;
         let global = GlobalAlloc(GMEM_MOVEABLE, (text.len() + 1) * 2)
             .map_err(|e| format!("clipboard: {e}"))?;
         let ptr = GlobalLock(global).cast::<u16>();
@@ -356,6 +380,11 @@ fn write_text(_open: &Clipboard, text: &[u16]) -> Result<(), String> {
         std::ptr::copy_nonoverlapping(text.as_ptr(), ptr, text.len());
         *ptr.add(text.len()) = 0;
         let _ = GlobalUnlock(global);
+        // Only now is the old content dropped, so a failed allocation loses nothing.
+        if let Err(e) = EmptyClipboard() {
+            let _ = GlobalFree(Some(global));
+            return Err(format!("clipboard: {e}"));
+        }
         if let Err(e) = SetClipboardData(u32::from(CF_UNICODETEXT.0), Some(HANDLE(global.0))) {
             let _ = GlobalFree(Some(global));
             return Err(format!("clipboard: {e}"));
@@ -366,10 +395,10 @@ fn write_text(_open: &Clipboard, text: &[u16]) -> Result<(), String> {
 
 /// Puts `text` on the clipboard, pastes it with Ctrl+V and brings the previous clipboard text
 /// back (only if the clipboard still holds our text; non-text content is not restored).
-fn paste_text(text: &str) -> Result<(), String> {
+fn paste_text(text: &str, owner: HWND) -> Result<(), String> {
     let wide_text: Vec<u16> = text.encode_utf16().collect();
     let previous = {
-        let clipboard = Clipboard::open()?;
+        let clipboard = Clipboard::open(owner)?;
         let previous = read_text(&clipboard);
         write_text(&clipboard, &wide_text)?;
         previous
@@ -377,7 +406,7 @@ fn paste_text(text: &str) -> Result<(), String> {
     send_keys(&parse_shortcut("Ctrl+V")?)?;
     thread::sleep(Duration::from_millis(CLIPBOARD_RESTORE_MS));
     if let Some(previous) = previous {
-        let clipboard = Clipboard::open()?;
+        let clipboard = Clipboard::open(owner)?;
         if read_text(&clipboard).as_deref() == Some(&wide_text[..]) {
             write_text(&clipboard, &previous)?;
         }
@@ -423,6 +452,12 @@ mod tests {
         assert_eq!(down("Delete").dwExtraInfo, MARKER);
         assert_eq!(down("Delete").dwFlags, KEYEVENTF_EXTENDEDKEY);
         assert_eq!(down("A").dwFlags.0, 0);
+    }
+
+    #[test]
+    fn cmd_is_a_full_path() {
+        let exe = cmd_exe().to_lowercase();
+        assert!(exe.ends_with("cmd.exe") && exe.contains('\\'), "{exe}");
     }
 
     #[test]

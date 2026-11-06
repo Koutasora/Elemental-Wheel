@@ -46,7 +46,7 @@ target\release\wheel.exe --quit
 
 ## Configuration
 
-`%APPDATA%\Elemental-Wheel\config.json`, created with the defaults on first start. Saved atomically (temporary file, then replace) with the previous version kept as `config.json.bak`.
+`%APPDATA%\Elemental-Wheel\config.json`, created with the defaults on first start. UTF-8 (a UTF-16 file with BOM, as PowerShell 5.1 writes it, is read too). Every valid file that is loaded is copied to `config.json.bak` (the last good version); saving is atomic (temporary file, then replace).
 
 ```json
 {
@@ -77,7 +77,7 @@ target\release\wheel.exe --quit
 - `system` actions: `lock`, `close_window`, `minimize_window`, `show_desktop`, `volume_mute`, `volume_up`, `volume_down`, `screenshot`.
 - `program` and `open` paths and arguments expand `%VARIABLES%`.
 - `excluded` lists program file names (case does not matter).
-- Numbers outside the allowed range are clamped with a warning on stderr. An invalid file (bad JSON, unknown type, invalid shortcut, too many items) is not used and never overwritten: the program falls back to `config.json.bak`, then to the defaults, and says why on stderr.
+- Numbers outside the allowed range are clamped with a warning on stderr. An invalid file (bad JSON or encoding, unknown type, invalid shortcut, too many items) is not used and never overwritten: the program falls back to `config.json.bak`, then to the defaults, and says why on stderr.
 - The config folder is watched: a changed file is reloaded within a moment, no restart needed. Exclusions, actions, names and trigger thresholds apply from the next press, wheel size and sector count from the next opening. If the folder is missing at start, the file is checked when the wheel opens instead.
 
 ## Layout

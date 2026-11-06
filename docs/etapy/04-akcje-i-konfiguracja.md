@@ -43,7 +43,13 @@ są w `%APPDATA%\Elemental-Wheel\config.json` z wersją schematu, zapisem atomow
 - Akcje edycji, skrótu i wklejania wyciągają okno spod kursora na pierwszy plan (`SetForegroundWindow`), bo bez tego wejście trafiłoby do innego okna; „fokus bez zmian” dotyczy samego koła, które nie zabiera fokusu.
 - Konfiguracja współdzielona z hakiem przez `Mutex<Option<Arc<Config>>>` trzymany tylko na czas klonowania `Arc`; hak nie dotyka plików.
 - Argumenty wiersza poleceń są nakładane na wczytaną konfigurację (`Option` w `Overrides`), także po odświeżeniu pliku.
-- Pełny ekran = okno główne pokrywa cały `rcMonitor` i nie jest klasą `Progman`/`WorkerW`/`Shell_TrayWnd`; maksymalizowane okno przy ukrywanym pasku zadań liczy się jako pełny ekran.
+- Pełny ekran = okno główne pokrywa cały `rcMonitor` i nie jest pulpitem ani paskiem zadań (`Progman`/`WorkerW`/`Shell_TrayWnd`/`Shell_SecondaryTrayWnd`); zmaksymalizowane okno z paskiem tytułu (`IsZoomed` + `WS_CAPTION`) nie jest pełnym ekranem, także przy ukrywanym pasku zadań, a F11 w przeglądarce i gry (bez ramki) tak.
+- `.bak` powstaje przy każdym udanym wczytaniu pliku (kopia ostatniej dobrej wersji, przez plik tymczasowy i zamianę); plik, który nie przejdzie walidacji, zostawia `.bak` bez zmian, a plik użytkownika nigdy nie jest przepisywany.
+- Odświeżenie nie tworzy pliku (`load_existing`), a plik domyślny przy starcie powstaje przez `File::create_new`, więc nie zastąpi pliku, który pojawił się w międzyczasie.
+- Plik konfiguracji: UTF-8 (BOM dozwolony) albo UTF-16 LE z BOM (tak zapisuje PowerShell 5.1); inne kodowanie to błąd `config file must be UTF-8`.
+- `close_window` i `minimize_window` nic nie robią na pulpicie i pasku zadań.
+- Sektor „Głośność” z makiety to akcja `volume_mute` o nazwie „Wycisz”; sektor „Terminal” uruchamia `powershell.exe` (jest na każdym Windows 10 i 11, w Windows 11 otwiera się w Terminalu) zamiast `wt.exe`.
+- Schowek przy `paste_text`: okno koła jest właścicielem (`OpenClipboard`), tekst jest przygotowany przed `EmptyClipboard`, odczyt ograniczony do `GlobalSize`; `cmd.exe` uruchamiany z `%ComSpec%` (lub `System32`); ślad `pass: ...` wypisuje pętla efektów, nie wywołanie haka.
 - Sprawdzenie ręczne fizyczną myszą przeniesione do etapu 05; w 04 zastępuje je pełny test automatyczny na LAB (decyzja użytkownika): logika wyzwalacza dla wejścia fizycznego i wstrzykiwanego z `--accept-injected` jest ta sama, fizyczną mysz sprawdzono w etapie 03.
 
 ## Podsumowanie

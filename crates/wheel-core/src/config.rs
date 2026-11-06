@@ -306,7 +306,7 @@ impl Default for Config {
         .map(|(name, command)| Item::edit(name, command))
         .collect();
         let outer = vec![
-            Item::program("Terminal", "wt.exe"),
+            Item::program("Terminal", "powershell.exe"),
             Item::url("Przeglądarka", "https://www.google.com"),
             Item::program("Pliki", "explorer.exe"),
             Item::system("Zrzut ekranu", SystemAction::Screenshot),
@@ -529,44 +529,93 @@ pub struct Loaded {
     pub error: Option<String>,
 }
 
-fn read_config(path: &Path) -> Result<(Config, Vec<String>), String> {
-    let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    Config::parse(&text).map_err(|e| format!("{}: {e}", path.display()))
+enum ReadError {
+    /// The file does not exist.
+    Missing,
+    Invalid(String),
 }
 
-/// Loads the configuration: the file, else its `.bak`, else the defaults. A missing file is
-/// created with the defaults. A broken file is never overwritten.
-pub fn load(path: &Path) -> Loaded {
-    if !path.exists() {
-        let config = Config::default();
-        return match save(path, &config) {
-            Ok(()) => Loaded {
-                config,
-                source: Source::Created,
-                warnings: Vec::new(),
-                error: None,
-            },
-            Err(e) => Loaded {
-                config,
-                source: Source::Defaults,
-                warnings: Vec::new(),
-                error: Some(format!("cannot create {}: {e}", path.display())),
-            },
-        };
+/// File text: UTF-8 (with or without BOM) or UTF-16 LE with BOM (what PowerShell 5.1 writes).
+fn decode(bytes: &[u8]) -> Result<String, String> {
+    if let Some(rest) = bytes.strip_prefix(&[0xFF, 0xFE]) {
+        if rest.len() % 2 != 0 {
+            return Err("config file is not valid UTF-16".to_string());
+        }
+        let units: Vec<u16> = rest
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_le_bytes(*c))
+            .collect();
+        return String::from_utf16(&units)
+            .map_err(|_| "config file is not valid UTF-16".to_string());
     }
+    let rest = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
+    String::from_utf8(rest.to_vec()).map_err(|_| "config file must be UTF-8".to_string())
+}
+
+/// The file as read, the configuration in it and its warnings.
+type ReadOk = (Vec<u8>, Config, Vec<String>);
+
+fn read_config(path: &Path) -> Result<ReadOk, ReadError> {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Err(ReadError::Missing),
+        Err(e) => return Err(ReadError::Invalid(format!("{}: {e}", path.display()))),
+    };
+    let invalid = |e: String| ReadError::Invalid(format!("{}: {e}", path.display()));
+    let text = decode(&bytes).map_err(invalid)?;
+    let (config, warnings) = Config::parse(&text).map_err(invalid)?;
+    Ok((bytes, config, warnings))
+}
+
+/// Writes `bytes` to `<path>.bak` through a temporary file, unless it already holds them.
+fn update_backup(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let bak = with_suffix(path, ".bak");
+    if fs::read(&bak).is_ok_and(|old| old == bytes) {
+        return Ok(());
+    }
+    let tmp = with_suffix(path, ".bak.tmp");
+    let mut file = File::create(&tmp)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    drop(file);
+    fs::rename(&tmp, bak)
+}
+
+/// Writes the defaults to `path` only if nothing is there yet (a file that appeared in the
+/// meantime is never replaced).
+fn create_default(path: &Path, config: &Config) -> io::Result<()> {
+    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+        fs::create_dir_all(dir)?;
+    }
+    let text = serde_json::to_string_pretty(config).map_err(io::Error::other)?;
+    let mut file = File::create_new(path)?;
+    file.write_all(text.as_bytes())?;
+    file.write_all(b"\n")?;
+    file.sync_all()
+}
+
+/// Like [`load`], but never creates the file: `None` if it does not exist. A valid file is
+/// copied to `<path>.bak` as the last good version; an invalid one leaves the backup alone.
+pub fn load_existing(path: &Path) -> Option<Loaded> {
     let error = match read_config(path) {
-        Ok((config, warnings)) => {
-            return Loaded {
+        Ok((bytes, config, mut warnings)) => {
+            if let Err(e) = update_backup(path, &bytes) {
+                warnings.push(format!("cannot update the backup: {e}"));
+            }
+            return Some(Loaded {
                 config,
                 source: Source::File,
                 warnings,
                 error: None,
-            };
+            });
         }
-        Err(e) => e,
+        Err(ReadError::Missing) => return None,
+        Err(ReadError::Invalid(e)) => e,
     };
-    match read_config(&with_suffix(path, ".bak")) {
-        Ok((config, warnings)) => Loaded {
+    Some(match read_config(&with_suffix(path, ".bak")) {
+        Ok((_, config, warnings)) => Loaded {
             config,
             source: Source::Backup,
             warnings,
@@ -577,6 +626,38 @@ pub fn load(path: &Path) -> Loaded {
             source: Source::Defaults,
             warnings: Vec::new(),
             error: Some(error),
+        },
+    })
+}
+
+/// Loads the configuration: the file, else its `.bak`, else the defaults. A missing file is
+/// created with the defaults. A broken file is never overwritten.
+pub fn load(path: &Path) -> Loaded {
+    if let Some(loaded) = load_existing(path) {
+        return loaded;
+    }
+    let config = Config::default();
+    match create_default(path, &config) {
+        Ok(()) => Loaded {
+            config,
+            source: Source::Created,
+            warnings: Vec::new(),
+            error: None,
+        },
+        // The file appeared after the check above: use it.
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+            load_existing(path).unwrap_or(Loaded {
+                config,
+                source: Source::Defaults,
+                warnings: Vec::new(),
+                error: Some(format!("cannot read {}", path.display())),
+            })
+        }
+        Err(e) => Loaded {
+            config,
+            source: Source::Defaults,
+            warnings: Vec::new(),
+            error: Some(format!("cannot create {}: {e}", path.display())),
         },
     }
 }
@@ -660,6 +741,70 @@ mod tests {
         assert_eq!(loaded.config, Config::default());
         assert!(path.exists());
         assert_eq!(load(&path).source, Source::File);
+    }
+
+    #[test]
+    fn good_file_becomes_the_backup_and_survives_a_bad_one() {
+        let path = dir("good_file_becomes_backup").join("config.json");
+        let good = br#"{"options":{"scale_pct":90}}"#;
+        fs::write(&path, good).unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.source, Source::File);
+        let bak = with_suffix(&path, ".bak");
+        assert_eq!(fs::read(&bak).unwrap(), good);
+        assert_eq!(fs::read(&path).unwrap(), good);
+
+        let bad = br#"{"outer":[{"action":{"type":"fly"}}]}"#;
+        fs::write(&path, bad).unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.source, Source::Backup);
+        assert_eq!(loaded.config.options.scale_pct, 90);
+        assert!(loaded.error.is_some());
+        assert_eq!(fs::read(&bak).unwrap(), good);
+        assert_eq!(fs::read(&path).unwrap(), bad);
+    }
+
+    #[test]
+    fn load_existing_never_creates_the_file() {
+        let path = dir("load_existing_missing").join("config.json");
+        assert!(load_existing(&path).is_none());
+        assert!(!path.exists());
+        assert!(!with_suffix(&path, ".bak").exists());
+    }
+
+    #[test]
+    fn default_file_never_replaces_an_existing_one() {
+        let path = dir("create_default_race").join("config.json");
+        fs::write(&path, b"mine").unwrap();
+        let e = create_default(&path, &Config::default()).unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&path).unwrap(), b"mine");
+    }
+
+    #[test]
+    fn utf8_and_utf16_files() {
+        let json = r#"{"outer":[{"name":"Menedżer zadań","action":{"type":"none"}}]}"#;
+        let d = dir("encodings");
+        let mut utf8_bom = vec![0xEF, 0xBB, 0xBF];
+        utf8_bom.extend_from_slice(json.as_bytes());
+        let mut utf16 = vec![0xFF, 0xFE];
+        utf16.extend(json.encode_utf16().flat_map(u16::to_le_bytes));
+        for (name, bytes) in [
+            ("plain", json.as_bytes().to_vec()),
+            ("bom", utf8_bom),
+            ("utf16", utf16),
+        ] {
+            let path = d.join(format!("{name}.json"));
+            fs::write(&path, bytes).unwrap();
+            let loaded = load(&path);
+            assert_eq!(loaded.source, Source::File, "{name}: {:?}", loaded.error);
+            assert_eq!(loaded.config.outer[0].name, "Menedżer zadań", "{name}");
+        }
+        let path = d.join("latin1.json");
+        fs::write(&path, b"{\"outer\":[{\"name\":\"Men\xe8d\"}]}").unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.source, Source::Defaults);
+        assert!(loaded.error.unwrap().contains("config file must be UTF-8"));
     }
 
     #[test]
