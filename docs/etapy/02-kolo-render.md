@@ -36,6 +36,9 @@ anulowania, z nazwami kafelków, w przezroczystym oknie, które nie zabiera foku
 - windows-rs 0.62.2 (przypięty) + windows-numerics 0.3.1 (typy wektorów wymagane przez Direct2D w tej wersji, nie są reeksportowane).
 - Podświetlenie przez odpytywanie kursora co 16 ms (`GetCursorPos`): wybór po kierunku działa też, gdy kursor jest poza oknem koła.
 - Brak GPU: zapasowo rasteryzer programowy WARP.
+- Kafelki i środek nieprzezroczyste (decyzja użytkownika po zrzutach): półprzezroczyste z makiety mieszały tekst okna pod spodem z nazwami; przezroczyste zostaje tylko tło poza kołem i odstępy.
+- Dopasowanie nazw (decyzja użytkownika): jedna linia, potem dwie przy spacji, potem czcionka zmniejszana do 80%, wielokropek dopiero na końcu; przy 100% nazwy pierścienia wewnętrznego były ucinane.
+- Każdy element ma edytowalną nazwę, także komendy edycji w pierścieniu wewnętrznym (prośba użytkownika): nazwy w konfiguracji (etap 04) i w edytorze (etap 06); nazwy demo w `wheel-core` to tylko wartości domyślne, a dopasowanie nazw z tego etapu działa dla dowolnego tekstu.
 
 ## Podsumowanie
 (wypełnia /etap-zamknij)

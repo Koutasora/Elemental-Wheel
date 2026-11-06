@@ -24,6 +24,7 @@
 ## 04 akcje-i-konfiguracja
 - [ ] Typy akcji: program, folder/plik, adres, skrót klawiszowy, komenda edycji, wklejenie tekstu, polecenie, akcja systemowa
 - [ ] Pierścień wewnętrzny z komendami edycji (wytnij, kopiuj, wklej, usuń, cofnij, ponów)
+- [ ] Nazwa każdego elementu (także komend edycji) zapisana w konfiguracji i wyświetlana zamiast domyślnej
 - [ ] Konfiguracja w `%APPDATA%\Elemental-Wheel\config.json` z wersją schematu, zapis atomowy i kopia `.bak`
 - [ ] Lista wykluczonych programów i wyłączenie w pełnym ekranie
 
@@ -34,6 +35,7 @@
 ## 06 edytor
 - [ ] Edytor jako osobny proces z podglądem
 - [ ] Edycja elementu: nazwa, typ akcji, cel, ikona, podmenu
+- [ ] Edytowalna nazwa każdego elementu, także komend edycji w pierścieniu wewnętrznym
 - [ ] Zapis konfiguracji do JSON
 
 ## 07 stabilnosc-i-pomiary
