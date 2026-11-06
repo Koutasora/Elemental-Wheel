@@ -44,7 +44,7 @@ są w `%APPDATA%\Elemental-Wheel\config.json` z wersją schematu, zapisem atomow
 - Konfiguracja współdzielona z hakiem przez `Mutex<Option<Arc<Config>>>` trzymany tylko na czas klonowania `Arc`; hak nie dotyka plików.
 - Argumenty wiersza poleceń są nakładane na wczytaną konfigurację (`Option` w `Overrides`), także po odświeżeniu pliku.
 - Pełny ekran = okno główne pokrywa cały `rcMonitor` i nie jest klasą `Progman`/`WorkerW`/`Shell_TrayWnd`; maksymalizowane okno przy ukrywanym pasku zadań liczy się jako pełny ekran.
-
 - Sprawdzenie ręczne fizyczną myszą przeniesione do etapu 05; w 04 zastępuje je pełny test automatyczny na LAB (decyzja użytkownika): logika wyzwalacza dla wejścia fizycznego i wstrzykiwanego z `--accept-injected` jest ta sama, fizyczną mysz sprawdzono w etapie 03.
+
 ## Podsumowanie
 (wypełnia /etap-zamknij)
