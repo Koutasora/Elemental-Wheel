@@ -89,6 +89,10 @@ impl Settings {
         (settings, Arc::new(config))
     }
 
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
     /// Reloads the file if its modification time changed. A file that vanished is not
     /// recreated: the current configuration stays.
     pub fn refresh(&mut self) -> Option<Arc<Config>> {

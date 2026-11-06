@@ -78,7 +78,7 @@ target\release\wheel.exe --quit
 - `program` and `open` paths and arguments expand `%VARIABLES%`.
 - `excluded` lists program file names (case does not matter).
 - Numbers outside the allowed range are clamped with a warning on stderr. An invalid file (bad JSON, unknown type, invalid shortcut, too many items) is not used and never overwritten: the program falls back to `config.json.bak`, then to the defaults, and says why on stderr.
-- A changed file is reloaded the next time the wheel opens, no restart needed. Trigger thresholds apply from the next press, wheel size and sector count from the next opening.
+- The config folder is watched: a changed file is reloaded within a moment, no restart needed. Exclusions, actions, names and trigger thresholds apply from the next press, wheel size and sector count from the next opening. If the folder is missing at start, the file is checked when the wheel opens instead.
 
 ## Layout
 

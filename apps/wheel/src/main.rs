@@ -6,6 +6,7 @@ mod instance;
 mod render;
 mod settings;
 mod theme;
+mod watch;
 mod watchdog;
 mod window;
 
