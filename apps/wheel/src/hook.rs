@@ -476,7 +476,10 @@ fn post_to_window(window: HWND, msg: u32, wparam: usize, lparam: isize) {
 
 fn print_line(text: &str) {
     // Not `println!`: it panics when stdout is closed, and this runs in a background process.
-    let _ = writeln!(std::io::stdout(), "{text}");
+    // Flushed explicitly: redirected to a file, the line would otherwise wait until exit.
+    let mut out = std::io::stdout().lock();
+    let _ = writeln!(out, "{text}");
+    let _ = out.flush();
 }
 
 fn selection_text(hit: Hit, sectors: u8) -> String {
