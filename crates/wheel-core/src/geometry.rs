@@ -1,11 +1,20 @@
-//! Wheel geometry: 12 sectors of 30 degrees, sector 0 at the top (its middle is 0 degrees),
-//! angle grows clockwise. Coordinates are screen coordinates relative to the wheel center:
-//! x to the right, y down.
+//! Wheel geometry: the inner ring has 12 sectors, the outer ring 4..=12. Sector 0 is at the top
+//! (its middle is 0 degrees), angle grows clockwise. Coordinates are screen coordinates relative
+//! to the wheel center: x to the right, y down.
 
-/// Number of sectors in each ring.
-pub const SECTORS: u8 = 12;
+/// Number of sectors in the inner ring.
+pub const INNER_SECTORS: u8 = 12;
+/// Default number of sectors in the outer ring.
+pub const DEFAULT_OUTER_SECTORS: u8 = 12;
+/// Smallest allowed number of outer ring sectors.
+pub const MIN_OUTER_SECTORS: u8 = 4;
+/// Largest allowed number of outer ring sectors.
+pub const MAX_OUTER_SECTORS: u8 = 12;
 
-const SECTOR_DEG: f32 = 360.0 / SECTORS as f32;
+/// Clamps the outer ring sector count to `MIN_OUTER_SECTORS..=MAX_OUTER_SECTORS`.
+pub fn clamp_outer_sectors(n: u8) -> u8 {
+    n.clamp(MIN_OUTER_SECTORS, MAX_OUTER_SECTORS)
+}
 
 /// Ring boundaries, as distances from the wheel center.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -32,23 +41,28 @@ pub fn angle_deg(x: f32, y: f32) -> f32 {
     if a >= 360.0 { 0.0 } else { a }
 }
 
-/// Sector index (`0..12`) for an angle in degrees; sector 0 covers -15..15.
-pub fn sector_at(angle_deg: f32) -> u8 {
-    let a = (angle_deg + SECTOR_DEG / 2.0).rem_euclid(360.0);
-    ((a / SECTOR_DEG) as u8).min(SECTORS - 1)
+/// Sector index (`0..sectors`) for an angle in degrees; sector 0 covers `-w/2..w/2`
+/// where `w = 360 / sectors`. `sectors` of 0 is treated as 1.
+pub fn sector_at(angle_deg: f32, sectors: u8) -> u8 {
+    let sectors = sectors.max(1);
+    let width = 360.0 / sectors as f32;
+    let a = (angle_deg + width / 2.0).rem_euclid(360.0);
+    // rem_euclid can round up to exactly 360, hence the min.
+    ((a / width) as u8).min(sectors - 1)
 }
 
-/// Finds what is under the point. Outside the wheel the outer ring is chosen by direction.
-pub fn hit_test(x: f32, y: f32, r: &Radii) -> Hit {
+/// Finds what is under the point. The inner ring always has `INNER_SECTORS` sectors, the outer
+/// ring `outer_sectors`; outside the wheel the outer ring is chosen by direction.
+pub fn hit_test(x: f32, y: f32, r: &Radii, outer_sectors: u8) -> Hit {
     let dist = x.hypot(y);
     if dist < r.center {
         return Hit::Center;
     }
-    let sector = sector_at(angle_deg(x, y));
+    let angle = angle_deg(x, y);
     if dist < r.inner {
-        Hit::Inner(sector)
+        Hit::Inner(sector_at(angle, INNER_SECTORS))
     } else {
-        Hit::Outer(sector)
+        Hit::Outer(sector_at(angle, outer_sectors))
     }
 }
 
@@ -69,42 +83,89 @@ mod tests {
 
     #[test]
     fn center_hits() {
-        assert_eq!(hit_test(0.0, 0.0, &R), Hit::Center);
-        assert_eq!(hit_test(10.0, -10.0, &R), Hit::Center);
+        assert_eq!(hit_test(0.0, 0.0, &R, 12), Hit::Center);
+        assert_eq!(hit_test(10.0, -10.0, &R, 12), Hit::Center);
     }
 
     #[test]
-    fn every_sector_in_both_rings() {
-        for i in 0..SECTORS {
-            let deg = i as f32 * 30.0;
-            let (x, y) = point(deg, 80.0);
-            assert_eq!(hit_test(x, y, &R), Hit::Inner(i));
-            let (x, y) = point(deg, 200.0);
-            assert_eq!(hit_test(x, y, &R), Hit::Outer(i));
+    fn every_outer_sector_near_and_far() {
+        for n in [4u8, 6, 8, 12] {
+            let w = 360.0 / n as f32;
+            for i in 0..n {
+                let (x, y) = point(i as f32 * w, 200.0);
+                assert_eq!(hit_test(x, y, &R, n), Hit::Outer(i), "n={n} i={i}");
+                let (x, y) = point(i as f32 * w, 10_000.0);
+                assert_eq!(hit_test(x, y, &R, n), Hit::Outer(i), "far n={n} i={i}");
+            }
         }
     }
 
     #[test]
-    fn far_outside_uses_direction() {
-        for i in 0..SECTORS {
-            let (x, y) = point(i as f32 * 30.0, 10_000.0);
-            assert_eq!(hit_test(x, y, &R), Hit::Outer(i));
+    fn inner_ring_always_twelve() {
+        for n in [4u8, 6, 8, 12] {
+            for i in 0..INNER_SECTORS {
+                let (x, y) = point(i as f32 * 30.0, 80.0);
+                assert_eq!(hit_test(x, y, &R, n), Hit::Inner(i), "n={n} i={i}");
+            }
         }
     }
 
     #[test]
-    fn sector_boundaries() {
-        assert_eq!(sector_at(15.0), 1);
-        assert_eq!(sector_at(14.9), 0);
-        assert_eq!(sector_at(345.0), 0);
-        assert_eq!(sector_at(344.9), 11);
+    fn sector_boundaries_12() {
+        assert_eq!(sector_at(15.0, 12), 1);
+        assert_eq!(sector_at(14.9, 12), 0);
+        assert_eq!(sector_at(345.0, 12), 0);
+        assert_eq!(sector_at(344.9, 12), 11);
+    }
+
+    #[test]
+    fn sector_boundaries_4() {
+        assert_eq!(sector_at(45.0, 4), 1);
+        assert_eq!(sector_at(44.9, 4), 0);
+        assert_eq!(sector_at(315.0, 4), 0);
+        assert_eq!(sector_at(314.9, 4), 3);
+        assert_eq!(sector_at(180.0, 4), 2);
+    }
+
+    #[test]
+    fn sector_at_handles_wraparound() {
+        assert_eq!(sector_at(-0.001, 12), 0);
+        assert_eq!(sector_at(359.999, 4), 0);
+        assert_eq!(sector_at(-1e-9, 7), 0);
+    }
+
+    #[test]
+    fn ring_boundaries() {
+        let eps = 0.01;
+        assert_eq!(hit_test(R.center, 0.0, &R, 12), Hit::Inner(3));
+        assert_eq!(hit_test(R.center - eps, 0.0, &R, 12), Hit::Center);
+        assert_eq!(hit_test(R.inner, 0.0, &R, 12), Hit::Outer(3));
+        assert_eq!(hit_test(R.inner - eps, 0.0, &R, 12), Hit::Inner(3));
+    }
+
+    #[test]
+    fn clamps_outer_sectors() {
+        for (input, want) in [(0, 4), (3, 4), (4, 4), (12, 12), (13, 12), (255, 12)] {
+            assert_eq!(clamp_outer_sectors(input), want, "input={input}");
+        }
     }
 
     #[test]
     fn cardinal_directions() {
-        assert_eq!(sector_at(angle_deg(0.0, -1.0)), 0);
-        assert_eq!(sector_at(angle_deg(1.0, 0.0)), 3);
-        assert_eq!(sector_at(angle_deg(0.0, 1.0)), 6);
-        assert_eq!(sector_at(angle_deg(-1.0, 0.0)), 9);
+        assert_eq!(sector_at(angle_deg(0.0, -1.0), 12), 0);
+        assert_eq!(sector_at(angle_deg(1.0, 0.0), 12), 3);
+        assert_eq!(sector_at(angle_deg(0.0, 1.0), 12), 6);
+        assert_eq!(sector_at(angle_deg(-1.0, 0.0), 12), 9);
+    }
+
+    #[test]
+    fn degenerate_inputs() {
+        assert_eq!(sector_at(123.0, 0), 0);
+        assert_eq!(sector_at(123.0, 1), 0);
+        for n in [4, 12] {
+            assert_eq!(sector_at(360.0, n), 0);
+            assert_eq!(sector_at(-0.0, n), 0);
+            assert_eq!(sector_at(359.9999, n), 0);
+        }
     }
 }
