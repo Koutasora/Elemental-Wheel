@@ -42,4 +42,34 @@ zostawia koło otwarte do wyboru lewym, Esc albo klik poza kołem zamyka. Akcje 
 - Ikona w zasobniku systemowym dopisana do etapu 08 (decyzja użytkownika); do tego czasu wyjście przez `wheel.exe --quit`.
 
 ## Podsumowanie
-(wypełnia /etap-zamknij)
+
+Decyzje:
+- Automat stanów wyzwalacza w `wheel-core` bez Win32 (testowalny); układ koła podawany przez `set_layout` przy otwarciu.
+- Hak myszy i klawiatury w osobnym wątku, okno i rysowanie w głównym; SendInput i otwieranie koła poza wywołaniem haka (limit czasu Windows).
+- Okno koła `WS_EX_TRANSPARENT`: mysz obsługuje tylko hak, puszczenie nad kołem nie trafia do okna pod spodem.
+- Okna administratora dostają prawy przycisk bez zmian; decyzja przy każdym wciśnięciu, wynik zapamiętany na 5 s na proces.
+- Strażnik co 5 s porównuje `GetLastInputInfo` z ostatnim zdarzeniem haka i zakłada hak ponownie, także przy otwartym kole.
+- Progi 180 ms / 6 px na razie w argumentach; wykluczenia, pełny ekran i zapis ustawień w etapie 04; ikona w zasobniku w etapie 08.
+- Ukryte flagi testowe `--accept-injected` i `--test-stall-hook` (poza pomocą i README).
+
+Zrobione:
+- `wheel-core/trigger.rs`: automat (kliknięcie, przytrzymanie, przeciąganie, tryb klikania, Esc, zdarzenia wstrzyknięte), 26 testów.
+- `wheel`: `--run`, `--quit`, jedna kopia (mutex), `--hold-ms`, `--move-px`; `hook.rs`, `watchdog.rs`, `instance.rs`; okno ukryte do czasu otwarcia.
+- Testy: 71 (27 + 44), clippy `-D warnings` i fmt czyste.
+- Test skryptem (SendInput, testowy Notatnik): kliknięcie, przytrzymanie z wyborem, wybór po kierunku poza kołem, tryb klikania, Esc, przeciąganie, fokus bez zmian, `--quit`: wszystko PASS.
+- Strażnik sprawdzony: hak zatrzymany na 3 s, ponowne założenie ok. 0,1 s po zatrzymaniu, potem wyzwalacz działa.
+- Użytkownik sprawdził fizyczną myszą (kliknięcie, przeciąganie, przytrzymanie, środek, Esc) i okno administratora (Menedżer zadań: zwykłe menu).
+- Poprawki po przeglądzie managera: przepuszczanie okien administratora, timer przytrzymania; README i CHECKLISTA zaktualizowane.
+
+Otwarte sprawy:
+- Etap 04: akcje zamiast wypisywania wyboru; progi, wykluczenia, pełny ekran w pliku konfiguracji.
+- Etap 08: tryb okienkowy zamiast konsolowego (`--run` zajmuje konsolę), ikona w zasobniku, autostart.
+- Numery sektorów w wypisywanym wyborze liczone od 0.
+- Brak obsługi WM_DPICHANGED (z etapu 02); wiele monitorów i różne DPI nieprzetestowane.
+
+Ryzyka:
+- Przy oknie administratora na pierwszym planie albo zablokowanym ekranie hak może nie dostawać zdarzeń; strażnik zakłada go wtedy co 5 s (szum w logu, reset automatu).
+- `WindowFromPoint` w wywołaniu haka: zawieszone okno pod kursorem może opóźnić hak.
+- Przy odtwarzaniu przeciągania ruchy sprzed wykonania efektu mogą dać skok kursora o kilka pikseli.
+- Gry i programy z własną obsługą prawego przycisku (Blender) nieprzetestowane do czasu wykluczeń w etapie 04.
+- Czas otwarcia i zużycie pamięci niezmierzone (etap 07).
