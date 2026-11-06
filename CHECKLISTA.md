@@ -17,17 +17,22 @@
 - [x] Nazwy kafelków dopasowane do sektora (dwie linie, mniejsza czcionka)
 
 ## 03 wyzwalacz-ppm
-- [ ] Koło otwiera się po przytrzymaniu prawego przycisku
-- [ ] Krótkie kliknięcie prawym działa w programach normalnie
-- [ ] Przeciąganie prawym działa w programach normalnie
-- [ ] Progi 180 ms / 6 px ustawiane w konfiguracji
-- [ ] Środek koła = anuluj / tryb klikania
+- [x] Koło otwiera się po przytrzymaniu prawego przycisku
+- [x] Krótkie kliknięcie prawym działa w programach normalnie
+- [x] Przeciąganie prawym działa w programach normalnie
+- [x] Progi 180 ms / 6 px ustawiane argumentami (`--hold-ms`, `--move-px`); w pliku konfiguracji w etapie 04
+- [x] Środek koła = anuluj / tryb klikania
+- [x] Esc zamyka koło; klik poza kołem w trybie klikania zamyka
+- [x] Okna administratora dostają prawy przycisk bez zmian
+- [x] Strażnik haka zakłada hak ponownie, gdy Windows go odłączy
+- [x] Jedna kopia programu, `wheel.exe --quit` zamyka działającą
+- [x] Sprawdzenie fizyczną myszą przez użytkownika
 
 ## 04 akcje-i-konfiguracja
 - [ ] Typy akcji: program, folder/plik, adres, skrót klawiszowy, komenda edycji, wklejenie tekstu, polecenie, akcja systemowa
 - [ ] Pierścień wewnętrzny z komendami edycji (wytnij, kopiuj, wklej, usuń, cofnij, ponów)
 - [ ] Nazwa każdego elementu (także komend edycji) zapisana w konfiguracji i wyświetlana zamiast domyślnej
-- [ ] Liczba sektorów, motyw i rozmiar koła w opcjach
+- [ ] Liczba sektorów, motyw, rozmiar koła i progi wyzwalacza w opcjach
 - [ ] Konfiguracja w `%APPDATA%\Elemental-Wheel\config.json` z wersją schematu, zapis atomowy i kopia `.bak`
 - [ ] Lista wykluczonych programów i wyłączenie w pełnym ekranie
 
@@ -50,6 +55,7 @@
 ## 08 instalator-i-wydanie
 - [ ] Instalator, który wypisuje zainstalowaną wersję
 - [ ] Autostart przy logowaniu
+- [ ] Ikona w zasobniku systemowym (włącz/wyłącz, edytor, zamknij)
 - [ ] Wydanie z opisem zgodnym z README
 
 ## 09 wyglad-i-animacje
