@@ -5,19 +5,19 @@ Wybór sektora wykonuje przypisaną akcję zamiast ją wypisywać. Elementy koł
 są w `%APPDATA%\Elemental-Wheel\config.json` z wersją schematu, zapisem atomowym i kopią `.bak`.
 
 ## Kryteria zamknięcia
-- [ ] Typy akcji działają: program, folder/plik, adres, skrót klawiszowy, komenda edycji, wklejenie tekstu, polecenie, akcja systemowa
-- [ ] Pierścień wewnętrzny wysyła komendy edycji (wytnij, kopiuj, wklej, wklej bez formatu, usuń, cofnij, ponów, zaznacz wszystko, zapisz, znajdź, zmień nazwę, właściwości) do okna, w którym pracuje użytkownik; fokus bez zmian
+- [x] Typy akcji działają: program, folder/plik, adres, skrót klawiszowy, komenda edycji, wklejenie tekstu, polecenie, akcja systemowa
+- [x] Pierścień wewnętrzny wysyła komendy edycji (wytnij, kopiuj, wklej, wklej bez formatu, usuń, cofnij, ponów, zaznacz wszystko, zapisz, znajdź, zmień nazwę, właściwości) do okna, w którym pracuje użytkownik; fokus bez zmian
 - [x] Każdy element (także komendy edycji) ma nazwę w konfiguracji, wyświetlaną zamiast domyślnej
 - [x] Opcje w konfiguracji: liczba sektorów, motyw, rozmiar koła, widok (nazwy/ikony; ikony w 05), próg czasu i ruchu
 - [x] `config.json`: wersja schematu, walidacja, zapis atomowy (plik tymczasowy + zamiana) i `.bak`; przy pierwszym uruchomieniu tworzony z wartościami domyślnymi
-- [ ] Błędna konfiguracja nie zatrzymuje programu: komunikat, potem `.bak`, potem wartości domyślne; plik użytkownika nie jest nadpisywany
-- [ ] Zmiana pliku działa bez restartu (sprawdzenie daty modyfikacji przy otwarciu koła)
-- [ ] Lista wykluczonych programów (nazwa .exe, bez rozróżniania wielkości liter): prawy przycisk przechodzi bez zmian
-- [ ] Wyłączenie w pełnym ekranie (opcja, domyślnie włączona): okno pełnoekranowe pod kursorem dostaje prawy przycisk bez zmian
+- [x] Błędna konfiguracja nie zatrzymuje programu: komunikat, potem `.bak`, potem wartości domyślne; plik użytkownika nie jest nadpisywany
+- [x] Zmiana pliku działa bez restartu (obserwacja folderu konfiguracji, zmiana od następnego wciśnięcia)
+- [x] Lista wykluczonych programów (nazwa .exe, bez rozróżniania wielkości liter): prawy przycisk przechodzi bez zmian
+- [x] Wyłączenie w pełnym ekranie (opcja, domyślnie włączona): okno pełnoekranowe pod kursorem dostaje prawy przycisk bez zmian
 - [x] `--config <ścieżka>` (testy na osobnym pliku); argumenty nadpisują wartości z pliku
 - [x] Testy w `wheel-core`: wczytanie, walidacja, wartości domyślne, zapis i ponowne wczytanie, `.bak`, rozbiór skrótów klawiszowych, dopasowanie wykluczeń
 - [x] `cargo build --release`, `cargo test`, clippy `-D warnings` i `cargo fmt --check` czyste
-- [ ] Pełny test automatyczny na LAB (wejście wstrzykiwane, `--accept-injected`): komendy edycji w Notatniku i Eksploratorze, uruchomienie programu, wykluczenie, pełny ekran w prawdziwej przeglądarce, polskie nazwy na kole, stan wyciszenia
+- [x] Pełny test automatyczny na LAB (wejście wstrzykiwane, `--accept-injected`): komendy edycji w Notatniku i Eksploratorze, uruchomienie programu, wykluczenie, pełny ekran w prawdziwej przeglądarce, polskie nazwy na kole, stan wyciszenia
 - [x] `CHECKLISTA.md` i `README.md` zaktualizowane
 
 ## Plan
@@ -29,7 +29,7 @@ są w `%APPDATA%\Elemental-Wheel\config.json` z wersją schematu, zapisem atomow
 - [x] `apps/wheel/src/window.rs`, `args.rs`, `main.rs`: wczytanie konfiguracji, odświeżenie przy otwarciu, `--config`, akcja po wyborze; wypisywany wybór numerowany od 1 (otwarta sprawa z 03)
 - [x] Domyślny pierścień zewnętrzny tylko z elementami Windows: Notatnik, Kalkulator, Ustawienia, Menedżer zadań zamiast Blendera, Abletona, Godota i VS Code
 - [x] `CHECKLISTA.md`, `README.md` (konfiguracja, typy akcji, `--config`)
-- Sprawdzenie: tester: build, testy, clippy, fmt; skrypt PowerShell z `--accept-injected` i testowym `config.json` w scratchpadzie: kopiuj/wklej i wklejenie tekstu w testowym Notatniku, uruchomienie programu, wykluczenie (`notepad.exe` daje zwykłe menu mimo przytrzymania), błędny plik (program działa na `.bak`); pełny ekran i Eksplorator: użytkownik fizyczną myszą
+- Sprawdzenie: tester: build, testy, clippy, fmt; skrypt PowerShell z `--accept-injected` i testowym `config.json` w scratchpadzie (wszystkie typy akcji poza `lock`, `show_desktop`, `volume_up`/`volume_down`; komendy edycji w Notatniku i Eksploratorze; wykluczenia; błędny plik i `.bak`; UTF-16; polskie nazwy na zrzucie; Edge w F11; stan wyciszenia przez Core Audio); fizyczna mysz w etapie 05 (decyzja użytkownika)
 
 ## Decyzje
 - Domyślny pierścień zewnętrzny tylko z elementami Windows (Notatnik, Kalkulator, Ustawienia, Menedżer zadań zamiast Blendera, Abletona, Godota, VS Code): domyślna konfiguracja ma działać na każdym komputerze; użytkownik dopasuje ją sam (decyzja użytkownika).

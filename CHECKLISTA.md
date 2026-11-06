@@ -29,12 +29,12 @@
 - [x] Sprawdzenie fizyczną myszą przez użytkownika
 
 ## 04 akcje-i-konfiguracja
-- [ ] Typy akcji: program, folder/plik, adres, skrót klawiszowy, komenda edycji, wklejenie tekstu, polecenie, akcja systemowa
-- [ ] Pierścień wewnętrzny z komendami edycji (wytnij, kopiuj, wklej, usuń, cofnij, ponów)
+- [x] Typy akcji: program, folder/plik, adres, skrót klawiszowy, komenda edycji, wklejenie tekstu, polecenie, akcja systemowa
+- [x] Pierścień wewnętrzny z komendami edycji (wytnij, kopiuj, wklej, usuń, cofnij, ponów)
 - [x] Nazwa każdego elementu (także komend edycji) zapisana w konfiguracji i wyświetlana zamiast domyślnej
 - [x] Liczba sektorów, motyw, rozmiar koła i progi wyzwalacza w opcjach
 - [x] Konfiguracja w `%APPDATA%\Elemental-Wheel\config.json` z wersją schematu, zapis atomowy i kopia `.bak`
-- [ ] Lista wykluczonych programów i wyłączenie w pełnym ekranie
+- [x] Lista wykluczonych programów i wyłączenie w pełnym ekranie
 
 ## 05 podmenu
 - [ ] Łuk z maksymalnie 5 dodatkowymi kafelkami po najechaniu
