@@ -62,7 +62,6 @@ fn label(painter: &Painter, at: Pos2, text: &str, size: f32, width: f32, color: 
     }
     let mut job = LayoutJob::simple(text.to_string(), FontId::proportional(size), color, width);
     job.wrap.max_rows = 2;
-    job.wrap.break_anywhere = true;
     let galley = painter.layout_job(job);
     let pos = at - galley.size() / 2.0;
     painter.galley(pos, galley, color);
