@@ -54,4 +54,32 @@ Sprawdzenie fizyczną myszą przeniesione z etapu 04.
 - Test fizyczną myszą przez użytkownika: wszystkie 10 punktów listy działa (2026-11-07).
 
 ## Podsumowanie
-(wypełnia /etap-zamknij)
+
+Decyzje:
+- Łuk podmenu jak w makiecie: pasmo 218–292, 26° na kafelek, wyśrodkowany na rodzicu; za granicą 214 w kącie łuku wybiera kafelek przy dowolnej odległości, poza kątem działa wybór sektora po kierunku.
+- Wybierane jest to, co widać: stan łuku prowadzi okno (odpytywanie kursora), hak bierze go przez `AtomicU16` przy puszczeniu i kliknięciu.
+- Tryb klikania: kafelek łuku do 296, pozostałe do 214; puszczenie na środku po przejściu po kafelkach anuluje (prośba użytkownika), od razu na środku daje tryb klikania.
+- Okno 592 px przy 100% (pasmo + margines 4 px); koło przy krawędzi ekranu bez dosuwania.
+- Ikony tylko w widoku `icons`, ładowane z Rendererem: `icon` z pliku, ikona systemowa programu/pliku, glify Segoe Fluent Icons / MDL2, litera.
+- Rysowanie wydzielone do `Painter`, test `render_cases` zapisuje PNG bez okna.
+- Domyślna konfiguracja: „Ustawienia” z podmenu Ekran, Dźwięk, Bluetooth, Aktualizacje (decyzja użytkownika).
+
+Zrobione:
+- `wheel-core`: `hit_test_arc`, `SubArc`, `Hit::Sub`, `submenu.rs` (`arc_for_hit`, `item_for_hit`), promienie i rozmiar okna w `layout.rs`, łuk i anulowanie na środku w `trigger.rs`; 90 testów.
+- `wheel`: `icons.rs` (WIC, `SHDefExtractIconW`, lista obrazów systemu, glify, pamięć podręczna, COM), łuk, kreska i widok ikon w `render.rs`, stan łuku w `window.rs`, kanał do haka w `hook.rs`; 44 testy + `render_cases`.
+- Test automatyczny na LAB (`--accept-injected`, konfiguracja w scratchpadzie): 25 sprawdzeń PASS, akcje potwierdzone plikiem znacznika, zrzuty łuku i widoku ikon; osobno anulowanie na środku.
+- Test fizyczną myszą przez użytkownika: wszystkie punkty działają.
+- Przegląd managera bez uwag blokujących; README, CHECKLISTA, pomoc programu zaktualizowane.
+
+Otwarte sprawy:
+- Etap 06: edytor (nazwa, akcja, ikona, podmenu); poprawić `save()`, które kopiuje do `.bak` także plik błędny.
+- Etap 07: ikony ładowane synchronicznie w wątku UI (pierwsze otwarcie po zmianie konfiguracji); `IDWriteTextLayout` glifów tworzony przy każdym odrysowaniu; pomiary czasu otwarcia i pamięci.
+- Adres `ms-settings:` ma glif globusu jak przeglądarka (pomysł: koło zębate).
+- `submenu` przy elemencie pierścienia wewnętrznego przechodzi walidację i jest pomijane.
+- Z etapu 04: `lock`, `show_desktop`, `volume_up/down` nieuruchomione na żywo; brak WM_DPICHANGED; inne DPI i wiele monitorów nieprzetestowane.
+
+Ryzyka:
+- Bardzo szybki ruch w pasmo i puszczenie przed odpytaniem okna (do 16 ms) wybiera rodzica, nie kafelek.
+- Łuk sektora skierowanego poza ekran się nie otworzy (kursor nie dojdzie do rodzica).
+- Ikona folderu w łuku trochę mniejsza od ikon .exe (kształt grafiki Windows 11).
+- Ryzyka z etapu 04 (Alt przy `SetForegroundWindow`, `paste_text` tylko tekst, gry pełnoekranowe) bez zmian.
