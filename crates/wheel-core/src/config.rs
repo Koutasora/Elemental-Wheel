@@ -33,7 +33,7 @@ pub enum ThemeChoice {
     Dark,
 }
 
-/// How items are shown (icons are used from stage 05).
+/// How items are shown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ViewMode {
@@ -137,9 +137,9 @@ pub enum Action {
 pub struct Item {
     pub name: String,
     pub action: Action,
-    /// Unused until stage 05.
+    /// Icon file (`.ico`, `.exe` or `.dll`, optionally `,index`) for the icon view.
     pub icon: Option<String>,
-    /// Unused until stage 05; up to 5 items without a submenu of their own.
+    /// Up to 5 items shown as an arc beyond an outer sector; they have no submenu of their own.
     pub submenu: Vec<Item>,
 }
 
@@ -320,7 +320,15 @@ impl Default for Config {
             Item::system("Zamknij okno", SystemAction::CloseWindow),
             Item::program("Notatnik", "notepad.exe"),
             Item::program("Kalkulator", "calc.exe"),
-            Item::url("Ustawienia", "ms-settings:"),
+            Item {
+                submenu: vec![
+                    Item::url("Ekran", "ms-settings:display"),
+                    Item::url("Dźwięk", "ms-settings:sound"),
+                    Item::url("Bluetooth", "ms-settings:bluetooth"),
+                    Item::url("Aktualizacje", "ms-settings:windowsupdate"),
+                ],
+                ..Item::url("Ustawienia", "ms-settings:")
+            },
             Item::program("Menedżer zadań", "taskmgr.exe"),
             Item::system("Zablokuj", SystemAction::Lock),
         ];
@@ -702,6 +710,11 @@ mod tests {
             }
         );
         assert!(c.outer_item(12).is_none());
+        let settings = c.outer_item(9).unwrap();
+        assert_eq!(settings.name, "Ustawienia");
+        let sub: Vec<&str> = settings.submenu.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(sub, ["Ekran", "Dźwięk", "Bluetooth", "Aktualizacje"]);
+        assert!(c.outer.iter().filter(|i| !i.submenu.is_empty()).count() == 1);
     }
 
     #[test]

@@ -4,8 +4,12 @@
 //! Layout: the machine classifies the release over the open wheel, so the caller must call
 //! `set_layout` with the wheel's `Layout` when it handles `Effect::OpenWheel` (before the next
 //! event). Without it, a default 96 DPI, 100% layout is used.
+//!
+//! Submenu arc: the wheel window owns the arc state (it follows the cursor). The caller passes the
+//! arc that is shown to `set_arc` before it feeds a release or a left press, so that the machine
+//! picks what is on screen. The arc is forgotten whenever the wheel is not open.
 
-use crate::geometry::{Hit, hit_test};
+use crate::geometry::{Hit, SubArc, hit_test_arc};
 use crate::layout::Layout;
 
 /// Smallest allowed hold time, in milliseconds.
@@ -199,9 +203,12 @@ enum State {
     },
     /// Movement started a normal drag; everything passes until the right button is released.
     Dragging,
-    /// Wheel open, right button still held.
+    /// Wheel open, right button still held. `left_center` is set once the pointer has been
+    /// outside the center: a release back in the center then cancels instead of entering the
+    /// click mode.
     Open {
         center: Point,
+        left_center: bool,
     },
     /// Wheel open after a release in the center; driven by the left button.
     ClickMode {
@@ -218,6 +225,8 @@ enum State {
 pub struct Trigger {
     settings: TriggerSettings,
     layout: Layout,
+    /// The submenu arc shown over the open wheel.
+    arc: Option<SubArc>,
     state: State,
 }
 
@@ -227,6 +236,7 @@ impl Trigger {
         Trigger {
             settings: settings.clamped(),
             layout: Layout::new(96, 100, 12),
+            arc: None,
             state: State::Idle,
         }
     }
@@ -240,9 +250,16 @@ impl Trigger {
         self.layout = layout;
     }
 
+    /// Sets the submenu arc that is currently shown; call it before feeding the event that
+    /// selects. It is cleared again when the wheel closes.
+    pub fn set_arc(&mut self, arc: Option<SubArc>) {
+        self.arc = arc;
+    }
+
     /// Forgets everything and goes idle (e.g. after the hook was detached).
     pub fn reset(&mut self) {
         self.state = State::Idle;
+        self.arc = None;
     }
 
     /// True while the wheel is shown (button held or click mode).
@@ -252,6 +269,14 @@ impl Trigger {
 
     /// Feeds one event and returns what to do with it.
     pub fn step(&mut self, event: Event) -> Step {
+        let step = self.step_event(event);
+        if !self.is_wheel_open() {
+            self.arc = None;
+        }
+        step
+    }
+
+    fn step_event(&mut self, event: Event) -> Step {
         if event.origin != Origin::Physical {
             return Step::pass();
         }
@@ -287,7 +312,10 @@ impl Trigger {
                 down_pos,
                 down_time,
             } => self.step_pending(down_pos, down_time, event.kind),
-            State::Open { center } => self.step_open(center, event.kind),
+            State::Open {
+                center,
+                left_center,
+            } => self.step_open(center, left_center, event.kind),
             State::ClickMode { center } => self.step_click_mode(center, event.kind),
         }
     }
@@ -331,7 +359,10 @@ impl Trigger {
             EventKind::HoldElapsed { time } => {
                 let elapsed = time.wrapping_sub(down_time);
                 if elapsed >= self.settings.hold_ms {
-                    self.state = State::Open { center: down_pos };
+                    self.state = State::Open {
+                        center: down_pos,
+                        left_center: false,
+                    };
                     Step::pass().with(Effect::OpenWheel { center: down_pos })
                 } else {
                     // Too early (coarse timer or a timer from an earlier press): wait the rest.
@@ -342,9 +373,23 @@ impl Trigger {
         }
     }
 
-    fn step_open(&mut self, center: Point, kind: EventKind) -> Step {
+    fn step_open(&mut self, center: Point, left_center: bool, kind: EventKind) -> Step {
         match kind {
+            EventKind::Move { pos, .. } => {
+                if !left_center && self.hit_at(center, pos) != Hit::Center {
+                    self.state = State::Open {
+                        center,
+                        left_center: true,
+                    };
+                }
+                Step::pass()
+            }
             EventKind::RightUp { pos, .. } => match self.hit_at(center, pos) {
+                // Back in the center after visiting the tiles: "Anuluj" closes the wheel.
+                Hit::Center if left_center => {
+                    self.state = State::Idle;
+                    Step::swallow().with(Effect::Cancel)
+                }
                 Hit::Center => {
                     self.state = State::ClickMode { center };
                     Step::swallow().with(Effect::EnterClickMode)
@@ -367,11 +412,17 @@ impl Trigger {
         match kind {
             EventKind::LeftDown { pos, .. } => {
                 self.state = State::SwallowLeftUp;
-                let outside = pos.dist_sq(center) as f32
-                    > self.layout.outer_radius() * self.layout.outer_radius();
-                match self.hit_at(center, pos) {
+                let dist_sq = pos.dist_sq(center) as f32;
+                // A click selects only on the wheel (up to the outer ring boundary in the gap
+                // before the arc band, as in the mockup) or on the arc band; further out it closes.
+                let hit = self.hit_at(center, pos);
+                let limit = match hit {
+                    Hit::Sub(..) => self.layout.sub_click_limit(),
+                    _ => self.layout.radii().outer,
+                };
+                match hit {
                     Hit::Center => Step::swallow().with(Effect::Cancel),
-                    _ if outside => Step::swallow().with(Effect::Cancel),
+                    _ if dist_sq > limit * limit => Step::swallow().with(Effect::Cancel),
                     hit => Step::swallow().with(Effect::Select(hit)),
                 }
             }
@@ -388,7 +439,13 @@ impl Trigger {
     fn hit_at(&self, center: Point, pos: Point) -> Hit {
         let dx = (pos.x - center.x) as f32;
         let dy = (pos.y - center.y) as f32;
-        hit_test(dx, dy, &self.layout.radii(), self.layout.outer_sectors())
+        hit_test_arc(
+            dx,
+            dy,
+            &self.layout.radii(),
+            self.layout.outer_sectors(),
+            self.arc,
+        )
     }
 }
 
@@ -604,6 +661,36 @@ mod tests {
     }
 
     #[test]
+    fn release_in_center_after_visiting_tiles_cancels() {
+        let mut t = trigger();
+        open(&mut t);
+        // Small moves inside the center do not count.
+        assert_eq!(mv(&mut t, pt(10, 10), 1300), Step::pass());
+        assert_eq!(mv(&mut t, pt(150, 0), 1350), Step::pass());
+        assert_eq!(mv(&mut t, pt(5, 0), 1380), Step::pass());
+        let s = right_up(&mut t, pt(5, 0), 1400);
+        assert_eq!(s.verdict, Verdict::Swallow);
+        assert_eq!(s.effects, vec![Effect::Cancel]);
+        assert!(!t.is_wheel_open());
+        // The release was the last event of the press: the next one starts afresh.
+        right_down(&mut t, 2000);
+        let s = hold_elapsed(&mut t, 2180);
+        assert_eq!(s.effects, vec![open_wheel()]);
+        let s = right_up(&mut t, pt(5, 5), 2200);
+        assert_eq!(s.effects, vec![Effect::EnterClickMode]);
+    }
+
+    #[test]
+    fn release_in_center_without_leaving_it_enters_click_mode() {
+        let mut t = trigger();
+        open(&mut t);
+        assert_eq!(mv(&mut t, pt(20, -20), 1300), Step::pass());
+        let s = right_up(&mut t, pt(20, -20), 1400);
+        assert_eq!(s.effects, vec![Effect::EnterClickMode]);
+        assert!(t.is_wheel_open());
+    }
+
+    #[test]
     fn release_in_center_enters_click_mode_then_left_click_selects() {
         let mut t = trigger();
         open(&mut t);
@@ -641,6 +728,129 @@ mod tests {
         assert!(!t.is_wheel_open());
         assert_eq!(left_up(&mut t, pt(400, 0)), Step::swallow());
         assert_eq!(left_up(&mut t, P), Step::pass());
+    }
+
+    /// Arc of three tiles on outer sector 3 (pointing right at 12 sectors).
+    const ARC: SubArc = SubArc {
+        parent: 3,
+        count: 3,
+    };
+
+    #[test]
+    fn release_in_arc_band_selects_tile() {
+        let mut t = trigger();
+        open(&mut t);
+        t.set_arc(Some(ARC));
+        let s = right_up(&mut t, pt(250, 0), 1400);
+        assert_eq!(s.effects, vec![Effect::Select(Hit::Sub(3, 1))]);
+    }
+
+    #[test]
+    fn release_far_in_arc_direction_selects_tile() {
+        let mut t = trigger();
+        open(&mut t);
+        t.set_arc(Some(ARC));
+        let s = right_up(&mut t, pt(900, 0), 1400);
+        assert_eq!(s.effects, vec![Effect::Select(Hit::Sub(3, 1))]);
+    }
+
+    #[test]
+    fn release_outside_arc_angle_selects_outer_by_direction() {
+        let mut t = trigger();
+        open(&mut t);
+        t.set_arc(Some(ARC));
+        let s = right_up(&mut t, pt(0, -250), 1400);
+        assert_eq!(s.effects, vec![Effect::Select(Hit::Outer(0))]);
+    }
+
+    #[test]
+    fn release_without_arc_ignores_band() {
+        let mut t = trigger();
+        open(&mut t);
+        let s = right_up(&mut t, pt(250, 0), 1400);
+        assert_eq!(s.effects, vec![Effect::Select(Hit::Outer(3))]);
+    }
+
+    #[test]
+    fn click_mode_arc_tile_selects() {
+        let mut t = trigger();
+        open(&mut t);
+        right_up(&mut t, P, 1400);
+        t.set_arc(Some(ARC));
+        let s = left_down(&mut t, pt(250, 0));
+        assert_eq!(s.effects, vec![Effect::Select(Hit::Sub(3, 1))]);
+        // Just inside the outer edge of the band margin.
+        let mut t = trigger();
+        open(&mut t);
+        right_up(&mut t, P, 1400);
+        t.set_arc(Some(ARC));
+        let s = left_down(&mut t, pt(295, 0));
+        assert_eq!(s.effects, vec![Effect::Select(Hit::Sub(3, 1))]);
+    }
+
+    #[test]
+    fn click_mode_gap_before_arc_band() {
+        // 210..214: still the outer ring; 214..218 in the arc angle: the arc tile.
+        for (arc, x, want) in [
+            (Some(ARC), 212, Effect::Select(Hit::Outer(3))),
+            (Some(ARC), 216, Effect::Select(Hit::Sub(3, 1))),
+            (None, 212, Effect::Select(Hit::Outer(3))),
+            (None, 216, Effect::Cancel),
+        ] {
+            let mut t = trigger();
+            open(&mut t);
+            right_up(&mut t, P, 1400);
+            t.set_arc(arc);
+            let s = left_down(&mut t, pt(x, 0));
+            assert_eq!(s.effects, vec![want], "arc {arc:?}, x {x}");
+        }
+    }
+
+    #[test]
+    fn click_mode_beyond_arc_band_cancels() {
+        let mut t = trigger();
+        open(&mut t);
+        right_up(&mut t, P, 1400);
+        t.set_arc(Some(ARC));
+        let s = left_down(&mut t, pt(300, 0));
+        assert_eq!(s.effects, vec![Effect::Cancel]);
+    }
+
+    #[test]
+    fn click_mode_outside_everything_cancels_with_arc() {
+        let mut t = trigger();
+        open(&mut t);
+        right_up(&mut t, P, 1400);
+        t.set_arc(Some(ARC));
+        let s = left_down(&mut t, pt(0, -300));
+        assert_eq!(s.effects, vec![Effect::Cancel]);
+    }
+
+    #[test]
+    fn arc_is_forgotten_after_close() {
+        let mut t = trigger();
+        open(&mut t);
+        t.set_arc(Some(ARC));
+        right_up(&mut t, pt(250, 0), 1400);
+        assert!(!t.is_wheel_open());
+        // The next wheel starts without an arc, whatever the previous one showed.
+        open(&mut t);
+        let s = right_up(&mut t, pt(250, 0), 2400);
+        assert_eq!(s.effects, vec![Effect::Select(Hit::Outer(3))]);
+        // Also after a cancel and after reset.
+        open(&mut t);
+        t.set_arc(Some(ARC));
+        feed(&mut t, EventKind::Escape);
+        right_up(&mut t, P, 3000);
+        open(&mut t);
+        let s = right_up(&mut t, pt(250, 0), 4000);
+        assert_eq!(s.effects, vec![Effect::Select(Hit::Outer(3))]);
+        open(&mut t);
+        t.set_arc(Some(ARC));
+        t.reset();
+        open(&mut t);
+        let s = right_up(&mut t, pt(250, 0), 5000);
+        assert_eq!(s.effects, vec![Effect::Select(Hit::Outer(3))]);
     }
 
     #[test]

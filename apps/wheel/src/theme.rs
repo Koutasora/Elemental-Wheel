@@ -13,6 +13,10 @@ use wheel_core::ThemeChoice as Theme;
 pub struct Palette {
     /// Sector fill (`--tile`).
     pub tile: D2D1_COLOR_F,
+    /// Submenu arc tile fill (`--surface`).
+    pub surface: D2D1_COLOR_F,
+    /// Submenu notch (`--muted`).
+    pub muted: D2D1_COLOR_F,
     /// Sector outline (`--tile-line`).
     pub tile_line: D2D1_COLOR_F,
     /// Center circle fill (`--center`).
@@ -27,6 +31,8 @@ pub struct Palette {
 
 const LIGHT: Palette = Palette {
     tile: rgb(0xffffff),
+    surface: rgb(0xffffff),
+    muted: rgb(0x586074),
     tile_line: rgb(0xc3cad8),
     center: rgb(0xf6f7fa),
     fg: rgb(0x141821),
@@ -36,6 +42,8 @@ const LIGHT: Palette = Palette {
 
 const DARK: Palette = Palette {
     tile: rgb(0x1b202b),
+    surface: rgb(0x151922),
+    muted: rgb(0x9aa3b6),
     tile_line: rgb(0x333b4e),
     center: rgb(0x11151d),
     fg: rgb(0xe7eaf1),
