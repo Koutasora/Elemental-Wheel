@@ -8,7 +8,7 @@ i żywy hak.
 ## Kryteria zamknięcia
 - [x] Log `%LOCALAPPDATA%\Elemental-Wheel\wheel.log` (i `editor.log`): komunikaty dziś wypisywane na konsolę, panic z miejscem wystąpienia, limit rozmiaru z jednym starszym plikiem; w testach jawna ścieżka
 - [x] Panic w haku myszy i w wątkach akcji nie kończy procesu bez śladu: zdarzenie przepuszczone, wpis w logu
-- [ ] Zepsuty `config.json` w trakcie pracy: koło zostaje na ostatniej dobrej konfiguracji w pamięci, błąd w logu, `.bak` nietknięty; testy
+- [x] Zepsuty `config.json` w trakcie pracy: koło zostaje na ostatniej dobrej konfiguracji w pamięci, błąd w logu, `.bak` nietknięty; testy
 - [ ] Awaria edytora (zabity proces, także w trakcie zapisu) nie psuje `config.json`; plik tymczasowy po przerwanym zapisie nie przeszkadza kolejnemu zapisowi; test
 - [ ] Edytor wykrywa zmianę pliku z zewnątrz: bez niezapisanych zmian wczytuje go ponownie i informuje w pasku stanu; z niezapisanymi zmianami pyta (wczytaj plik / zostaw moje); zapis nadpisujący nowszy plik pyta przed nadpisaniem; testy logiki bez okna
 - [ ] Pomiar pamięci w tle (prywatna, working set, uchwyty, GDI/USER) w widoku nazw i ikon, wyniki w pliku etapu; cel do 15 MB prywatnej
@@ -21,8 +21,8 @@ i żywy hak.
 ## Plan
 - [x] `crates/wheel-core/src/log.rs` (nowy, zamiast `apps/wheel/src/log.rs`): plik logu z limitem rozmiaru, panic hook, zapis zamiast samego `eprintln!` (konsola zostaje); to samo w edytorze
 - [x] `apps/wheel/src/hook.rs`, `actions.rs`, `window.rs`: `catch_unwind` w procedurze haka i wątkach akcji, przy błędzie zdarzenie przepuszczone
-- [ ] `crates/wheel-core/src/config.rs`, `apps/wheel/src/settings.rs`: przeładowanie zepsutego pliku zostawia bieżącą konfigurację (bez `.bak` i domyślnych); start bez zmian (plik, `.bak`, domyślne); testy
-- [ ] `config::save()`: test przerwanego zapisu (pozostały plik tymczasowy)
+- [x] `crates/wheel-core/src/config.rs`, `apps/wheel/src/settings.rs`: przeładowanie zepsutego pliku zostawia bieżącą konfigurację (bez `.bak` i domyślnych); start bez zmian (plik, `.bak`, domyślne); testy
+- [x] `config::save()`: test przerwanego zapisu (pozostały plik tymczasowy)
 - [ ] `apps/wheel-editor/src/model.rs`, `main.rs`: czas modyfikacji pliku przy wczytaniu i zapisie, sprawdzanie przy odzyskaniu fokusu i co kilka sekund, pytanie przy konflikcie, pytanie przed nadpisaniem nowszego pliku; testy modelu
 - [ ] Ukryta flaga `--stats`: czas otwarcia każdego otwarcia do logu, co minutę pamięć i uchwyty (`GetProcessMemoryInfo`, `GetGuiResources`)
 - [ ] `apps/wheel/src/window.rs`, `render.rs`, `icons.rs`: przygotowanie renderera i ikon po wczytaniu konfiguracji, pamięć podręczna układu tekstu glifów
@@ -38,6 +38,8 @@ i żywy hak.
 - Przełącznik `--log <ścieżka>` w kole i edytorze, żeby testy i `soak.ps1` nie pisały do `%LOCALAPPDATA%`.
 - Przechwytywanie paniki także w procedurach okna koła (nie tylko hak i akcje): panika w `extern "system"` kończy proces; po panice koło się chowa, stan wyzwalacza wraca do spoczynku, zdarzenie idzie dalej.
 - Ukryta flaga `--test-panic hook|window|action` (jak `--test-stall-hook`), żeby sprawdzić odzyskiwanie na żywo wejściem wstrzykiwanym.
+- Edytor przy otwarciu i ponownym wczytaniu zostaje przy dotychczasowym zachowaniu (plik, `.bak`, domyślne, z komunikatem): to jawne otwarcie przez użytkownika, nie podmiana działającej konfiguracji.
+- Plik tymczasowy zapisu ma stałą nazwę `config.json.tmp`; pozostałość po przerwanym zapisie jest nadpisywana przy następnym zapisie i ignorowana przy wczytaniu (test, bez zmian w kodzie).
 
 ## Podsumowanie
 (wypełnia /etap-zamknij)
