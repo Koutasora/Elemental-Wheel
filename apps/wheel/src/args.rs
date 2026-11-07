@@ -2,7 +2,9 @@
 
 use std::path::PathBuf;
 
-use wheel_core::{ThemeChoice, clamp_hold_ms, clamp_move_px, clamp_outer_sectors, clamp_scale_pct};
+use wheel_core::{
+    Hit, ThemeChoice, clamp_hold_ms, clamp_move_px, clamp_outer_sectors, clamp_scale_pct,
+};
 
 /// Values given on the command line; they override the config file only when present.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -34,6 +36,12 @@ pub struct DemoOptions {
     pub log: Option<PathBuf>,
     /// Hidden test flag: one deliberate panic to check that it is caught.
     pub test_panic: Option<PanicTest>,
+    /// Hidden flag `--at X,Y` (`--demo` only): wheel centre in screen pixels instead of the cursor.
+    pub at: Option<(i32, i32)>,
+    /// Hidden flag `--demo-hit` (`--demo` only): highlighted tile forced instead of the cursor.
+    pub demo_hit: Option<Hit>,
+    /// Hidden flag `--no-glass`: opaque look, no backdrop blur.
+    pub no_glass: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,6 +79,9 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
     let mut stall_hook_once = false;
     let mut stats = false;
     let mut test_panic = None;
+    let mut at = None;
+    let mut demo_hit = None;
+    let mut no_glass = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--version" => return Ok(Command::Version),
@@ -80,6 +91,9 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
             "--accept-injected" => accept_injected = true,
             "--test-stall-hook" => stall_hook_once = true,
             "--stats" => stats = true,
+            "--no-glass" => no_glass = true,
+            "--at" => at = Some(point(&value(&mut args, &arg)?)?),
+            "--demo-hit" => demo_hit = Some(forced_hit(&value(&mut args, &arg)?)?),
             "--test-panic" => {
                 test_panic = Some(match value(&mut args, &arg)?.as_str() {
                     "hook" => PanicTest::Hook,
@@ -139,7 +153,13 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
         config,
         log,
         test_panic,
+        at,
+        demo_hit,
+        no_glass,
     };
+    if !demo && (at.is_some() || demo_hit.is_some()) {
+        return Err("--at and --demo-hit need --demo".to_string());
+    }
     if demo && matches!(test_panic, Some(PanicTest::Hook | PanicTest::Action)) {
         return Err("--test-panic hook and action need --run".to_string());
     }
@@ -165,6 +185,30 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
 fn value(args: &mut impl Iterator<Item = String>, option: &str) -> Result<String, String> {
     args.next()
         .ok_or_else(|| format!("Missing value for {option}"))
+}
+
+/// Parses `X,Y` (screen pixels).
+fn point(text: &str) -> Result<(i32, i32), String> {
+    let bad = || format!("Invalid value for --at: {text}");
+    let (x, y) = text.split_once(',').ok_or_else(bad)?;
+    let coord = |t: &str| {
+        let n = number(t, "--at")?;
+        Ok::<i32, String>(n.clamp(i32::MIN.into(), i32::MAX.into()) as i32)
+    };
+    Ok((coord(x).map_err(|_| bad())?, coord(y).map_err(|_| bad())?))
+}
+
+/// Parses `outer:N`, `inner:N` or `sub:P:K`.
+fn forced_hit(text: &str) -> Result<Hit, String> {
+    let bad = || format!("Invalid value for --demo-hit: {text}");
+    let index = |t: &str| t.parse::<u8>().map_err(|_| bad());
+    let parts: Vec<&str> = text.split(':').collect();
+    match parts[..] {
+        ["outer", n] => Ok(Hit::Outer(index(n)?)),
+        ["inner", n] => Ok(Hit::Inner(index(n)?)),
+        ["sub", p, k] => Ok(Hit::Sub(index(p)?, index(k)?)),
+        _ => Err(bad()),
+    }
 }
 
 /// Parses an integer. Any valid integer is accepted, however large: values beyond `i64` are
@@ -343,6 +387,42 @@ mod tests {
         assert!(parse_strs(&["--demo", "--test-panic", "action"]).is_err());
         assert!(parse_strs(&["--run", "--test-panic"]).is_err());
         assert!(parse_strs(&["--run", "--test-panic", "bogus"]).is_err());
+    }
+
+    #[test]
+    fn demo_position_and_forced_hit() {
+        let o = demo(&["--demo"]);
+        assert_eq!((o.at, o.demo_hit, o.no_glass), (None, None, false));
+        let o = demo(&[
+            "--at",
+            "960,-540",
+            "--demo",
+            "--demo-hit",
+            "sub:2:1",
+            "--no-glass",
+        ]);
+        assert_eq!(o.at, Some((960, -540)));
+        assert_eq!(o.demo_hit, Some(Hit::Sub(2, 1)));
+        assert!(o.no_glass);
+        assert_eq!(
+            demo(&["--demo", "--demo-hit", "outer:3"]).demo_hit,
+            Some(Hit::Outer(3))
+        );
+        assert_eq!(
+            demo(&["--demo", "--demo-hit", "inner:0"]).demo_hit,
+            Some(Hit::Inner(0))
+        );
+        for args in [
+            &["--demo", "--at", "5"][..],
+            &["--demo", "--at", "a,b"],
+            &["--demo", "--at"],
+            &["--demo", "--demo-hit", "sub:1"],
+            &["--demo", "--demo-hit", "outer:x"],
+            &["--demo", "--demo-hit", "middle:1"],
+            &["--run", "--at", "1,2"],
+        ] {
+            assert!(parse_strs(args).is_err(), "{args:?}");
+        }
     }
 
     #[test]

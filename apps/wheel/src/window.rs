@@ -61,6 +61,8 @@ struct State {
     hit: Hit,
     /// The submenu arc shown; this window owns it.
     arc: Option<SubArc>,
+    /// Hidden `--demo-hit`: the highlight stays on this tile whatever the cursor does.
+    forced: bool,
     config: Arc<Config>,
     error: Option<Error>,
 }
@@ -70,7 +72,10 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
     // SAFETY: called once at startup before any window exists.
     unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)? };
 
-    let cursor = cursor_pos()?;
+    let cursor = match options.at {
+        Some((x, y)) => POINT { x, y },
+        None => cursor_pos()?,
+    };
     let (_, config) = Settings::load(config_path, options.overrides);
     let o = &config.options;
     let layout = Layout::new(
@@ -96,9 +101,18 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
         left as f32 + size as f32 / 2.0,
         top as f32 + size as f32 / 2.0,
     );
-    let (hit, arc) = track(&layout, &config, center, cursor, None);
-    let renderer = match Renderer::new(hwnd, layout, theme::palette(o.theme), config.clone())
-        .and_then(|r| r.draw(hit, arc).map(|()| r))
+    let (hit, arc) = match options.demo_hit {
+        Some(hit) => (hit, arc_for_hit(hit, &config)),
+        None => track(&layout, &config, center, cursor, None),
+    };
+    let renderer = match Renderer::new(
+        hwnd,
+        layout,
+        theme::palette(o.theme),
+        config.clone(),
+        !options.no_glass,
+    )
+    .and_then(|r| r.draw(hit, arc).map(|()| r))
     {
         Ok(r) => r,
         Err(e) => {
@@ -113,6 +127,7 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
         center,
         hit,
         arc,
+        forced: options.demo_hit.is_some(),
         config,
         error: None,
     }));
@@ -270,6 +285,9 @@ unsafe fn state<'a>(hwnd: HWND) -> Option<&'a mut State> {
 
 /// Re-reads the cursor and redraws when the highlighted sector changed.
 fn poll(state: &mut State) -> Result<()> {
+    if state.forced {
+        return Ok(());
+    }
     let (hit, arc) = track(
         &state.layout,
         &state.config,
@@ -342,6 +360,8 @@ struct RunState {
     /// `None` only while it is being re-created for another monitor DPI.
     renderer: Option<Renderer>,
     palette: Palette,
+    /// Glass look wanted (the renderer still falls back to opaque when it cannot be had).
+    glass: bool,
     config: Arc<Config>,
     settings: Settings,
     /// Size of the wheel in use. A reloaded file changes it only after the open that found the
@@ -376,7 +396,8 @@ pub fn run_background(options: &RunOptions, config_path: PathBuf) -> Result<()> 
     let hwnd = create_popup(RUN_CLASS, run_wnd_proc, WS_EX_TRANSPARENT, (0, 0, size))?;
 
     let palette = theme::palette(config.options.theme);
-    let renderer = match Renderer::new(hwnd, layout, palette, config.clone())
+    let glass = !options.wheel.no_glass;
+    let renderer = match Renderer::new(hwnd, layout, palette, config.clone(), glass)
         .and_then(|r| r.draw(Hit::Center, None).map(|()| r))
     {
         Ok(r) => r,
@@ -389,6 +410,7 @@ pub fn run_background(options: &RunOptions, config_path: PathBuf) -> Result<()> 
     let state = Box::into_raw(Box::new(RunState {
         renderer: Some(renderer),
         palette,
+        glass,
         config: config.clone(),
         settings,
         scale_pct,
@@ -477,7 +499,13 @@ fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<OpenKind> {
         // The monitor DPI differs: size and fonts change, so the render resources are rebuilt.
         // The old ones go first, a window can have only one composition target.
         s.renderer = None;
-        s.renderer = Some(Renderer::new(hwnd, layout, s.palette, s.config.clone())?);
+        s.renderer = Some(Renderer::new(
+            hwnd,
+            layout,
+            s.palette,
+            s.config.clone(),
+            s.glass,
+        )?);
         s.layout = layout;
     }
     let size = layout.size_px() as i32;

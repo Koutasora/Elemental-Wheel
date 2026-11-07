@@ -8,10 +8,17 @@ license.workspace = true
 wheel-core = { path = "../../crates/wheel-core" }
 # Direct2D calls take its Vector2 (the windows crate does not re-export it).
 windows-numerics = "=0.3.1"
+# The `implement` macro (IGeometrySource2D in glass.rs) refers to this crate by name.
+windows-core = "=0.62.2"
 
 [dependencies.windows]
 version = "=0.62.2"
 features = [
+    "Foundation",
+    "Graphics",
+    "System",
+    "UI_Composition",
+    "UI_Composition_Desktop",
     "Win32_Foundation",
     "Win32_Graphics_Direct2D",
     "Win32_Graphics_Direct2D_Common",
@@ -37,6 +44,9 @@ features = [
     "Win32_System_Shutdown",
     "Win32_System_SystemInformation",
     "Win32_System_Threading",
+    "Win32_System_WinRT",
+    "Win32_System_WinRT_Composition",
+    "Win32_System_WinRT_Graphics_Direct2D",
     "Win32_UI_Controls",
     "Win32_UI_HiDpi",
     "Win32_UI_Input_KeyboardAndMouse",

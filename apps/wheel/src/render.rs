@@ -1,9 +1,10 @@
 //! Wheel rendering: D3D11 device -> DXGI composition swap chain -> Direct2D, shown through
 //! DirectComposition on the window. Text goes through DirectWrite.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::mem::ManuallyDrop;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use wheel_core::icon::IconSizes;
@@ -17,10 +18,11 @@ use windows::Win32::Graphics::Direct2D::Common::{
 use windows::Win32::Graphics::Direct2D::{
     D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL, D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
     D2D1_BITMAP_OPTIONS_TARGET, D2D1_BITMAP_PROPERTIES1, D2D1_CAP_STYLE_FLAT,
-    D2D1_DASH_STYLE_SOLID, D2D1_DEVICE_CONTEXT_OPTIONS_NONE, D2D1_DRAW_TEXT_OPTIONS_CLIP,
-    D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ELLIPSE, D2D1_FACTORY_TYPE_SINGLE_THREADED,
-    D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, D2D1_LINE_JOIN_ROUND, D2D1_ROUNDED_RECT,
-    D2D1_STROKE_STYLE_PROPERTIES1, D2D1_STROKE_TRANSFORM_TYPE_NORMAL,
+    D2D1_COMBINE_MODE_UNION, D2D1_DASH_STYLE_SOLID, D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
+    D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ELLIPSE,
+    D2D1_FACTORY_TYPE_MULTI_THREADED, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC,
+    D2D1_LINE_JOIN_ROUND, D2D1_PRIMITIVE_BLEND_COPY, D2D1_PRIMITIVE_BLEND_SOURCE_OVER,
+    D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES1, D2D1_STROKE_TRANSFORM_TYPE_NORMAL,
     D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE,
     D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory, ID2D1Bitmap1, ID2D1Brush,
     ID2D1DeviceContext, ID2D1Factory1, ID2D1Geometry, ID2D1Image, ID2D1PathGeometry,
@@ -53,6 +55,7 @@ use windows::core::{Error, Interface, Result, w};
 use windows_numerics::Vector2;
 
 use crate::fit;
+use crate::glass::Glass;
 use crate::icons::{Icons, TileIcon};
 use crate::theme::{self, Palette};
 
@@ -70,21 +73,39 @@ const NOTCH_FAR: f32 = 9.0;
 const NOTCH_NEAR: f32 = 5.0;
 const NOTCH_CLEARANCE: f32 = 2.0;
 /// Absolute minimum label font size at 96 DPI, in px.
-const MIN_FONT_PX: f32 = 9.0;
+const MIN_FONT_PX: f32 = 8.0;
 /// How far the soft shadow reaches beyond a plate (mockup px; the window leaves room for it)
 /// and into how many translucent strokes it is drawn.
 const SHADOW_REACH: f32 = 10.0;
 const SHADOW_PASSES: u32 = 8;
+/// Corner radius of a tile at 100% scale and 96 DPI, in px (the editor preview uses the same).
+const CORNER_PX: f32 = 6.0;
+/// A corner never takes more than this share of the ring thickness or of the tile width.
+const CORNER_MAX_SHARE: f32 = 0.3;
 /// Share of the accent mixed into the tile that opened the submenu arc.
 const PARENT_TINT: f32 = 0.22;
 
 pub struct Renderer {
     painter: Painter,
     swap_chain: IDXGISwapChain1,
-    dcomp: IDCompositionDevice,
-    // Kept alive for as long as the window shows the wheel.
-    _target: IDCompositionTarget,
-    _visual: IDCompositionVisual,
+    backend: Backend,
+}
+
+/// What puts the swap chain on the window.
+enum Backend {
+    /// Opaque look through DirectComposition.
+    DComp {
+        dcomp: IDCompositionDevice,
+        // Kept alive for as long as the window shows the wheel.
+        _target: IDCompositionTarget,
+        _visual: IDCompositionVisual,
+    },
+    /// Translucent look over the blurred backdrop through Windows.UI.Composition. `shape` is the
+    /// submenu arc (parent, tile count) the blur clip currently follows.
+    Glass {
+        glass: Glass,
+        shape: Cell<Option<(u8, u8)>>,
+    },
 }
 
 /// Everything needed to paint the wheel on a Direct2D device context. The window-bound part
@@ -105,6 +126,13 @@ struct Painter {
     hub_font: IDWriteTextFormat,
     /// Disc under the rings (centre to the outer edge of the outer ring); built once.
     wheel_plate: ID2D1Geometry,
+    /// Tile shapes of the inner and the outer ring; built once.
+    inner_tiles: Vec<ID2D1Geometry>,
+    outer_tiles: Vec<ID2D1Geometry>,
+    /// Shapes of the submenu arcs drawn so far, by (parent, tile count).
+    arcs: RefCell<HashMap<(u8, u8), Rc<ArcShapes>>>,
+    /// Translucent palette over the blurred backdrop: the shadow is cut out under the plates.
+    glass: bool,
     /// Round-joined stroke style of the shadow passes.
     round_join: ID2D1StrokeStyle,
     /// Bold format of the letter shown instead of an icon.
@@ -119,11 +147,14 @@ struct Painter {
 }
 
 impl Renderer {
+    /// `glass` asks for the translucent look; it is given up (with a line in the log) when
+    /// Windows transparency is off or Windows.UI.Composition cannot be set up.
     pub fn new(
         hwnd: HWND,
         layout: Layout,
         palette: Palette,
         config: Arc<Config>,
+        glass: bool,
     ) -> Result<Renderer> {
         let size = layout.size_px();
         let device = create_d3d_device()?;
@@ -149,7 +180,24 @@ impl Renderer {
                 Flags: 0,
             };
             let swap_chain = dxgi_factory.CreateSwapChainForComposition(&device, &desc, None)?;
-            let painter = Painter::new(&dxgi_device, layout, palette, config)?;
+            let mut painter = Painter::new(&dxgi_device, layout, palette, config)?;
+
+            if glass && theme::transparency_enabled() {
+                match Glass::new(hwnd, &swap_chain, size, &painter.wheel_plate) {
+                    Ok(glass) => {
+                        painter.use_glass();
+                        return Ok(Renderer {
+                            painter,
+                            swap_chain,
+                            backend: Backend::Glass {
+                                glass,
+                                shape: Cell::new(None),
+                            },
+                        });
+                    }
+                    Err(e) => wheel_core::log_line!("glass: {e}; using the opaque look"),
+                }
+            }
 
             let dcomp: IDCompositionDevice = DCompositionCreateDevice(&dxgi_device)?;
             let target = dcomp.CreateTargetForHwnd(hwnd, true)?;
@@ -161,9 +209,11 @@ impl Renderer {
             Ok(Renderer {
                 painter,
                 swap_chain,
-                dcomp,
-                _target: target,
-                _visual: visual,
+                backend: Backend::DComp {
+                    dcomp,
+                    _target: target,
+                    _visual: visual,
+                },
             })
         }
     }
@@ -192,8 +242,20 @@ impl Renderer {
                 .CreateBitmapFromDxgiSurface(&surface, Some(&props))?;
             self.painter.paint(&bitmap, hit, arc)?;
 
+            // The blur follows the submenu arc; the content shows it in the same frame.
+            if let Backend::Glass { glass, shape } = &self.backend {
+                let arc = self.painter.valid_arc(arc);
+                let key = arc.map(|a| (a.parent, a.count));
+                if shape.get() != key {
+                    glass.set_clip(&self.painter.glass_clip(arc)?)?;
+                    shape.set(key);
+                }
+            }
             self.swap_chain.Present(1, DXGI_PRESENT(0)).ok()?;
-            self.dcomp.Commit()
+            match &self.backend {
+                Backend::DComp { dcomp, .. } => dcomp.Commit(),
+                Backend::Glass { .. } => Ok(()),
+            }
         }
     }
 }
@@ -209,7 +271,7 @@ impl Painter {
         // SAFETY: plain COM calls with valid arguments; every result is checked via `?`.
         unsafe {
             let d2d_factory: ID2D1Factory1 =
-                D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)?;
+                D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, None)?;
             let d2d_device = d2d_factory.CreateDevice(dxgi_device)?;
             let ctx = d2d_device.CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE)?;
             // The target is in physical pixels, so one D2D unit is one pixel.
@@ -243,6 +305,23 @@ impl Painter {
 
             let dwrite: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
             let k = scale_factor(&layout);
+            let rings = rings(&layout);
+            let round = CORNER_PX * k;
+            let c = size as f32 / 2.0;
+            let inner_tiles = (0..layout.inner_sectors())
+                .map(|i| {
+                    let (a1, a2) = layout.inner_span(i);
+                    let span = (a1 + INNER_HALF_GAP_DEG, a2 - INNER_HALF_GAP_DEG);
+                    sector_path(&d2d_factory, c, rings.inner, span, round)
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let outer_tiles = (0..layout.outer_sectors())
+                .map(|i| {
+                    let (a1, a2) = layout.outer_span(i);
+                    let span = (a1 + OUTER_HALF_GAP_DEG, a2 - OUTER_HALF_GAP_DEG);
+                    sector_path(&d2d_factory, c, rings.outer, span, round)
+                })
+                .collect::<Result<Vec<_>>>()?;
             let icon_sizes = IconSizes::scaled(k);
             let icons = (config.options.view == ViewMode::Icons).then(|| {
                 Icons::new(
@@ -263,6 +342,10 @@ impl Painter {
                 ctx,
                 brush,
                 wheel_plate,
+                inner_tiles,
+                outer_tiles,
+                arcs: RefCell::new(HashMap::new()),
+                glass: false,
                 round_join: round_join.into(),
                 outer_font: text_format(&dwrite, 15.0 * k, DWRITE_FONT_WEIGHT_MEDIUM)?,
                 inner_font: text_format(&dwrite, 11.5 * k, DWRITE_FONT_WEIGHT_MEDIUM)?,
@@ -274,6 +357,69 @@ impl Painter {
                 icon_sizes,
                 layouts: RefCell::new(HashMap::new()),
             })
+        }
+    }
+
+    /// Switches to the translucent palette (see `Palette::glass`).
+    fn use_glass(&mut self) {
+        self.palette = self.palette.glass();
+        self.glass = true;
+    }
+
+    /// The arc as it is drawn: its parent is valid and it has tiles.
+    fn valid_arc(&self, arc: Option<SubArc>) -> Option<SubArc> {
+        arc.filter(|a| a.parent < self.layout.outer_sectors() && a.count > 0)
+    }
+
+    /// Shapes of the open `arc` (valid, see `valid_arc`); built on first use.
+    fn arc_shapes(&self, arc: SubArc) -> Result<Rc<ArcShapes>> {
+        let key = (arc.parent, arc.count);
+        if let Some(shapes) = self.arcs.borrow().get(&key) {
+            return Ok(shapes.clone());
+        }
+        let k = scale_factor(&self.layout);
+        let c = self.size as f32 / 2.0;
+        let round = CORNER_PX * k;
+        let first = self.layout.sub_span(arc, 0).0;
+        let last = self.layout.sub_span(arc, arc.count - 1).1;
+        // Starts inside the wheel disc so the two overlap without a seam.
+        let ring = (
+            self.layout.outer_radius() - 5.0 * k,
+            self.layout.sub_radii().1,
+        );
+        let plate = sector_path(&self.d2d_factory, c, ring, (first, last), round)?;
+        let sub_ring = rings(&self.layout).sub;
+        let tiles = (0..arc.count)
+            .map(|j| {
+                let (a1, a2) = self.layout.sub_span(arc, j);
+                let span = (a1 + OUTER_HALF_GAP_DEG, a2 - OUTER_HALF_GAP_DEG);
+                sector_path(&self.d2d_factory, c, sub_ring, span, round)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let shapes = Rc::new(ArcShapes { plate, tiles });
+        self.arcs.borrow_mut().insert(key, shapes.clone());
+        Ok(shapes)
+    }
+
+    /// Where the backdrop is blurred: the wheel disc, joined with the arc band when one is open.
+    fn glass_clip(&self, arc: Option<SubArc>) -> Result<ID2D1Geometry> {
+        let Some(arc) = arc else {
+            return Ok(self.wheel_plate.clone());
+        };
+        let shapes = self.arc_shapes(arc)?;
+        // SAFETY: plain COM calls; the sink is closed before the geometry is used.
+        unsafe {
+            let path: ID2D1PathGeometry = self.d2d_factory.CreatePathGeometry()?.into();
+            let sink = path.Open()?;
+            self.wheel_plate.CombineWithGeometry(
+                &shapes.plate,
+                D2D1_COMBINE_MODE_UNION,
+                None,
+                0.1,
+                &sink,
+            )?;
+            sink.Close()?;
+            path.cast()
         }
     }
 
@@ -302,17 +448,14 @@ impl Painter {
         let stroke = 1.2 * k;
         // Keeps label text off the sector edges.
         let pad = k;
-        // Keep the outer stroke inside the window.
-        let outer_edge = self.layout.outer_radius() - stroke / 2.0;
-        let inner_ring = (radii.center + 4.0 * k, radii.inner - 2.0 * k);
-        let outer_ring = (radii.inner + 2.0 * k, outer_edge);
-        let sub_ring = {
-            let (r1, r2) = self.layout.sub_radii();
-            (r1, r2 - stroke / 2.0)
-        };
+        let Rings {
+            inner: inner_ring,
+            outer: outer_ring,
+            sub: sub_ring,
+        } = rings(&self.layout);
         let n = self.layout.outer_sectors();
-        // The arc being drawn: its parent is valid and it has tiles.
-        let arc = arc.filter(|a| a.parent < n && a.count > 0);
+        let arc = self.valid_arc(arc);
+        let arc_shapes = arc.map(|a| self.arc_shapes(a)).transpose()?;
         // Where tile content must end in a sector with a submenu, so it stays clear of the notch.
         let notch_ring = (
             self.layout.outer_radius() - NOTCH_FAR * k,
@@ -332,41 +475,44 @@ impl Painter {
             // Plates under the tiles: the wheel disc and, while an arc is open, a band joined to
             // it; the gaps between tiles show them as grooves. Shadows first, so neither plate is
             // darkened by the other's shadow.
-            let arc_plate = match arc {
-                Some(a) => {
-                    let first = self.layout.sub_span(a, 0).0;
-                    let last = self.layout.sub_span(a, a.count - 1).1;
-                    // Starts inside the wheel disc so the two overlap without a seam.
-                    let ring = (
-                        self.layout.outer_radius() - 5.0 * k,
-                        self.layout.sub_radii().1,
-                    );
-                    Some(self.sector_path(c, ring, first, last)?)
-                }
-                None => None,
-            };
+            let arc_plate = arc_shapes.as_ref().map(|shapes| &shapes.plate);
             self.shadow(&self.wheel_plate, k);
-            if let Some(plate) = &arc_plate {
+            if let Some(plate) = arc_plate {
                 self.shadow(plate, k);
+            }
+            if self.glass {
+                // The plates are translucent: the shadow must not show through them.
+                self.cut(
+                    &[&self.wheel_plate]
+                        .into_iter()
+                        .chain(arc_plate)
+                        .collect::<Vec<_>>(),
+                );
             }
             self.brush.SetColor(&p.plate);
             self.ctx
                 .FillGeometry(&self.wheel_plate, &self.brush, None::<&ID2D1Brush>);
-            if let Some(plate) = &arc_plate {
+            if let Some(plate) = arc_plate {
                 self.ctx
                     .FillGeometry(plate, &self.brush, None::<&ID2D1Brush>);
             }
 
+            if self.glass {
+                // Under the tiles there is no plate: they are tinted glass over the blur, and
+                // the plate shows only in the grooves, where it is darker than they are.
+                let tiles = (self.inner_tiles.iter())
+                    .chain(&self.outer_tiles)
+                    .chain(arc_shapes.iter().flat_map(|shapes| &shapes.tiles))
+                    .collect::<Vec<_>>();
+                self.cut(&tiles);
+                self.cut_hub(c, radii.center);
+            }
+
             for i in 0..self.layout.inner_sectors() {
                 let (a1, a2) = self.layout.inner_span(i);
-                let geometry = self.sector_path(
-                    c,
-                    inner_ring,
-                    a1 + INNER_HALF_GAP_DEG,
-                    a2 - INNER_HALF_GAP_DEG,
-                )?;
+                let geometry = &self.inner_tiles[usize::from(i)];
                 let on = hit == Hit::Inner(i);
-                self.fill_tile(&geometry, p.tile, on, stroke);
+                self.fill_tile(geometry, p.tile, on, stroke);
                 if self.icons.is_some() {
                     // The mockup puts inner icons 2 px outwards of the ring's middle.
                     let r = (inner_ring.0 + inner_ring.1) / 2.0 + 2.0 * k;
@@ -395,12 +541,7 @@ impl Painter {
 
             for (i, name) in (0..n).zip(self.config.outer_names(n)) {
                 let (a1, a2) = self.layout.outer_span(i);
-                let geometry = self.sector_path(
-                    c,
-                    outer_ring,
-                    a1 + OUTER_HALF_GAP_DEG,
-                    a2 - OUTER_HALF_GAP_DEG,
-                )?;
+                let geometry = &self.outer_tiles[usize::from(i)];
                 let on = hit == Hit::Outer(i);
                 let has_submenu = self
                     .config
@@ -412,7 +553,7 @@ impl Painter {
                 } else {
                     p.tile
                 };
-                self.fill_tile(&geometry, fill, on, stroke);
+                self.fill_tile(geometry, fill, on, stroke);
                 let content_end = if has_submenu {
                     outer_ring.1.min(notch_clear)
                 } else {
@@ -446,11 +587,12 @@ impl Painter {
                 // Notch at the outer edge of a tile with a submenu.
                 if has_submenu {
                     let mid = (a1 + a2) / 2.0;
-                    let notch = self.sector_path(
+                    let notch = sector_path(
+                        &self.d2d_factory,
                         c,
                         notch_ring,
-                        mid - NOTCH_HALF_DEG,
-                        mid + NOTCH_HALF_DEG,
+                        (mid - NOTCH_HALF_DEG, mid + NOTCH_HALF_DEG),
+                        0.0,
                     )?;
                     // While only its arc is open the tile itself is not highlighted, so the notch
                     // takes the accent colour instead of the text colour on accent.
@@ -467,7 +609,7 @@ impl Painter {
                 }
             }
 
-            if let Some(arc) = arc {
+            if let (Some(arc), Some(shapes)) = (arc, &arc_shapes) {
                 let subs = self
                     .config
                     .outer_item(usize::from(arc.parent))
@@ -476,15 +618,10 @@ impl Painter {
                     // `count` is at most MAX_SUB_TILES (5), so `j` fits in u8.
                     let j = j as u8;
                     let (a1, a2) = self.layout.sub_span(arc, j);
-                    let geometry = self.sector_path(
-                        c,
-                        sub_ring,
-                        a1 + OUTER_HALF_GAP_DEG,
-                        a2 - OUTER_HALF_GAP_DEG,
-                    )?;
+                    let geometry = &shapes.tiles[usize::from(j)];
                     let tile = Hit::Sub(arc.parent, j);
                     let on = hit == tile;
-                    self.fill_tile(&geometry, p.surface, on, stroke);
+                    self.fill_tile(geometry, p.surface, on, stroke);
                     if self.icons.is_some() {
                         let at = polar(c, (sub_ring.0 + sub_ring.1) / 2.0, (a1 + a2) / 2.0);
                         self.icon(tile, at, self.icon_sizes.sub, on, k)?;
@@ -573,6 +710,54 @@ impl Painter {
         }
     }
 
+    /// Makes the area of `shapes` fully transparent.
+    ///
+    /// # Safety
+    /// Must be called between `BeginDraw` and `EndDraw` of `self.ctx`.
+    unsafe fn cut(&self, shapes: &[&ID2D1Geometry]) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            self.ctx.SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
+            self.brush.SetColor(&D2D1_COLOR_F {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0,
+            });
+            for shape in shapes {
+                self.ctx
+                    .FillGeometry(*shape, &self.brush, None::<&ID2D1Brush>);
+            }
+            self.ctx.SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
+        }
+    }
+
+    /// Like `cut` for the centre circle.
+    ///
+    /// # Safety
+    /// Must be called between `BeginDraw` and `EndDraw` of `self.ctx`.
+    unsafe fn cut_hub(&self, c: f32, radius: f32) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            self.ctx.SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
+            self.brush.SetColor(&D2D1_COLOR_F {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0,
+            });
+            self.ctx.FillEllipse(
+                &D2D1_ELLIPSE {
+                    point: Vector2 { X: c, Y: c },
+                    radiusX: radius,
+                    radiusY: radius,
+                },
+                &self.brush,
+            );
+            self.ctx.SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
+        }
+    }
+
     /// # Safety
     /// Must be called between `BeginDraw` and `EndDraw` of `self.ctx`.
     unsafe fn fill_tile(
@@ -592,51 +777,6 @@ impl Painter {
                 .SetColor(if on { &p.accent } else { &p.tile_line });
             self.ctx
                 .DrawGeometry(geometry, &self.brush, stroke, None::<&ID2D1StrokeStyle>);
-        }
-    }
-
-    /// Annular sector between radii `ring.0..ring.1` and angles `a1..a2` (degrees, 0 = up,
-    /// clockwise), around the point (`c`, `c`).
-    fn sector_path(&self, c: f32, ring: (f32, f32), a1: f32, a2: f32) -> Result<ID2D1Geometry> {
-        let (r1, r2) = ring;
-        let arc_size = if a2 - a1 > 180.0 {
-            D2D1_ARC_SIZE_LARGE
-        } else {
-            D2D1_ARC_SIZE_SMALL
-        };
-        let point = |r: f32, a: f32| {
-            let (x, y) = polar(c, r, a);
-            Vector2 { X: x, Y: y }
-        };
-        // SAFETY: plain COM calls; the sink is closed before the geometry is used.
-        unsafe {
-            let path: ID2D1PathGeometry = self.d2d_factory.CreatePathGeometry()?.into();
-            let sink = path.Open()?;
-            sink.BeginFigure(point(r2, a1), D2D1_FIGURE_BEGIN_FILLED);
-            sink.AddArc(&D2D1_ARC_SEGMENT {
-                point: point(r2, a2),
-                size: D2D_SIZE_F {
-                    width: r2,
-                    height: r2,
-                },
-                rotationAngle: 0.0,
-                sweepDirection: D2D1_SWEEP_DIRECTION_CLOCKWISE,
-                arcSize: arc_size,
-            });
-            sink.AddLine(point(r1, a2));
-            sink.AddArc(&D2D1_ARC_SEGMENT {
-                point: point(r1, a1),
-                size: D2D_SIZE_F {
-                    width: r1,
-                    height: r1,
-                },
-                rotationAngle: 0.0,
-                sweepDirection: D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE,
-                arcSize: arc_size,
-            });
-            sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-            sink.Close()?;
-            path.cast()
         }
     }
 
@@ -821,6 +961,33 @@ impl Painter {
     }
 }
 
+/// Shapes of one submenu arc: the band under the tiles and the tiles.
+struct ArcShapes {
+    plate: ID2D1Geometry,
+    tiles: Vec<ID2D1Geometry>,
+}
+
+/// Radii of the tile rings, in px from the wheel centre.
+struct Rings {
+    inner: (f32, f32),
+    outer: (f32, f32),
+    sub: (f32, f32),
+}
+
+fn rings(layout: &Layout) -> Rings {
+    let k = scale_factor(layout);
+    let stroke = 1.2 * k;
+    let radii = layout.radii();
+    // Keep the outer stroke inside the window.
+    let outer_edge = layout.outer_radius() - stroke / 2.0;
+    let (r1, r2) = layout.sub_radii();
+    Rings {
+        inner: (radii.center + 4.0 * k, radii.inner - 2.0 * k),
+        outer: (radii.inner + 2.0 * k, outer_edge),
+        sub: (r1, r2 - stroke / 2.0),
+    }
+}
+
 /// Which label a cached layout belongs to; the index tells sectors with equal text apart.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Kind {
@@ -849,6 +1016,102 @@ fn scale_factor(layout: &Layout) -> f32 {
 fn polar(c: f32, r: f32, deg: f32) -> (f32, f32) {
     let a = deg.to_radians();
     (c + r * a.sin(), c - r * a.cos())
+}
+
+/// Point at distance `r` and angle `deg` from the point `p`.
+fn around(p: (f32, f32), r: f32, deg: f32) -> Vector2 {
+    let a = deg.to_radians();
+    Vector2 {
+        X: p.0 + r * a.sin(),
+        Y: p.1 - r * a.cos(),
+    }
+}
+
+/// Annular sector between radii `ring.0..ring.1` and angles `span.0..span.1` (degrees, 0 = up,
+/// clockwise), around the point (`c`, `c`), with corners rounded by at most `round` px (never
+/// more than `CORNER_MAX_SHARE` of the ring thickness or of the inner arc width). Each corner is
+/// a circle touching the arc and the radial edge, as in the editor preview.
+fn sector_path(
+    factory: &ID2D1Factory1,
+    c: f32,
+    ring: (f32, f32),
+    span: (f32, f32),
+    round: f32,
+) -> Result<ID2D1Geometry> {
+    let (r0, r1) = ring;
+    let (s, e) = span;
+    let width = r0 * (e - s).to_radians();
+    let rc = round
+        .min((r1 - r0) * CORNER_MAX_SHARE)
+        .min(width * CORNER_MAX_SHARE)
+        .max(0.0);
+    let centre = (c, c);
+    // Corner circle centres lie `rc` inside the arc, turned away from the edge by an angle.
+    let (ro, ri) = (r1 - rc, r0 + rc);
+    let turn = |rho: f32| (rc / rho).clamp(0.0, 1.0).asin().to_degrees();
+    let (to, ti) = (turn(ro), turn(ri));
+    let arc_size = |from: f32, upto: f32| {
+        if upto - from > 180.0 {
+            D2D1_ARC_SIZE_LARGE
+        } else {
+            D2D1_ARC_SIZE_SMALL
+        }
+    };
+    // SAFETY: plain COM calls; the sink is closed before the geometry is used.
+    unsafe {
+        let path: ID2D1PathGeometry = factory.CreatePathGeometry()?.into();
+        let sink = path.Open()?;
+        let arc = |point: Vector2, r: f32, sweep, size| {
+            sink.AddArc(&D2D1_ARC_SEGMENT {
+                point,
+                size: D2D_SIZE_F {
+                    width: r,
+                    height: r,
+                },
+                rotationAngle: 0.0,
+                sweepDirection: sweep,
+                arcSize: size,
+            });
+        };
+        let clockwise = D2D1_SWEEP_DIRECTION_CLOCKWISE;
+        let counter = D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE;
+        if rc < 0.05 {
+            let point = |r: f32, a: f32| around(centre, r, a);
+            sink.BeginFigure(point(r1, s), D2D1_FIGURE_BEGIN_FILLED);
+            arc(point(r1, e), r1, clockwise, arc_size(s, e));
+            sink.AddLine(point(r0, e));
+            arc(point(r0, s), r0, counter, arc_size(s, e));
+        } else {
+            let at = |r: f32, a: f32| {
+                let v = around(centre, r, a);
+                (v.X, v.Y)
+            };
+            let (outer_s, outer_e) = (at(ro, s + to), at(ro, e - to));
+            let (inner_s, inner_e) = (at(ri, s + ti), at(ri, e - ti));
+            let small = D2D1_ARC_SIZE_SMALL;
+            sink.BeginFigure(around(outer_s, rc, s - 90.0), D2D1_FIGURE_BEGIN_FILLED);
+            arc(around(outer_s, rc, s + to), rc, clockwise, small);
+            arc(
+                around(outer_e, rc, e - to),
+                r1,
+                clockwise,
+                arc_size(s + to, e - to),
+            );
+            arc(around(outer_e, rc, e + 90.0), rc, clockwise, small);
+            sink.AddLine(around(inner_e, rc, e + 90.0));
+            arc(around(inner_e, rc, e - ti + 180.0), rc, clockwise, small);
+            arc(
+                around(inner_s, rc, s + ti + 180.0),
+                r0,
+                counter,
+                arc_size(s + ti, e - ti),
+            );
+            arc(around(inner_s, rc, s + 270.0), rc, clockwise, small);
+        }
+        sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+        sink.Close()?;
+        path.cast()
+    }
 }
 
 fn text_format(
@@ -983,6 +1246,8 @@ mod tests {
         tiles: usize,
         hit: Hit,
         scale_pct: u16,
+        /// Translucent palette; `save_png` then shows it over stripes instead of a plain colour.
+        glass: bool,
     }
 
     /// Renders the case offscreen and returns the side and BGRA premultiplied pixels.
@@ -996,8 +1261,11 @@ mod tests {
         let size = layout.size_px();
         let device = create_d3d_device().expect("D3D device");
         let dxgi: IDXGIDevice = device.cast().unwrap();
-        let painter = Painter::new(&dxgi, layout, theme::palette(case.theme), Arc::new(config))
+        let mut painter = Painter::new(&dxgi, layout, theme::palette(case.theme), Arc::new(config))
             .expect("painter");
+        if case.glass {
+            painter.use_glass();
+        }
         let props = |options| D2D1_BITMAP_PROPERTIES1 {
             pixelFormat: D2D1_PIXEL_FORMAT {
                 format: DXGI_FORMAT_B8G8R8A8_UNORM,
@@ -1040,15 +1308,23 @@ mod tests {
         }
     }
 
-    /// Writes the pixels as a 24-bit PNG composited over a plain background.
-    fn save_png(path: &Path, size: u32, bgra: &[u8], dark: bool) {
-        let bg: [u32; 3] = if dark {
+    /// Writes the pixels as a 24-bit PNG composited over a plain background, or over stripes of
+    /// mid grey (no blur) when `stripes` is set.
+    fn save_png(path: &Path, size: u32, bgra: &[u8], dark: bool, stripes: bool) {
+        let plain: [u32; 3] = if dark {
             [0x1c, 0x14, 0x10]
         } else {
             [0xf0, 0xe8, 0xe4]
         };
         let mut bgr = Vec::with_capacity((size * size * 3) as usize);
-        for px in bgra.as_chunks::<4>().0 {
+        for (i, px) in bgra.as_chunks::<4>().0.iter().enumerate() {
+            let bg = if stripes && (i as u32 % size / 24).is_multiple_of(2) {
+                [0x30, 0x30, 0x30]
+            } else if stripes {
+                [0xc0, 0xc0, 0xc0]
+            } else {
+                plain
+            };
             let inv = 255 - u32::from(px[3]);
             for (ch, bg) in bg.iter().enumerate() {
                 bgr.push((u32::from(px[ch]) + bg * inv / 255).min(255) as u8);
@@ -1107,6 +1383,7 @@ mod tests {
             tiles,
             hit,
             scale_pct: 100,
+            glass: false,
         };
         use ThemeChoice::{Dark, Light};
         use ViewMode::{Icons as I, Names as N};
@@ -1136,6 +1413,19 @@ mod tests {
                 Hit::Inner(0),
             ),
             case("icons-dark-notch-no-arc", Dark, I, 12, 9, 3, Hit::Inner(0)),
+            // Translucent palette over stripes (the live blur is not part of the offscreen draw).
+            Case {
+                glass: true,
+                ..case("glass-dark-arc3", Dark, N, 12, 2, 3, Hit::Sub(2, 1))
+            },
+            Case {
+                glass: true,
+                ..case("glass-light-arc3", Light, N, 12, 2, 3, Hit::Sub(2, 1))
+            },
+            Case {
+                glass: true,
+                ..case("glass-dark-icons-hover", Dark, I, 12, 0, 5, Hit::Outer(4))
+            },
             // Smallest scale: labels stay at the minimum font size (trimmed when needed).
             Case {
                 scale_pct: 60,
@@ -1147,7 +1437,7 @@ mod tests {
             assert!(pixels.iter().any(|&b| b != 0), "{} is empty", case.name);
             if let Some(dir) = &out {
                 let path = dir.join(format!("{}.png", case.name));
-                save_png(&path, size, &pixels, case.theme == Dark);
+                save_png(&path, size, &pixels, case.theme == Dark, case.glass);
             }
         }
     }
