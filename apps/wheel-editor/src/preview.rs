@@ -26,6 +26,8 @@ pub struct Outcome {
     pub drops: Vec<(Selection, PathBuf)>,
 }
 
+/// Corner radius of a tile at wheel scale 1 (100%), in layout pixels.
+const CORNER_PX: f32 = 6.0;
 /// Angular gap between neighbouring tiles, in degrees.
 const GAP_DEG: f32 = 1.5;
 
@@ -41,19 +43,59 @@ struct Style {
     text: Color32,
 }
 
-/// Draws an annular sector between radii `r0..r1` and angles `a0..a1` (degrees).
-fn annular(painter: &Painter, c: Pos2, (r0, r1): (f32, f32), (a0, a1): (f32, f32), s: &Style) {
-    let steps = (((a1 - a0) / 3.0).ceil() as usize).max(1);
-    let angle = |i: usize| a0 + (a1 - a0) * i as f32 / steps as f32;
-    let outer: Vec<Pos2> = (0..=steps).map(|i| polar(c, r1, angle(i))).collect();
-    let inner: Vec<Pos2> = (0..=steps).map(|i| polar(c, r0, angle(i))).collect();
+/// Points of a quarter-ish arc of radius `rc` around `centre`, from direction `from` to `to`
+/// (degrees, 0 = up, clockwise).
+fn corner(centre: Pos2, rc: f32, (from, to): (f32, f32)) -> impl Iterator<Item = Pos2> {
+    const STEPS: usize = 5;
+    (0..=STEPS).map(move |i| polar(centre, rc, from + (to - from) * i as f32 / STEPS as f32))
+}
+
+/// Outline of an annular sector between radii `r0..r1` and angles `a0..a1` (degrees) with
+/// corners rounded by at most `round`, as two chains of equal length running from the `a0` side
+/// to the `a1` side: the outer edge and the inner edge.
+fn sector_chains(
+    c: Pos2,
+    (r0, r1): (f32, f32),
+    (a0, a1): (f32, f32),
+    round: f32,
+) -> (Vec<Pos2>, Vec<Pos2>) {
+    let width = r0 * (a1 - a0).to_radians();
+    let rc = round.min((r1 - r0) * 0.3).min(width * 0.3).max(0.0);
+    // Corner circles touch the arc and the radial edge: their centres lie `rc` inside the arc,
+    // turned away from the edge by the angle `asin(rc / radius)`.
+    let (ro, ri) = (r1 - rc, r0 + rc);
+    let turn = |rho: f32| (rc / rho).clamp(0.0, 1.0).asin().to_degrees();
+    let (to, ti) = (turn(ro), turn(ri));
+    let steps = (((a1 - a0 - 2.0 * to) / 3.0).ceil() as usize).max(1);
+    let along = |r: f32, from: f32, upto: f32| {
+        (1..steps).map(move |i| polar(c, r, from + (upto - from) * i as f32 / steps as f32))
+    };
+
+    let mut outer: Vec<Pos2> = corner(polar(c, ro, a0 + to), rc, (a0 - 90.0, a0 + to)).collect();
+    outer.extend(along(r1, a0 + to, a1 - to));
+    outer.extend(corner(polar(c, ro, a1 - to), rc, (a1 - to, a1 + 90.0)));
+
+    let mut inner: Vec<Pos2> =
+        corner(polar(c, ri, a0 + ti), rc, (a0 + 270.0, a0 + ti + 180.0)).collect();
+    inner.extend(along(r0, a0 + ti, a1 - ti));
+    inner.extend(corner(
+        polar(c, ri, a1 - ti),
+        rc,
+        (a1 - ti + 180.0, a1 + 90.0),
+    ));
+    (outer, inner)
+}
+
+/// Draws a rounded annular sector between radii `r0..r1` and angles `a0..a1` (degrees).
+fn annular(painter: &Painter, c: Pos2, ring: (f32, f32), span: (f32, f32), round: f32, s: &Style) {
+    let (outer, inner) = sector_chains(c, ring, span, round);
     // The sector is concave, so it is filled as a strip of triangles.
     let mut mesh = Mesh::default();
     for p in outer.iter().chain(&inner) {
         mesh.colored_vertex(*p, s.fill);
     }
-    let n = steps as u32 + 1;
-    for i in 0..steps as u32 {
+    let n = outer.len() as u32;
+    for i in 0..n - 1 {
         mesh.add_triangle(i, i + 1, n + i);
         mesh.add_triangle(i + 1, n + i + 1, n + i);
     }
@@ -162,6 +204,7 @@ pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
     let outer_ring = (radii.inner + 2.0 * u, layout.outer_radius());
     let (sub_in, sub_out) = layout.sub_radii();
     let scale = |(a, b): (f32, f32)| (a * fit, b * fit);
+    let round = CORNER_PX * u * fit;
     let icons_view = config.options.view == ViewMode::Icons;
     let sizes = IconSizes::scaled(u);
 
@@ -224,22 +267,26 @@ pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
     };
     let tile_style = |sel: Selection, filled: bool, base: Color32| -> Style {
         let selected = model.selection == sel;
+        let hover = hovered == Some(sel);
         let target = dragging && drop_target == Some(sel);
         let parent = matches!((sel, parent_selected), (Selection::Outer(i), Some(p)) if i == p);
+        // Hover fills the tile with the accent, as in the wheel; the selection is an outline.
         Style {
-            fill: if selected {
+            fill: if hover {
                 accent
             } else if filled {
                 base
             } else {
                 empty_fill
             },
-            stroke: if target || parent {
+            stroke: if selected || target {
                 Stroke::new(3.0, accent)
+            } else if parent {
+                Stroke::new(2.0, accent)
             } else {
                 Stroke::new(1.0, line)
             },
-            text: if selected { on_accent } else { text_color },
+            text: if hover { on_accent } else { text_color },
         }
     };
 
@@ -247,7 +294,14 @@ pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
         let (a0, a1) = layout.inner_span(i as u8);
         let st = tile_style(Selection::Inner(i), item.action != Action::None, inner_fill);
         let r = scale(inner_ring);
-        annular(&painter, center, r, (a0 + GAP_DEG, a1 - GAP_DEG), &st);
+        annular(
+            &painter,
+            center,
+            r,
+            (a0 + GAP_DEG, a1 - GAP_DEG),
+            round,
+            &st,
+        );
         let mid_r = (r.0 + r.1) / 2.0;
         if icons_view {
             // As in the wheel, inner icons sit 2 px outwards of the ring's middle.
@@ -269,7 +323,14 @@ pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
         let (a0, a1) = layout.outer_span(i as u8);
         let st = tile_style(Selection::Outer(i), item.action != Action::None, outer_fill);
         let r = scale(outer_ring);
-        annular(&painter, center, r, (a0 + GAP_DEG, a1 - GAP_DEG), &st);
+        annular(
+            &painter,
+            center,
+            r,
+            (a0 + GAP_DEG, a1 - GAP_DEG),
+            round,
+            &st,
+        );
         let mid = (a0 + a1) / 2.0;
         let at = polar(center, (r.0 + r.1) / 2.0, mid);
         if icons_view {
@@ -315,7 +376,14 @@ pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
                 item.action != Action::None,
                 outer_fill,
             );
-            annular(&painter, center, r, (a0 + GAP_DEG, a1 - GAP_DEG), &st);
+            annular(
+                &painter,
+                center,
+                r,
+                (a0 + GAP_DEG, a1 - GAP_DEG),
+                round,
+                &st,
+            );
             let at = polar(center, (r.0 + r.1) / 2.0, (a0 + a1) / 2.0);
             if icons_view {
                 tile_icon(&painter, icons, item, at, sizes.sub, fit, u, st.text);
@@ -348,4 +416,31 @@ pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
         );
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rounded_sector_stays_inside_its_rings() {
+        let c = pos2(10.0, -5.0);
+        for round in [0.0, 4.0, 100.0] {
+            let (outer, inner) = sector_chains(c, (100.0, 160.0), (-15.0, 15.0), round);
+            assert_eq!(outer.len(), inner.len());
+            for p in outer.iter().chain(&inner) {
+                let d = (*p - c).length();
+                assert!((100.0 - 1e-3..=160.0 + 1e-3).contains(&d), "{round}: {d}");
+            }
+        }
+    }
+
+    #[test]
+    fn rounding_cuts_the_corners() {
+        let c = Pos2::ZERO;
+        let (sharp, _) = sector_chains(c, (100.0, 160.0), (-15.0, 15.0), 0.0);
+        let (round, _) = sector_chains(c, (100.0, 160.0), (-15.0, 15.0), 8.0);
+        // The first outer point lies on the radial edge: farther out when sharp.
+        assert!(sharp[0].to_vec2().length() > round[0].to_vec2().length());
+    }
 }
