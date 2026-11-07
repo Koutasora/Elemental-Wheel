@@ -9,8 +9,8 @@ i żywy hak.
 - [x] Log `%LOCALAPPDATA%\Elemental-Wheel\wheel.log` (i `editor.log`): komunikaty dziś wypisywane na konsolę, panic z miejscem wystąpienia, limit rozmiaru z jednym starszym plikiem; w testach jawna ścieżka
 - [x] Panic w haku myszy i w wątkach akcji nie kończy procesu bez śladu: zdarzenie przepuszczone, wpis w logu
 - [x] Zepsuty `config.json` w trakcie pracy: koło zostaje na ostatniej dobrej konfiguracji w pamięci, błąd w logu, `.bak` nietknięty; testy
-- [ ] Awaria edytora (zabity proces, także w trakcie zapisu) nie psuje `config.json`; plik tymczasowy po przerwanym zapisie nie przeszkadza kolejnemu zapisowi; test
-- [ ] Edytor wykrywa zmianę pliku z zewnątrz: bez niezapisanych zmian wczytuje go ponownie i informuje w pasku stanu; z niezapisanymi zmianami pyta (wczytaj plik / zostaw moje); zapis nadpisujący nowszy plik pyta przed nadpisaniem; testy logiki bez okna
+- [x] Awaria edytora (zabity proces, także w trakcie zapisu) nie psuje `config.json`; plik tymczasowy po przerwanym zapisie nie przeszkadza kolejnemu zapisowi; test
+- [x] Edytor wykrywa zmianę pliku z zewnątrz: bez niezapisanych zmian wczytuje go ponownie i informuje w pasku stanu; z niezapisanymi zmianami pyta (wczytaj plik / zostaw moje); zapis nadpisujący nowszy plik pyta przed nadpisaniem; testy logiki bez okna
 - [ ] Pomiar pamięci w tle (prywatna, working set, uchwyty, GDI/USER) w widoku nazw i ikon, wyniki w pliku etapu; cel do 15 MB prywatnej
 - [ ] Pomiar czasu otwarcia (od progu przytrzymania do pierwszej klatki): pierwsze otwarcie, kolejne, po zmianie konfiguracji; mediana i maksimum w pliku etapu; cel mediana do 16 ms
 - [ ] Renderer i ikony przygotowane od razu po wczytaniu konfiguracji, nie przy pierwszym otwarciu; układ tekstu glifów nie tworzony przy każdym odrysowaniu; pomiar przed i po
@@ -23,7 +23,7 @@ i żywy hak.
 - [x] `apps/wheel/src/hook.rs`, `actions.rs`, `window.rs`: `catch_unwind` w procedurze haka i wątkach akcji, przy błędzie zdarzenie przepuszczone
 - [x] `crates/wheel-core/src/config.rs`, `apps/wheel/src/settings.rs`: przeładowanie zepsutego pliku zostawia bieżącą konfigurację (bez `.bak` i domyślnych); start bez zmian (plik, `.bak`, domyślne); testy
 - [x] `config::save()`: test przerwanego zapisu (pozostały plik tymczasowy)
-- [ ] `apps/wheel-editor/src/model.rs`, `main.rs`: czas modyfikacji pliku przy wczytaniu i zapisie, sprawdzanie przy odzyskaniu fokusu i co kilka sekund, pytanie przy konflikcie, pytanie przed nadpisaniem nowszego pliku; testy modelu
+- [x] `apps/wheel-editor/src/model.rs`, `main.rs`: czas modyfikacji pliku przy wczytaniu i zapisie, sprawdzanie przy odzyskaniu fokusu i co kilka sekund, pytanie przy konflikcie, pytanie przed nadpisaniem nowszego pliku; testy modelu
 - [ ] Ukryta flaga `--stats`: czas otwarcia każdego otwarcia do logu, co minutę pamięć i uchwyty (`GetProcessMemoryInfo`, `GetGuiResources`)
 - [ ] `apps/wheel/src/window.rs`, `render.rs`, `icons.rs`: przygotowanie renderera i ikon po wczytaniu konfiguracji, pamięć podręczna układu tekstu glifów
 - [ ] `tools/soak.ps1`: `wheel.exe --run --accept-injected --stats --config <scratchpad>`, cykliczne otwieranie i zamykanie (z łukiem podmenu), zmiany pliku konfiguracji (także na zepsuty), zbieranie CSV
@@ -40,6 +40,8 @@ i żywy hak.
 - Ukryta flaga `--test-panic hook|window|action` (jak `--test-stall-hook`), żeby sprawdzić odzyskiwanie na żywo wejściem wstrzykiwanym.
 - Edytor przy otwarciu i ponownym wczytaniu zostaje przy dotychczasowym zachowaniu (plik, `.bak`, domyślne, z komunikatem): to jawne otwarcie przez użytkownika, nie podmiana działającej konfiguracji.
 - Plik tymczasowy zapisu ma stałą nazwę `config.json.tmp`; pozostałość po przerwanym zapisie jest nadpisywana przy następnym zapisie i ignorowana przy wczytaniu (test, bez zmian w kodzie).
+- Awaria edytora sprawdzona przez zabicie procesu po zmianie pliku z zewnątrz (plik nietknięty, brak `.tmp`); zabicie w samym trakcie zapisu pokrywa zapis atomowy i test pozostałego `.tmp` (trafienie w tę chwilę na żywo niepraktyczne).
+- Zmiana pliku rozpoznawana po czasie modyfikacji i długości; zmiana o tej samej długości w obrębie rozdzielczości czasu pliku tuż po własnym zapisie edytora nie zostanie zauważona (akceptowalne).
 
 ## Podsumowanie
 (wypełnia /etap-zamknij)

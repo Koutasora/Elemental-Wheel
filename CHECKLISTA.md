@@ -61,7 +61,8 @@
 ## 07 stabilnosc-i-pomiary
 - [ ] Pomiar zużycia pamięci w tle
 - [ ] Pomiar czasu otwarcia koła
-- [ ] Odporność na awarie edytora i błędną konfigurację
+- [x] Odporność na awarie edytora i błędną konfigurację (zepsuty plik w trakcie pracy, zabity edytor, przerwany zapis)
+- [x] Edytor wykrywa zmianę pliku konfiguracji z zewnątrz
 - [x] Log w `%LOCALAPPDATA%\Elemental-Wheel` (koło i edytor), limit 1 MB, `--log`
 - [x] Panika w haku, oknie koła i akcji przechwycona i zapisana w logu; koło działa dalej
 - [ ] Test wielogodzinny
