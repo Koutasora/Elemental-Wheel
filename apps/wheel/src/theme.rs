@@ -63,31 +63,106 @@ const DARK: Palette = Palette {
     accent_fg: rgb(0x0c0f15),
 };
 
-/// Translucent tints for drawing over the blurred backdrop. The plate is darker than the tiles
-/// so the grooves stay visible (the plate is cut out under the tiles); the edge is a light rim.
+/// Translucent colors for drawing over the blurred snapshot of the desktop. `plate` is a faint
+/// darkening over the whole disc: it stays visible only in the grooves, because the tiles lie
+/// over it with their own light fill. `tile_line` is the light edge of a tile.
 const GLASS_LIGHT: Palette = Palette {
-    plate: rgba(0x39405a, 0.5),
-    tile: rgba(0xffffff, 0.66),
-    surface: rgba(0xffffff, 0.66),
-    tile_line: rgba(0xffffff, 0.85),
-    center: rgba(0xf6f7fa, 0.72),
+    plate: rgba(0x39405a, 0.10),
+    tile: rgba(0xffffff, 0.14),
+    surface: rgba(0xffffff, 0.14),
+    tile_line: rgba(0xffffff, 0.8),
+    center: rgba(0xffffff, 0.3),
+    accent: rgba(0x2851d0, 0.85),
     ..LIGHT
 };
 
 const GLASS_DARK: Palette = Palette {
-    plate: rgba(0x000000, 0.7),
-    tile: rgba(0x1b202b, 0.7),
-    surface: rgba(0x151922, 0.7),
-    tile_line: rgba(0xffffff, 0.2),
-    center: rgba(0x11151d, 0.75),
+    plate: rgba(0x000000, 0.12),
+    tile: rgba(0xffffff, 0.05),
+    surface: rgba(0xffffff, 0.05),
+    tile_line: rgba(0xffffff, 0.35),
+    center: rgba(0x11151d, 0.3),
+    accent: rgba(0x7f9cff, 0.85),
     ..DARK
+};
+
+/// What the glass look needs besides the palette: how the snapshot is toned and the colors of
+/// the glass body, its edges, its sheen and the halo behind the labels.
+#[derive(Clone, Copy)]
+pub struct GlassStyle {
+    /// Saturation of the blurred snapshot (1 = unchanged), like the macOS vibrancy boost.
+    pub saturation: f32,
+    /// Brightness of the blurred snapshot: multiplied by `gain`, then `lift` is added.
+    pub gain: f32,
+    pub lift: f32,
+    /// Tint laid over the blurred snapshot.
+    pub tint: D2D1_COLOR_F,
+    /// Light edge on the inside of the glass outline and the dark line just outside it.
+    pub rim: D2D1_COLOR_F,
+    pub edge: D2D1_COLOR_F,
+    /// Alpha of the white sheen at the top of the disc.
+    pub sheen: f32,
+    /// Halo behind label text (the opposite brightness of the text).
+    pub halo: D2D1_COLOR_F,
+}
+
+const STYLE_LIGHT: GlassStyle = GlassStyle {
+    saturation: 1.4,
+    gain: 1.0,
+    lift: 0.02,
+    tint: rgba(0xffffff, 0.42),
+    rim: rgba(0xffffff, 0.9),
+    edge: rgba(0x141821, 0.35),
+    sheen: 0.3,
+    halo: rgba(0xffffff, 0.9),
+};
+
+const STYLE_DARK: GlassStyle = GlassStyle {
+    saturation: 1.4,
+    gain: 0.9,
+    lift: 0.0,
+    tint: rgba(0x1b202b, 0.45),
+    rim: rgba(0xffffff, 0.35),
+    edge: rgba(0x000000, 0.45),
+    sheen: 0.18,
+    halo: rgba(0x000000, 0.85),
 };
 
 impl Palette {
     /// The translucent variant of this palette, for the glass look.
-    pub fn glass(self) -> Palette {
-        if self.dark { GLASS_DARK } else { GLASS_LIGHT }
+    pub fn glass(self, level: f32) -> Palette {
+        let p = if self.dark { GLASS_DARK } else { GLASS_LIGHT };
+        let see = see_through(level);
+        let scale = |c: D2D1_COLOR_F| D2D1_COLOR_F {
+            a: (c.a * see).min(1.0),
+            ..c
+        };
+        Palette {
+            plate: scale(p.plate),
+            tile: scale(p.tile),
+            surface: scale(p.surface),
+            center: scale(p.center),
+            ..p
+        }
     }
+
+    /// Glass look parameters matching this palette's theme.
+    pub fn glass_style(&self, level: f32) -> GlassStyle {
+        let s = if self.dark { STYLE_DARK } else { STYLE_LIGHT };
+        GlassStyle {
+            tint: D2D1_COLOR_F {
+                a: (s.tint.a * see_through(level)).min(1.0),
+                ..s.tint
+            },
+            ..s
+        }
+    }
+}
+
+/// Factor for the alphas of the glass colors: 1 at the default level 0.5 (the values above),
+/// more opaque below it and almost clear at 1.
+fn see_through(level: f32) -> f32 {
+    1.9 - 1.8 * level.clamp(0.0, 1.0)
 }
 
 /// Whether Windows draws transparency effects (Settings > Personalization > Colors).

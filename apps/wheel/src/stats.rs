@@ -37,7 +37,7 @@ pub fn enable() {
     ENABLED.store(true, Ordering::Relaxed);
 }
 
-fn enabled() -> bool {
+pub fn enabled() -> bool {
     ENABLED.load(Ordering::Relaxed)
 }
 

@@ -10,23 +10,35 @@ use std::sync::Arc;
 use wheel_core::icon::IconSizes;
 use wheel_core::{Config, Hit, Layout, SubArc, ViewMode};
 
+use std::time::Instant;
+
 use windows::Win32::Foundation::{E_FAIL, HMODULE, HWND};
 use windows::Win32::Graphics::Direct2D::Common::{
-    D2D_RECT_F, D2D_SIZE_F, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED,
-    D2D1_FIGURE_END_CLOSED, D2D1_PIXEL_FORMAT,
+    D2D_RECT_F, D2D_SIZE_F, D2D_SIZE_U, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_BORDER_MODE_HARD,
+    D2D1_COLOR_F, D2D1_COMPOSITE_MODE_SOURCE_COPY, D2D1_COMPOSITE_MODE_SOURCE_OVER,
+    D2D1_FIGURE_BEGIN_FILLED, D2D1_FIGURE_END_CLOSED, D2D1_GRADIENT_STOP, D2D1_PIXEL_FORMAT,
 };
 use windows::Win32::Graphics::Direct2D::{
-    D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL, D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
-    D2D1_BITMAP_OPTIONS_TARGET, D2D1_BITMAP_PROPERTIES1, D2D1_CAP_STYLE_FLAT,
-    D2D1_COMBINE_MODE_UNION, D2D1_DASH_STYLE_SOLID, D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
-    D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ELLIPSE,
-    D2D1_FACTORY_TYPE_MULTI_THREADED, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC,
-    D2D1_LINE_JOIN_ROUND, D2D1_PRIMITIVE_BLEND_COPY, D2D1_PRIMITIVE_BLEND_SOURCE_OVER,
-    D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES1, D2D1_STROKE_TRANSFORM_TYPE_NORMAL,
+    CLSID_D2D1ColorMatrix, CLSID_D2D1GaussianBlur, CLSID_D2D1Shadow, D2D1_ARC_SEGMENT,
+    D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL, D2D1_BITMAP_OPTIONS, D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+    D2D1_BITMAP_OPTIONS_NONE, D2D1_BITMAP_OPTIONS_TARGET, D2D1_BITMAP_PROPERTIES1,
+    D2D1_BUFFER_PRECISION_8BPC_UNORM, D2D1_CAP_STYLE_FLAT,
+    D2D1_COLOR_INTERPOLATION_MODE_PREMULTIPLIED, D2D1_COLOR_SPACE_SRGB,
+    D2D1_COLORMATRIX_PROP_COLOR_MATRIX, D2D1_COMBINE_MODE_INTERSECT, D2D1_COMBINE_MODE_UNION,
+    D2D1_DASH_STYLE_SOLID, D2D1_DEVICE_CONTEXT_OPTIONS_NONE, D2D1_DRAW_TEXT_OPTIONS_CLIP,
+    D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ELLIPSE, D2D1_EXTEND_MODE_CLAMP,
+    D2D1_FACTORY_TYPE_MULTI_THREADED, D2D1_GAUSSIANBLUR_PROP_BORDER_MODE,
+    D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC,
+    D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LINE_JOIN_ROUND, D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES,
+    D2D1_PRIMITIVE_BLEND_COPY, D2D1_PRIMITIVE_BLEND_SOURCE_OVER, D2D1_PROPERTY_TYPE,
+    D2D1_PROPERTY_TYPE_ENUM, D2D1_PROPERTY_TYPE_FLOAT, D2D1_PROPERTY_TYPE_MATRIX_5X4,
+    D2D1_PROPERTY_TYPE_VECTOR4, D2D1_ROUNDED_RECT, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION,
+    D2D1_SHADOW_PROP_COLOR, D2D1_STROKE_STYLE_PROPERTIES1, D2D1_STROKE_TRANSFORM_TYPE_NORMAL,
     D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE,
-    D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory, ID2D1Bitmap1, ID2D1Brush,
-    ID2D1DeviceContext, ID2D1Factory1, ID2D1Geometry, ID2D1Image, ID2D1PathGeometry,
-    ID2D1SolidColorBrush, ID2D1StrokeStyle,
+    D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory, ID2D1Bitmap1, ID2D1BitmapBrush1,
+    ID2D1Brush, ID2D1Device, ID2D1DeviceContext, ID2D1Effect, ID2D1Factory1, ID2D1Geometry,
+    ID2D1Image, ID2D1LinearGradientBrush, ID2D1PathGeometry, ID2D1SolidColorBrush,
+    ID2D1StrokeStyle,
 };
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP};
 use windows::Win32::Graphics::Direct3D11::{
@@ -54,10 +66,10 @@ use windows::Win32::Graphics::Dxgi::{
 use windows::core::{Error, Interface, Result, w};
 use windows_numerics::Vector2;
 
+use crate::backdrop;
 use crate::fit;
-use crate::glass::Glass;
 use crate::icons::{Icons, TileIcon};
-use crate::theme::{self, Palette};
+use crate::theme::{self, GlassStyle, Palette};
 
 /// Outer radius of the mockup at 100% and 96 DPI; the mockup's other sizes (fonts, gaps,
 /// stroke) are expressed relative to it.
@@ -84,35 +96,36 @@ const CORNER_PX: f32 = 6.0;
 const CORNER_MAX_SHARE: f32 = 0.3;
 /// Share of the accent mixed into the tile that opened the submenu arc.
 const PARENT_TINT: f32 = 0.22;
+/// Opacity of the accent on that tile in the glass look.
+const PARENT_GLASS_ALPHA: f32 = 0.3;
+/// Standard deviation of the blur of the desktop snapshot at 100% scale and 96 DPI, in px.
+const BLUR_SIGMA: f32 = 9.0;
+/// Standard deviation of the halo behind label text, in px at the same scale.
+const HALO_SIGMA: f32 = 1.8;
+/// The sheen of the disc is its part inside an ellipse of this height (share of the radius) whose
+/// centre lies this much above the disc centre.
+const SHEEN_HEIGHT: f32 = 0.85;
+const SHEEN_LIFT: f32 = 0.55;
+/// Opacity of the sheen on a highlighted tile.
+const TILE_SHEEN: f32 = 0.3;
 
 pub struct Renderer {
     painter: Painter,
     swap_chain: IDXGISwapChain1,
-    backend: Backend,
-}
-
-/// What puts the swap chain on the window.
-enum Backend {
-    /// Opaque look through DirectComposition.
-    DComp {
-        dcomp: IDCompositionDevice,
-        // Kept alive for as long as the window shows the wheel.
-        _target: IDCompositionTarget,
-        _visual: IDCompositionVisual,
-    },
-    /// Translucent look over the blurred backdrop through Windows.UI.Composition. `shape` is the
-    /// submenu arc (parent, tile count) the blur clip currently follows.
-    Glass {
-        glass: Glass,
-        shape: Cell<Option<(u8, u8)>>,
-    },
+    dcomp: IDCompositionDevice,
+    // Kept alive for as long as the window shows the wheel.
+    _target: IDCompositionTarget,
+    _visual: IDCompositionVisual,
 }
 
 /// Everything needed to paint the wheel on a Direct2D device context. The window-bound part
 /// (swap chain, DirectComposition) lives in `Renderer`, which keeps painting testable offscreen.
 struct Painter {
     layout: Layout,
+    /// Opaque palette, used when there is no snapshot of the desktop to show through.
     palette: Palette,
+    /// Translucent palette over the blurred snapshot.
+    glass_palette: Palette,
     /// Source of the sector names.
     config: Arc<Config>,
     /// Window / swap chain side in pixels.
@@ -131,8 +144,10 @@ struct Painter {
     outer_tiles: Vec<ID2D1Geometry>,
     /// Shapes of the submenu arcs drawn so far, by (parent, tile count).
     arcs: RefCell<HashMap<(u8, u8), Rc<ArcShapes>>>,
-    /// Translucent palette over the blurred backdrop: the shadow is cut out under the plates.
-    glass: bool,
+    /// GPU resources of the glass look; `None` when it is off or could not be set up.
+    frost: Option<Frost>,
+    /// The glass look is shown: `frost` holds the blurred snapshot of the current open.
+    glass: Cell<bool>,
     /// Round-joined stroke style of the shadow passes.
     round_join: ID2D1StrokeStyle,
     /// Bold format of the letter shown instead of an icon.
@@ -146,15 +161,41 @@ struct Painter {
     layouts: RefCell<HashMap<(Kind, String), FittedLabel>>,
 }
 
+/// Direct2D objects of the glass look. The snapshot of the desktop is blurred once per open into
+/// `result`; every frame then only paints that bitmap.
+struct Frost {
+    style: GlassStyle,
+    /// Second context: bakes label halos while `Painter::ctx` is in the middle of a frame.
+    aux: ID2D1DeviceContext,
+    aux_brush: ID2D1SolidColorBrush,
+    /// Snapshot (window plus `pad` px on every side) as uploaded to the GPU, input of the blur.
+    source: ID2D1Bitmap1,
+    /// Gaussian blur of `source`, then saturation and brightness.
+    tone: ID2D1Effect,
+    /// Soft shadow of a label, for its halo.
+    shadow: ID2D1Effect,
+    /// Blurred snapshot cropped to the window.
+    result: ID2D1Bitmap1,
+    backdrop: ID2D1BitmapBrush1,
+    /// White to transparent, top to bottom; the points are set per use.
+    sheen: ID2D1LinearGradientBrush,
+    /// Where the sheen lies on the disc.
+    sheen_shape: ID2D1Geometry,
+    /// Extra snapshot pixels on every side, so that the blur has real pixels to draw from.
+    pad: u32,
+    /// Standard deviation of the label halo, in px.
+    halo_sigma: f32,
+}
+
 impl Renderer {
-    /// `glass` asks for the translucent look; it is given up (with a line in the log) when
-    /// Windows transparency is off or Windows.UI.Composition cannot be set up.
+    /// `glass` (0..=1) asks for the translucent look, 0 for the opaque one; it is given up (with a line in the log) when
+    /// Windows transparency is off or the effects cannot be set up.
     pub fn new(
         hwnd: HWND,
         layout: Layout,
         palette: Palette,
         config: Arc<Config>,
-        glass: bool,
+        glass: f32,
     ) -> Result<Renderer> {
         let size = layout.size_px();
         let device = create_d3d_device()?;
@@ -180,24 +221,12 @@ impl Renderer {
                 Flags: 0,
             };
             let swap_chain = dxgi_factory.CreateSwapChainForComposition(&device, &desc, None)?;
-            let mut painter = Painter::new(&dxgi_device, layout, palette, config)?;
-
-            if glass && theme::transparency_enabled() {
-                match Glass::new(hwnd, &swap_chain, size, &painter.wheel_plate) {
-                    Ok(glass) => {
-                        painter.use_glass();
-                        return Ok(Renderer {
-                            painter,
-                            swap_chain,
-                            backend: Backend::Glass {
-                                glass,
-                                shape: Cell::new(None),
-                            },
-                        });
-                    }
-                    Err(e) => wheel_core::log_line!("glass: {e}; using the opaque look"),
-                }
-            }
+            let glass = if theme::transparency_enabled() {
+                glass
+            } else {
+                0.0
+            };
+            let painter = Painter::new(&dxgi_device, layout, palette, config, glass)?;
 
             let dcomp: IDCompositionDevice = DCompositionCreateDevice(&dxgi_device)?;
             let target = dcomp.CreateTargetForHwnd(hwnd, true)?;
@@ -209,13 +238,44 @@ impl Renderer {
             Ok(Renderer {
                 painter,
                 swap_chain,
-                backend: Backend::DComp {
-                    dcomp,
-                    _target: target,
-                    _visual: visual,
-                },
+                dcomp,
+                _target: target,
+                _visual: visual,
             })
         }
+    }
+
+    /// Takes the snapshot of the desktop for the glass look: call it with the window still
+    /// hidden, right before `draw`, giving the window's top-left corner in screen pixels. Without
+    /// it, or when it fails (logged), `draw` paints the opaque look. Returns the milliseconds the
+    /// capture and the upload plus blur took, `None` when there is no glass look.
+    pub fn prepare(&self, left: i32, top: i32) -> Option<(f64, f64)> {
+        let frost = self.painter.frost.as_ref()?;
+        self.painter.glass.set(false);
+        let side = self.painter.size + 2 * frost.pad;
+        let pad = frost.pad as i32;
+        let started = Instant::now();
+        let snapshot = match backdrop::capture(left - pad, top - pad, side) {
+            Ok(snapshot) => snapshot,
+            Err(e) => {
+                wheel_core::log_line!("glass: cannot capture the desktop: {e}; opaque look");
+                return None;
+            }
+        };
+        let uploaded = self.painter.upload(snapshot.pixels(), snapshot.pitch());
+        // The pixels are on the GPU now; the CPU copy is not kept.
+        drop(snapshot);
+        let captured = Instant::now();
+        let blurred = uploaded.and_then(|()| self.painter.blur());
+        if let Err(e) = blurred {
+            wheel_core::log_line!("glass: cannot blur the desktop: {e}; opaque look");
+            return None;
+        }
+        self.painter.glass.set(true);
+        Some((
+            (captured - started).as_secs_f64() * 1e3,
+            captured.elapsed().as_secs_f64() * 1e3,
+        ))
     }
 
     /// Draws the whole wheel with `hit` highlighted and the submenu `arc` open (if any), and
@@ -241,21 +301,8 @@ impl Renderer {
                 .ctx
                 .CreateBitmapFromDxgiSurface(&surface, Some(&props))?;
             self.painter.paint(&bitmap, hit, arc)?;
-
-            // The blur follows the submenu arc; the content shows it in the same frame.
-            if let Backend::Glass { glass, shape } = &self.backend {
-                let arc = self.painter.valid_arc(arc);
-                let key = arc.map(|a| (a.parent, a.count));
-                if shape.get() != key {
-                    glass.set_clip(&self.painter.glass_clip(arc)?)?;
-                    shape.set(key);
-                }
-            }
             self.swap_chain.Present(1, DXGI_PRESENT(0)).ok()?;
-            match &self.backend {
-                Backend::DComp { dcomp, .. } => dcomp.Commit(),
-                Backend::Glass { .. } => Ok(()),
-            }
+            self.dcomp.Commit()
         }
     }
 }
@@ -266,6 +313,7 @@ impl Painter {
         layout: Layout,
         palette: Palette,
         config: Arc<Config>,
+        glass: f32,
     ) -> Result<Painter> {
         let size = layout.size_px();
         // SAFETY: plain COM calls with valid arguments; every result is checked via `?`.
@@ -322,6 +370,23 @@ impl Painter {
                     sector_path(&d2d_factory, c, rings.outer, span, round)
                 })
                 .collect::<Result<Vec<_>>>()?;
+            let frost = if glass > 0.0 {
+                Frost::new(
+                    &d2d_device,
+                    &ctx,
+                    &d2d_factory,
+                    size,
+                    k,
+                    &palette,
+                    plate_radius,
+                    &wheel_plate,
+                    glass,
+                )
+                .map_err(|e| wheel_core::log_line!("glass: {e}; using the opaque look"))
+                .ok()
+            } else {
+                None
+            };
             let icon_sizes = IconSizes::scaled(k);
             let icons = (config.options.view == ViewMode::Icons).then(|| {
                 Icons::new(
@@ -335,6 +400,7 @@ impl Painter {
             });
             Ok(Painter {
                 layout,
+                glass_palette: palette.glass(glass),
                 palette,
                 config,
                 size,
@@ -345,7 +411,8 @@ impl Painter {
                 inner_tiles,
                 outer_tiles,
                 arcs: RefCell::new(HashMap::new()),
-                glass: false,
+                frost,
+                glass: Cell::new(false),
                 round_join: round_join.into(),
                 outer_font: text_format(&dwrite, 15.0 * k, DWRITE_FONT_WEIGHT_MEDIUM)?,
                 inner_font: text_format(&dwrite, 11.5 * k, DWRITE_FONT_WEIGHT_MEDIUM)?,
@@ -360,10 +427,61 @@ impl Painter {
         }
     }
 
-    /// Switches to the translucent palette (see `Palette::glass`).
-    fn use_glass(&mut self) {
-        self.palette = self.palette.glass();
-        self.glass = true;
+    /// The halo of a label for the glass look; `None` without it.
+    fn bake_halo(&self, layout: &IDWriteTextLayout, width: f32, height: f32) -> Option<Halo> {
+        let frost = self.frost.as_ref()?;
+        frost
+            .halo(layout, width, height)
+            .map_err(|e| wheel_core::log_line!("glass: cannot render a label halo: {e}"))
+            .ok()
+    }
+
+    /// Palette of the look in use.
+    fn pal(&self) -> &Palette {
+        if self.glass.get() {
+            &self.glass_palette
+        } else {
+            &self.palette
+        }
+    }
+
+    /// Copies the snapshot pixels (BGRA, `pitch` bytes per row, window side plus the padding
+    /// on both sides) to the GPU.
+    fn upload(&self, bgra: &[u8], pitch: u32) -> Result<()> {
+        let frost = self.frost.as_ref().ok_or_else(|| Error::from(E_FAIL))?;
+        // SAFETY: `bgra` holds the whole bitmap at `pitch` bytes per row, as `CopyFromMemory`
+        // reads it.
+        unsafe {
+            frost
+                .source
+                .CopyFromMemory(None, bgra.as_ptr().cast(), pitch)
+        }
+    }
+
+    /// Blurs the uploaded snapshot into the bitmap the frames paint from.
+    fn blur(&self) -> Result<()> {
+        let frost = self.frost.as_ref().ok_or_else(|| Error::from(E_FAIL))?;
+        // SAFETY: the device context and the effect chain are owned by `self` and valid;
+        // EndDraw closes the BeginDraw.
+        unsafe {
+            self.ctx.SetTarget(&frost.result);
+            self.ctx.BeginDraw();
+            let offset = Vector2 {
+                X: -(frost.pad as f32),
+                Y: -(frost.pad as f32),
+            };
+            let output = frost.tone.GetOutput()?;
+            self.ctx.DrawImage(
+                &output,
+                Some(&offset),
+                None,
+                D2D1_INTERPOLATION_MODE_LINEAR,
+                D2D1_COMPOSITE_MODE_SOURCE_COPY,
+            );
+            let ended = self.ctx.EndDraw(None, None);
+            self.ctx.SetTarget(None::<&ID2D1Image>);
+            ended
+        }
     }
 
     /// The arc as it is drawn: its parent is valid and it has tiles.
@@ -396,31 +514,28 @@ impl Painter {
                 sector_path(&self.d2d_factory, c, sub_ring, span, round)
             })
             .collect::<Result<Vec<_>>>()?;
-        let shapes = Rc::new(ArcShapes { plate, tiles });
-        self.arcs.borrow_mut().insert(key, shapes.clone());
-        Ok(shapes)
-    }
-
-    /// Where the backdrop is blurred: the wheel disc, joined with the arc band when one is open.
-    fn glass_clip(&self, arc: Option<SubArc>) -> Result<ID2D1Geometry> {
-        let Some(arc) = arc else {
-            return Ok(self.wheel_plate.clone());
-        };
-        let shapes = self.arc_shapes(arc)?;
+        // The outline of the wheel disc joined with the band.
         // SAFETY: plain COM calls; the sink is closed before the geometry is used.
-        unsafe {
+        let outline: ID2D1Geometry = unsafe {
             let path: ID2D1PathGeometry = self.d2d_factory.CreatePathGeometry()?.into();
             let sink = path.Open()?;
             self.wheel_plate.CombineWithGeometry(
-                &shapes.plate,
+                &plate,
                 D2D1_COMBINE_MODE_UNION,
                 None,
                 0.1,
                 &sink,
             )?;
             sink.Close()?;
-            path.cast()
-        }
+            path.cast()?
+        };
+        let shapes = Rc::new(ArcShapes {
+            plate,
+            tiles,
+            outline,
+        });
+        self.arcs.borrow_mut().insert(key, shapes.clone());
+        Ok(shapes)
     }
 
     /// Draws the wheel into `target`, a Direct2D target bitmap of `size` x `size` pixels.
@@ -441,7 +556,8 @@ impl Painter {
     /// # Safety
     /// Must be called between `BeginDraw` and `EndDraw` of `self.ctx`.
     unsafe fn draw_wheel(&self, hit: Hit, arc: Option<SubArc>) -> Result<()> {
-        let p = &self.palette;
+        let p = self.pal();
+        let glass = self.glass.get();
         let k = scale_factor(&self.layout);
         let c = self.size as f32 / 2.0;
         let radii = self.layout.radii();
@@ -480,32 +596,52 @@ impl Painter {
             if let Some(plate) = arc_plate {
                 self.shadow(plate, k);
             }
-            if self.glass {
-                // The plates are translucent: the shadow must not show through them.
-                self.cut(
-                    &[&self.wheel_plate]
-                        .into_iter()
-                        .chain(arc_plate)
-                        .collect::<Vec<_>>(),
-                );
-            }
-            self.brush.SetColor(&p.plate);
-            self.ctx
-                .FillGeometry(&self.wheel_plate, &self.brush, None::<&ID2D1Brush>);
-            if let Some(plate) = arc_plate {
+            let plates = [&self.wheel_plate]
+                .into_iter()
+                .chain(arc_plate)
+                .collect::<Vec<_>>();
+            let frost = self.frost.as_ref().filter(|_| glass);
+            if let Some(frost) = frost {
+                let outline = arc_shapes
+                    .as_ref()
+                    .map_or(&self.wheel_plate, |shapes| &shapes.outline);
+                // The glass is translucent: the shadow must not show through it. The dark line
+                // outside its edge is half hidden by the glass drawn over it.
+                self.cut(&plates);
+                self.brush.SetColor(&frost.style.edge);
                 self.ctx
-                    .FillGeometry(plate, &self.brush, None::<&ID2D1Brush>);
-            }
-
-            if self.glass {
-                // Under the tiles there is no plate: they are tinted glass over the blur, and
-                // the plate shows only in the grooves, where it is darker than they are.
-                let tiles = (self.inner_tiles.iter())
-                    .chain(&self.outer_tiles)
-                    .chain(arc_shapes.iter().flat_map(|shapes| &shapes.tiles))
-                    .collect::<Vec<_>>();
-                self.cut(&tiles);
-                self.cut_hub(c, radii.center);
+                    .DrawGeometry(outline, &self.brush, 2.0, None::<&ID2D1StrokeStyle>);
+                // The blurred desktop, a tint over it, and the faint darkening of the grooves.
+                for plate in &plates {
+                    self.ctx
+                        .FillGeometry(*plate, &frost.backdrop, None::<&ID2D1Brush>);
+                }
+                for color in [&frost.style.tint, &p.plate] {
+                    self.brush.SetColor(color);
+                    for plate in &plates {
+                        self.ctx
+                            .FillGeometry(*plate, &self.brush, None::<&ID2D1Brush>);
+                    }
+                }
+                // Sheen on the upper part of the disc, and the light edge of the glass.
+                let r = self.layout.outer_radius();
+                frost.sheen.SetStartPoint(Vector2 { X: c, Y: c - r });
+                frost.sheen.SetEndPoint(Vector2 {
+                    X: c,
+                    Y: c + 0.2 * r,
+                });
+                frost.sheen.SetOpacity(frost.style.sheen);
+                self.ctx
+                    .FillGeometry(&frost.sheen_shape, &frost.sheen, None::<&ID2D1Brush>);
+                self.brush.SetColor(&frost.style.rim);
+                self.ctx
+                    .DrawGeometry(outline, &self.brush, 1.0, None::<&ID2D1StrokeStyle>);
+            } else {
+                self.brush.SetColor(&p.plate);
+                for plate in &plates {
+                    self.ctx
+                        .FillGeometry(*plate, &self.brush, None::<&ID2D1Brush>);
+                }
             }
 
             for i in 0..self.layout.inner_sectors() {
@@ -536,6 +672,7 @@ impl Painter {
                         (w - pad, (c + at.0, c + at.1))
                     },
                     if on { p.accent_fg } else { p.fg },
+                    !on,
                 )?;
             }
 
@@ -549,7 +686,15 @@ impl Painter {
                     .is_some_and(|item| !item.submenu.is_empty());
                 // The tile that opened the open arc is tinted so the arc visibly comes from it.
                 let fill = if arc.is_some_and(|a| a.parent == i) {
-                    theme::mix(p.tile, p.accent, PARENT_TINT)
+                    if glass {
+                        // Tiles are nearly clear, so a mix would not show.
+                        D2D1_COLOR_F {
+                            a: PARENT_GLASS_ALPHA,
+                            ..p.accent
+                        }
+                    } else {
+                        theme::mix(p.tile, p.accent, PARENT_TINT)
+                    }
                 } else {
                     p.tile
                 };
@@ -582,6 +727,7 @@ impl Painter {
                             (w - pad, (c + at.0, c + at.1))
                         },
                         if on { p.accent_fg } else { p.fg },
+                        !on,
                     )?;
                 }
                 // Notch at the outer edge of a tile with a submenu.
@@ -643,6 +789,7 @@ impl Painter {
                             (w - pad, (c + at.0, c + at.1))
                         },
                         if on { p.accent_fg } else { p.fg },
+                        !on,
                     )?;
                 }
             }
@@ -682,6 +829,7 @@ impl Painter {
                 &self.hub_font,
                 &|h, _| (fit::circle_width(radii.center - pad, h) - pad, (c, c)),
                 p.fg,
+                true,
             )?;
         }
         Ok(())
@@ -732,32 +880,6 @@ impl Painter {
         }
     }
 
-    /// Like `cut` for the centre circle.
-    ///
-    /// # Safety
-    /// Must be called between `BeginDraw` and `EndDraw` of `self.ctx`.
-    unsafe fn cut_hub(&self, c: f32, radius: f32) {
-        // SAFETY: guaranteed by the caller.
-        unsafe {
-            self.ctx.SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
-            self.brush.SetColor(&D2D1_COLOR_F {
-                r: 0.0,
-                g: 0.0,
-                b: 0.0,
-                a: 0.0,
-            });
-            self.ctx.FillEllipse(
-                &D2D1_ELLIPSE {
-                    point: Vector2 { X: c, Y: c },
-                    radiusX: radius,
-                    radiusY: radius,
-                },
-                &self.brush,
-            );
-            self.ctx.SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
-        }
-    }
-
     /// # Safety
     /// Must be called between `BeginDraw` and `EndDraw` of `self.ctx`.
     unsafe fn fill_tile(
@@ -767,12 +889,29 @@ impl Painter {
         on: bool,
         stroke: f32,
     ) {
-        let p = &self.palette;
+        let p = self.pal();
         // SAFETY: guaranteed by the caller.
         unsafe {
             self.brush.SetColor(if on { &p.accent } else { &fill });
             self.ctx
                 .FillGeometry(geometry, &self.brush, None::<&ID2D1Brush>);
+            let frost = self.frost.as_ref().filter(|_| self.glass.get());
+            if let (true, Some(frost), Ok(bounds)) = (on, frost, geometry.GetBounds(None)) {
+                // Sheen on the upper part of the highlighted tile.
+                let mid = (bounds.left + bounds.right) / 2.0;
+                let height = bounds.bottom - bounds.top;
+                frost.sheen.SetStartPoint(Vector2 {
+                    X: mid,
+                    Y: bounds.top,
+                });
+                frost.sheen.SetEndPoint(Vector2 {
+                    X: mid,
+                    Y: bounds.top + 0.7 * height,
+                });
+                frost.sheen.SetOpacity(TILE_SHEEN);
+                self.ctx
+                    .FillGeometry(geometry, &frost.sheen, None::<&ID2D1Brush>);
+            }
             self.brush
                 .SetColor(if on { &p.accent } else { &p.tile_line });
             self.ctx
@@ -790,9 +929,9 @@ impl Painter {
             return Ok(());
         };
         let color = if on {
-            self.palette.accent_fg
+            self.pal().accent_fg
         } else {
-            self.palette.fg
+            self.pal().fg
         };
         let s = size as f32;
         let half = s / 2.0;
@@ -881,6 +1020,7 @@ impl Painter {
         font: &IDWriteTextFormat,
         slot: &dyn Fn(f32, f32) -> (f32, (f32, f32)),
         color: D2D1_COLOR_F,
+        halo: bool,
     ) -> Result<()> {
         let mut layouts = self.layouts.borrow_mut();
         let key = (kind, text.to_string());
@@ -890,6 +1030,24 @@ impl Painter {
         let fitted = &layouts[&key];
         // SAFETY: guaranteed by the caller.
         unsafe {
+            if let Some(halo) = fitted.halo.as_ref().filter(|_| halo && self.glass.get()) {
+                let left = fitted.at.0 - fitted.width / 2.0 - halo.margin;
+                let top = fitted.at.1 - fitted.height / 2.0 - halo.margin;
+                let rect = D2D_RECT_F {
+                    left,
+                    top,
+                    right: left + halo.size.0,
+                    bottom: top + halo.size.1,
+                };
+                self.ctx.DrawBitmap(
+                    &halo.bitmap,
+                    Some(&rect),
+                    1.0,
+                    D2D1_INTERPOLATION_MODE_LINEAR,
+                    None,
+                    None,
+                );
+            }
             self.brush.SetColor(&color);
             self.ctx.DrawTextLayout(
                 Vector2 {
@@ -929,8 +1087,10 @@ impl Painter {
         let (width, at) = slot(height, text_width);
         let width = width.max(1.0);
         let layout = self.text_layout(&fitted.text, font, base * fitted.scale, width, height)?;
+        let halo = self.bake_halo(&layout, width, height);
         Ok(FittedLabel {
             layout,
+            halo,
             width,
             height,
             at,
@@ -961,10 +1121,261 @@ impl Painter {
     }
 }
 
-/// Shapes of one submenu arc: the band under the tiles and the tiles.
+impl Frost {
+    /// Builds the effect chain and the bitmaps once; `size` is the window side and `radius` the
+    /// radius of `wheel_plate`.
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        d2d_device: &ID2D1Device,
+        ctx: &ID2D1DeviceContext,
+        factory: &ID2D1Factory1,
+        size: u32,
+        k: f32,
+        palette: &Palette,
+        radius: f32,
+        wheel_plate: &ID2D1Geometry,
+        level: f32,
+    ) -> Result<Frost> {
+        let style = palette.glass_style(level);
+        let sigma = BLUR_SIGMA * k;
+        let halo_sigma = HALO_SIGMA * k;
+        // Three standard deviations reach almost all of a Gaussian.
+        let pad = (3.0 * sigma).ceil() as u32;
+        let c = size as f32 / 2.0;
+        // SAFETY: plain COM calls with valid arguments; every result is checked via `?`.
+        unsafe {
+            let aux = d2d_device.CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE)?;
+            aux.SetDpi(96.0, 96.0);
+            aux.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
+            let aux_brush = aux.CreateSolidColorBrush(&style.halo, None)?;
+
+            let side = size + 2 * pad;
+            let source = new_bitmap(ctx, side, side, D2D1_BITMAP_OPTIONS_NONE)?;
+            let blur = ctx.CreateEffect(&CLSID_D2D1GaussianBlur)?;
+            blur.SetInput(0, &source, true);
+            set_effect(
+                &blur,
+                D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION.0,
+                D2D1_PROPERTY_TYPE_FLOAT,
+                &[sigma],
+            )?;
+            // Hard borders: the padding keeps them outside the window.
+            set_effect(
+                &blur,
+                D2D1_GAUSSIANBLUR_PROP_BORDER_MODE.0,
+                D2D1_PROPERTY_TYPE_ENUM,
+                &[f32::from_bits(D2D1_BORDER_MODE_HARD.0 as u32)],
+            )?;
+
+            // Saturation and brightness in one color matrix (rows: input R, G, B, A, offset).
+            let tone = ctx.CreateEffect(&CLSID_D2D1ColorMatrix)?;
+            tone.SetInput(0, &blur.GetOutput()?, true);
+            let luma = [0.2126, 0.7152, 0.0722];
+            let mut matrix = [0.0f32; 20];
+            for (input, weight) in luma.into_iter().enumerate() {
+                for output in 0..3 {
+                    let own = if input == output {
+                        style.saturation
+                    } else {
+                        0.0
+                    };
+                    matrix[input * 4 + output] =
+                        style.gain * ((1.0 - style.saturation) * weight + own);
+                }
+            }
+            matrix[3 * 4 + 3] = 1.0;
+            matrix[16..19].fill(style.lift);
+            set_effect(
+                &tone,
+                D2D1_COLORMATRIX_PROP_COLOR_MATRIX.0,
+                D2D1_PROPERTY_TYPE_MATRIX_5X4,
+                &matrix,
+            )?;
+
+            let shadow = aux.CreateEffect(&CLSID_D2D1Shadow)?;
+            set_effect(
+                &shadow,
+                D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION.0,
+                D2D1_PROPERTY_TYPE_FLOAT,
+                &[halo_sigma],
+            )?;
+            let h = style.halo;
+            set_effect(
+                &shadow,
+                D2D1_SHADOW_PROP_COLOR.0,
+                D2D1_PROPERTY_TYPE_VECTOR4,
+                &[h.r, h.g, h.b, h.a],
+            )?;
+
+            let result = new_bitmap(ctx, size, size, D2D1_BITMAP_OPTIONS_TARGET)?;
+            let backdrop = ctx.CreateBitmapBrush(&result, None, None)?;
+
+            let white = |a| D2D1_COLOR_F {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a,
+            };
+            let stops = ctx.CreateGradientStopCollection(
+                &[
+                    D2D1_GRADIENT_STOP {
+                        position: 0.0,
+                        color: white(1.0),
+                    },
+                    D2D1_GRADIENT_STOP {
+                        position: 1.0,
+                        color: white(0.0),
+                    },
+                ],
+                D2D1_COLOR_SPACE_SRGB,
+                D2D1_COLOR_SPACE_SRGB,
+                D2D1_BUFFER_PRECISION_8BPC_UNORM,
+                D2D1_EXTEND_MODE_CLAMP,
+                D2D1_COLOR_INTERPOLATION_MODE_PREMULTIPLIED,
+            )?;
+            let sheen = ctx.CreateLinearGradientBrush(
+                &D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES {
+                    startPoint: Vector2 { X: 0.0, Y: 0.0 },
+                    endPoint: Vector2 { X: 0.0, Y: 1.0 },
+                },
+                None,
+                &stops,
+            )?;
+            // The sheen is the part of the disc inside a large ellipse sitting high on it.
+            let lens = factory.CreateEllipseGeometry(&D2D1_ELLIPSE {
+                point: Vector2 {
+                    X: c,
+                    Y: c - SHEEN_LIFT * radius,
+                },
+                radiusX: radius,
+                radiusY: SHEEN_HEIGHT * radius,
+            })?;
+            let path: ID2D1PathGeometry = factory.CreatePathGeometry()?.into();
+            let sink = path.Open()?;
+            wheel_plate.CombineWithGeometry(
+                &lens,
+                D2D1_COMBINE_MODE_INTERSECT,
+                None,
+                0.1,
+                &sink,
+            )?;
+            sink.Close()?;
+
+            Ok(Frost {
+                style,
+                aux,
+                aux_brush,
+                source,
+                tone,
+                shadow,
+                result,
+                backdrop,
+                sheen,
+                sheen_shape: path.cast()?,
+                pad,
+                halo_sigma,
+            })
+        }
+    }
+
+    /// Renders the halo of a label: its text blurred into a soft shadow, drawn twice for strength.
+    fn halo(&self, layout: &IDWriteTextLayout, width: f32, height: f32) -> Result<Halo> {
+        let margin = (3.0 * self.halo_sigma).ceil();
+        let (w, h) = (
+            (width + 2.0 * margin).ceil(),
+            (height + 2.0 * margin).ceil(),
+        );
+        // SAFETY: plain COM calls on the aux context, which is not drawing anything else; each
+        // BeginDraw is closed by its EndDraw before the next call.
+        unsafe {
+            let text = new_bitmap(&self.aux, w as u32, h as u32, D2D1_BITMAP_OPTIONS_TARGET)?;
+            let bitmap = new_bitmap(&self.aux, w as u32, h as u32, D2D1_BITMAP_OPTIONS_TARGET)?;
+            let clear = D2D1_COLOR_F {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0,
+            };
+            self.aux.SetTarget(&text);
+            self.aux.BeginDraw();
+            self.aux.Clear(Some(&clear));
+            self.aux.DrawTextLayout(
+                Vector2 {
+                    X: margin,
+                    Y: margin,
+                },
+                layout,
+                &self.aux_brush,
+                D2D1_DRAW_TEXT_OPTIONS_CLIP,
+            );
+            self.aux.EndDraw(None, None)?;
+
+            self.shadow.SetInput(0, &text, true);
+            let output = self.shadow.GetOutput()?;
+            self.aux.SetTarget(&bitmap);
+            self.aux.BeginDraw();
+            self.aux.Clear(Some(&clear));
+            for _ in 0..2 {
+                self.aux.DrawImage(
+                    &output,
+                    None,
+                    None,
+                    D2D1_INTERPOLATION_MODE_LINEAR,
+                    D2D1_COMPOSITE_MODE_SOURCE_OVER,
+                );
+            }
+            let ended = self.aux.EndDraw(None, None);
+            self.aux.SetTarget(None::<&ID2D1Image>);
+            ended?;
+            Ok(Halo {
+                bitmap,
+                margin,
+                size: (w, h),
+            })
+        }
+    }
+}
+
+/// An empty B8G8R8A8 premultiplied bitmap of `width` x `height` px.
+fn new_bitmap(
+    ctx: &ID2D1DeviceContext,
+    width: u32,
+    height: u32,
+    options: D2D1_BITMAP_OPTIONS,
+) -> Result<ID2D1Bitmap1> {
+    let props = D2D1_BITMAP_PROPERTIES1 {
+        pixelFormat: D2D1_PIXEL_FORMAT {
+            format: DXGI_FORMAT_B8G8R8A8_UNORM,
+            alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+        },
+        dpiX: 96.0,
+        dpiY: 96.0,
+        bitmapOptions: options,
+        colorContext: ManuallyDrop::new(None),
+    };
+    // SAFETY: plain COM call with valid arguments.
+    unsafe { ctx.CreateBitmap(D2D_SIZE_U { width, height }, None, 0, &props) }
+}
+
+/// Sets effect property `index`; `values` are the 32-bit words of its value (a float, an enum, a
+/// vector or a matrix).
+fn set_effect(
+    effect: &ID2D1Effect,
+    index: i32,
+    kind: D2D1_PROPERTY_TYPE,
+    values: &[f32],
+) -> Result<()> {
+    let bytes: Vec<u8> = values.iter().flat_map(|v| v.to_ne_bytes()).collect();
+    // SAFETY: plain COM call; `bytes` outlives it.
+    unsafe { effect.SetValue(index as u32, kind, &bytes) }
+}
+
+/// Shapes of one submenu arc: the band under the tiles, the tiles and the outline of the glass.
 struct ArcShapes {
     plate: ID2D1Geometry,
     tiles: Vec<ID2D1Geometry>,
+    /// The wheel disc and `plate` as one shape.
+    outline: ID2D1Geometry,
 }
 
 /// Radii of the tile rings, in px from the wheel centre.
@@ -988,6 +1399,13 @@ fn rings(layout: &Layout) -> Rings {
     }
 }
 
+/// A label's halo, drawn `margin` px outside the label box.
+struct Halo {
+    bitmap: ID2D1Bitmap1,
+    margin: f32,
+    size: (f32, f32),
+}
+
 /// Which label a cached layout belongs to; the index tells sectors with equal text apart.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Kind {
@@ -1000,6 +1418,8 @@ enum Kind {
 
 struct FittedLabel {
     layout: IDWriteTextLayout,
+    /// Soft glow behind the text for the glass look; `None` without it.
+    halo: Option<Halo>,
     /// Layout box size and the point it is drawn centred on.
     width: f32,
     height: f32,
@@ -1261,10 +1681,30 @@ mod tests {
         let size = layout.size_px();
         let device = create_d3d_device().expect("D3D device");
         let dxgi: IDXGIDevice = device.cast().unwrap();
-        let mut painter = Painter::new(&dxgi, layout, theme::palette(case.theme), Arc::new(config))
-            .expect("painter");
-        if case.glass {
-            painter.use_glass();
+        let level = if case.glass { 0.5 } else { 0.0 };
+        let painter = Painter::new(
+            &dxgi,
+            layout,
+            theme::palette(case.theme),
+            Arc::new(config),
+            level,
+        )
+        .expect("painter");
+        if let Some(frost) = &painter.frost {
+            // A stand-in for the desktop: vertical stripes.
+            let side = (size + 2 * frost.pad) as usize;
+            let bgra: Vec<u8> = (0..side * side)
+                .flat_map(|i| {
+                    if (i % side / 24).is_multiple_of(2) {
+                        [0x30; 4]
+                    } else {
+                        [0xc0; 4]
+                    }
+                })
+                .collect();
+            painter.upload(&bgra, side as u32 * 4).expect("upload");
+            painter.blur().expect("blur");
+            painter.glass.set(true);
         }
         let props = |options| D2D1_BITMAP_PROPERTIES1 {
             pixelFormat: D2D1_PIXEL_FORMAT {
@@ -1364,6 +1804,98 @@ mod tests {
             frame.Commit().unwrap();
             encoder.Commit().unwrap();
         }
+    }
+
+    /// `cargo test blur_timing -- --ignored --nocapture`: upload plus blur of a 676 px snapshot,
+    /// with the GPU work waited for.
+    #[test]
+    #[ignore = "needs a D3D device; prints timings"]
+    fn blur_timing() {
+        let case = Case {
+            name: "t",
+            theme: ThemeChoice::Dark,
+            view: ViewMode::Names,
+            sectors: 12,
+            parent: 0,
+            tiles: 0,
+            hit: Hit::Center,
+            scale_pct: 100,
+            glass: true,
+        };
+        let config = Config::default();
+        let layout = Layout::new(96, 100, 12, 12);
+        let device = create_d3d_device().expect("D3D device");
+        let dxgi: IDXGIDevice = device.cast().unwrap();
+        let painter = Painter::new(
+            &dxgi,
+            layout,
+            theme::palette(case.theme),
+            Arc::new(config),
+            0.5,
+        )
+        .expect("painter");
+        let frost = painter.frost.as_ref().expect("frost");
+        let side = (painter.size + 2 * frost.pad) as usize;
+        let bgra = vec![0x80u8; side * side * 4];
+        let mut ms = Vec::new();
+        for _ in 0..30 {
+            let t = std::time::Instant::now();
+            painter.upload(&bgra, side as u32 * 4).unwrap();
+            painter.blur().unwrap();
+            // Reading a pixel back waits for the GPU.
+            let staging = unsafe {
+                painter
+                    .ctx
+                    .CreateBitmap(
+                        D2D_SIZE_U {
+                            width: 1,
+                            height: 1,
+                        },
+                        None,
+                        0,
+                        &D2D1_BITMAP_PROPERTIES1 {
+                            pixelFormat: D2D1_PIXEL_FORMAT {
+                                format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                                alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+                            },
+                            dpiX: 96.0,
+                            dpiY: 96.0,
+                            bitmapOptions: D2D1_BITMAP_OPTIONS_CPU_READ
+                                | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+                            colorContext: ManuallyDrop::new(None),
+                        },
+                    )
+                    .unwrap()
+            };
+            unsafe {
+                staging.CopyFromBitmap(None, &frost.result, None).unwrap();
+                let _ = staging.Map(D2D1_MAP_OPTIONS_READ).unwrap();
+                staging.Unmap().unwrap();
+            }
+            ms.push(t.elapsed().as_secs_f64() * 1e3);
+        }
+        println!("first {:.2} ms", ms[0]);
+        ms.sort_by(f64::total_cmp);
+        println!("median {:.2} ms, max {:.2} ms", ms[15], ms[29]);
+
+        // One frame of the wheel over the blurred snapshot (CPU time of the draw calls).
+        painter.glass.set(true);
+        let target = new_bitmap(
+            &painter.ctx,
+            painter.size,
+            painter.size,
+            D2D1_BITMAP_OPTIONS_TARGET,
+        )
+        .unwrap();
+        let mut ms = Vec::new();
+        for i in 0..30 {
+            let t = std::time::Instant::now();
+            painter.paint(&target, Hit::Outer(i % 12), None).unwrap();
+            ms.push(t.elapsed().as_secs_f64() * 1e3);
+        }
+        println!("frame first {:.2} ms", ms[0]);
+        ms.sort_by(f64::total_cmp);
+        println!("frame median {:.2} ms, max {:.2} ms", ms[15], ms[29]);
     }
 
     /// Visual check without a window: `WHEEL_RENDER_OUT=<dir> cargo test render_cases -- --ignored`

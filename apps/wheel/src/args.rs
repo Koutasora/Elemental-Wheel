@@ -42,7 +42,24 @@ pub struct DemoOptions {
     pub demo_hit: Option<Hit>,
     /// Hidden flag `--no-glass`: opaque look, no backdrop blur.
     pub no_glass: bool,
+    /// Hidden flag `--glass <0..100>`: how transparent the glass is (see `glass_level`).
+    pub glass: Option<u8>,
 }
+
+impl DemoOptions {
+    /// Transparency of the glass, 0 (opaque look, no glass) to 1 (most transparent).
+    pub fn glass_level(&self) -> f32 {
+        if self.no_glass {
+            0.0
+        } else {
+            self.glass
+                .map_or(DEFAULT_GLASS, |pct| f32::from(pct) / 100.0)
+        }
+    }
+}
+
+/// Glass transparency used when nothing asks for another one.
+const DEFAULT_GLASS: f32 = 0.5;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunOptions {
@@ -82,6 +99,7 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
     let mut at = None;
     let mut demo_hit = None;
     let mut no_glass = false;
+    let mut glass = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--version" => return Ok(Command::Version),
@@ -92,6 +110,10 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
             "--test-stall-hook" => stall_hook_once = true,
             "--stats" => stats = true,
             "--no-glass" => no_glass = true,
+            "--glass" => {
+                let text = value(&mut args, &arg)?;
+                glass = Some(number(&text, "--glass")?.clamp(0, 100) as u8);
+            }
             "--at" => at = Some(point(&value(&mut args, &arg)?)?),
             "--demo-hit" => demo_hit = Some(forced_hit(&value(&mut args, &arg)?)?),
             "--test-panic" => {
@@ -156,6 +178,7 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
         at,
         demo_hit,
         no_glass,
+        glass,
     };
     if !demo && (at.is_some() || demo_hit.is_some()) {
         return Err("--at and --demo-hit need --demo".to_string());
@@ -404,6 +427,11 @@ mod tests {
         assert_eq!(o.at, Some((960, -540)));
         assert_eq!(o.demo_hit, Some(Hit::Sub(2, 1)));
         assert!(o.no_glass);
+        assert_eq!(o.glass_level(), 0.0);
+        assert_eq!(demo(&["--demo"]).glass_level(), 0.5);
+        assert_eq!(demo(&["--demo", "--glass", "75"]).glass_level(), 0.75);
+        assert_eq!(demo(&["--demo", "--glass", "400"]).glass, Some(100));
+        assert!(parse_strs(&["--demo", "--glass", "x"]).is_err());
         assert_eq!(
             demo(&["--demo", "--demo-hit", "outer:3"]).demo_hit,
             Some(Hit::Outer(3))

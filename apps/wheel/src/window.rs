@@ -110,10 +110,13 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
         layout,
         theme::palette(o.theme),
         config.clone(),
-        !options.no_glass,
+        options.glass_level(),
     )
-    .and_then(|r| r.draw(hit, arc).map(|()| r))
-    {
+    .and_then(|r| {
+        // The window is still hidden, so the snapshot shows the desktop without it.
+        log_glass(r.prepare(left, top));
+        r.draw(hit, arc).map(|()| r)
+    }) {
         Ok(r) => r,
         Err(e) => {
             // SAFETY: `hwnd` was created above and is destroyed only here.
@@ -361,7 +364,7 @@ struct RunState {
     renderer: Option<Renderer>,
     palette: Palette,
     /// Glass look wanted (the renderer still falls back to opaque when it cannot be had).
-    glass: bool,
+    glass: f32,
     config: Arc<Config>,
     settings: Settings,
     /// Size of the wheel in use. A reloaded file changes it only after the open that found the
@@ -396,7 +399,7 @@ pub fn run_background(options: &RunOptions, config_path: PathBuf) -> Result<()> 
     let hwnd = create_popup(RUN_CLASS, run_wnd_proc, WS_EX_TRANSPARENT, (0, 0, size))?;
 
     let palette = theme::palette(config.options.theme);
-    let glass = !options.wheel.no_glass;
+    let glass = options.wheel.glass_level();
     let renderer = match Renderer::new(hwnd, layout, palette, config.clone(), glass)
         .and_then(|r| r.draw(Hit::Center, None).map(|()| r))
     {
@@ -518,6 +521,12 @@ fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<OpenKind> {
     (s.hit, s.arc) = track(&layout, &s.config, s.center, cursor_pos()?, None);
     hook::publish_arc(s.arc);
     if let Some(renderer) = &s.renderer {
+        // The window is hidden until SetWindowPos below, so the snapshot shows the desktop
+        // without it.
+        let times = renderer.prepare(left, top);
+        if stats::enabled() {
+            log_glass(times);
+        }
         renderer.draw(s.hit, s.arc)?;
     }
     // SAFETY: `hwnd` is the live window of this thread.
@@ -536,6 +545,13 @@ fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<OpenKind> {
         }
     }
     Ok(kind)
+}
+
+/// Logs how long the snapshot of the desktop and its blur took (capture, upload plus blur).
+fn log_glass(times: Option<(f64, f64)>) {
+    if let Some((capture, blur)) = times {
+        wheel_core::log_line!("glass: capture_ms={capture:.3} blur_ms={blur:.3}");
+    }
 }
 
 fn close_wheel(hwnd: HWND) {
