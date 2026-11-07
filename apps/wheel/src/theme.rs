@@ -11,6 +11,10 @@ use wheel_core::ThemeChoice as Theme;
 
 #[derive(Clone, Copy)]
 pub struct Palette {
+    /// Solid disc under the rings: shows through the gaps between tiles as thin grooves.
+    pub plate: D2D1_COLOR_F,
+    /// Soft shadow around the plates (alpha is the strength at the plate edge).
+    pub shadow: D2D1_COLOR_F,
     /// Sector fill (`--tile`).
     pub tile: D2D1_COLOR_F,
     /// Submenu arc tile fill (`--surface`).
@@ -30,6 +34,8 @@ pub struct Palette {
 }
 
 const LIGHT: Palette = Palette {
+    plate: rgb(0xd5dbe6),
+    shadow: rgba(0x141821, 0.3),
     tile: rgb(0xffffff),
     surface: rgb(0xffffff),
     muted: rgb(0x586074),
@@ -41,6 +47,8 @@ const LIGHT: Palette = Palette {
 };
 
 const DARK: Palette = Palette {
+    plate: rgb(0x0b0e14),
+    shadow: rgba(0x000000, 0.5),
     tile: rgb(0x1b202b),
     surface: rgb(0x151922),
     muted: rgb(0x9aa3b6),
@@ -52,11 +60,25 @@ const DARK: Palette = Palette {
 };
 
 const fn rgb(hex: u32) -> D2D1_COLOR_F {
+    rgba(hex, 1.0)
+}
+
+const fn rgba(hex: u32, a: f32) -> D2D1_COLOR_F {
     D2D1_COLOR_F {
         r: ((hex >> 16) & 0xff) as f32 / 255.0,
         g: ((hex >> 8) & 0xff) as f32 / 255.0,
         b: (hex & 0xff) as f32 / 255.0,
-        a: 1.0,
+        a,
+    }
+}
+
+/// `a` with `t` (0..=1) of `b` mixed in; alpha is taken from `a`.
+pub fn mix(a: D2D1_COLOR_F, b: D2D1_COLOR_F, t: f32) -> D2D1_COLOR_F {
+    D2D1_COLOR_F {
+        r: a.r + (b.r - a.r) * t,
+        g: a.g + (b.g - a.g) * t,
+        b: a.b + (b.b - a.b) * t,
+        a: a.a,
     }
 }
 

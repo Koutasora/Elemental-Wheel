@@ -22,6 +22,9 @@ const BASE_SUB_INNER: f32 = 218.0;
 const BASE_SUB_OUTER: f32 = 292.0;
 // Free space around the arc band, so its outline and antialiasing are not clipped by the window.
 const BASE_EDGE_MARGIN: f32 = 4.0;
+// Extra free space for the soft shadow around the wheel and arc plates; affects only the window
+// size, never the hit areas.
+const BASE_SHADOW_MARGIN: f32 = 10.0;
 
 /// Clamps the scale to `MIN_SCALE_PCT..=MAX_SCALE_PCT`.
 pub fn clamp_scale_pct(pct: u16) -> u16 {
@@ -32,6 +35,8 @@ pub fn clamp_scale_pct(pct: u16) -> u16 {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Layout {
     factor: f32,
+    /// Monitor DPI relative to 96, without the user scale.
+    dpi_factor: f32,
     inner_sectors: u8,
     outer_sectors: u8,
 }
@@ -42,6 +47,7 @@ impl Layout {
         let dpi = if dpi == 0 { 96 } else { dpi };
         Layout {
             factor: dpi as f32 / 96.0 * clamp_scale_pct(scale_pct) as f32 / 100.0,
+            dpi_factor: dpi as f32 / 96.0,
             inner_sectors: clamp_inner_sectors(inner_sectors),
             outer_sectors: clamp_outer_sectors(outer_sectors),
         }
@@ -95,10 +101,15 @@ impl Layout {
         sub_tile_span(arc, k, self.outer_sectors)
     }
 
-    /// Side length of a square window that fits the wheel with its submenu arc band and a small
-    /// margin around it.
+    /// Monitor DPI relative to 96 (1.0 at 96 DPI), independent of the user scale.
+    pub fn dpi_factor(&self) -> f32 {
+        self.dpi_factor
+    }
+
+    /// Side length of a square window that fits the wheel with its submenu arc band, a small
+    /// margin around it and room for the shadow. The wheel centre is at half of it.
     pub fn size_px(&self) -> u32 {
-        ((BASE_SUB_OUTER + BASE_EDGE_MARGIN) * self.factor * 2.0).ceil() as u32
+        ((BASE_SUB_OUTER + BASE_EDGE_MARGIN + BASE_SHADOW_MARGIN) * self.factor * 2.0).ceil() as u32
     }
 }
 
@@ -149,7 +160,7 @@ mod tests {
         assert!(close(l.radii().outer, 214.0));
         assert!(close(l.sub_radii().0, 218.0));
         assert!(close(l.sub_radii().1, 292.0));
-        assert_eq!(l.size_px(), 592);
+        assert_eq!(l.size_px(), 612);
     }
 
     #[test]
@@ -173,6 +184,12 @@ mod tests {
     }
 
     #[test]
+    fn dpi_factor_ignores_user_scale() {
+        assert!(close(Layout::new(144, 60, 12, 12).dpi_factor(), 1.5));
+        assert!(close(Layout::new(0, 140, 12, 12).dpi_factor(), 1.0));
+    }
+
+    #[test]
     fn dpi_zero_is_96() {
         assert_eq!(Layout::new(0, 100, 12, 12), Layout::new(96, 100, 12, 12));
     }
@@ -182,12 +199,14 @@ mod tests {
         for dpi in [96u32, 120, 144, 192] {
             for pct in [60u16, 77, 100, 140] {
                 let l = Layout::new(dpi, pct, 12, 12);
-                let margin = BASE_EDGE_MARGIN * l.factor;
+                let margin = (BASE_EDGE_MARGIN + BASE_SHADOW_MARGIN) * l.factor;
                 let side = (l.sub_radii().1 + margin) * 2.0;
                 assert!(l.size_px() as f32 >= side);
                 assert!((l.size_px() as f32) < side + 1.0);
-                // At least 2 px free on each side even at the smallest scale.
-                assert!(margin >= 2.0);
+                // At least 2 px for the outline and 6 px for the shadow free on each side even at
+                // the smallest scale.
+                assert!(BASE_EDGE_MARGIN * l.factor >= 2.0);
+                assert!(BASE_SHADOW_MARGIN * l.factor >= 6.0);
             }
         }
     }

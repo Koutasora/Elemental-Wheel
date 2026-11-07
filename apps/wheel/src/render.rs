@@ -16,10 +16,12 @@ use windows::Win32::Graphics::Direct2D::Common::{
 };
 use windows::Win32::Graphics::Direct2D::{
     D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL, D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
-    D2D1_BITMAP_OPTIONS_TARGET, D2D1_BITMAP_PROPERTIES1, D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
-    D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ELLIPSE,
-    D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC,
-    D2D1_ROUNDED_RECT, D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE,
+    D2D1_BITMAP_OPTIONS_TARGET, D2D1_BITMAP_PROPERTIES1, D2D1_CAP_STYLE_FLAT,
+    D2D1_DASH_STYLE_SOLID, D2D1_DEVICE_CONTEXT_OPTIONS_NONE, D2D1_DRAW_TEXT_OPTIONS_CLIP,
+    D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ELLIPSE, D2D1_FACTORY_TYPE_SINGLE_THREADED,
+    D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, D2D1_LINE_JOIN_ROUND, D2D1_ROUNDED_RECT,
+    D2D1_STROKE_STYLE_PROPERTIES1, D2D1_STROKE_TRANSFORM_TYPE_NORMAL,
+    D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE,
     D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory, ID2D1Bitmap1, ID2D1Brush,
     ID2D1DeviceContext, ID2D1Factory1, ID2D1Geometry, ID2D1Image, ID2D1PathGeometry,
     ID2D1SolidColorBrush, ID2D1StrokeStyle,
@@ -52,7 +54,7 @@ use windows_numerics::Vector2;
 
 use crate::fit;
 use crate::icons::{Icons, TileIcon};
-use crate::theme::Palette;
+use crate::theme::{self, Palette};
 
 /// Outer radius of the mockup at 100% and 96 DPI; the mockup's other sizes (fonts, gaps,
 /// stroke) are expressed relative to it.
@@ -62,6 +64,19 @@ const OUTER_HALF_GAP_DEG: f32 = 0.8;
 const INNER_HALF_GAP_DEG: f32 = 1.4;
 /// Half of the angular width of the submenu notch, in degrees (mockup value).
 const NOTCH_HALF_DEG: f32 = 5.0;
+/// Radial extent of the submenu notch below the outer edge, and the free space kept between it
+/// and the tile content, in mockup px (the notch spans 5..9 px from the edge).
+const NOTCH_FAR: f32 = 9.0;
+const NOTCH_NEAR: f32 = 5.0;
+const NOTCH_CLEARANCE: f32 = 2.0;
+/// Absolute minimum label font size at 96 DPI, in px.
+const MIN_FONT_PX: f32 = 9.0;
+/// How far the soft shadow reaches beyond a plate (mockup px; the window leaves room for it)
+/// and into how many translucent strokes it is drawn.
+const SHADOW_REACH: f32 = 10.0;
+const SHADOW_PASSES: u32 = 8;
+/// Share of the accent mixed into the tile that opened the submenu arc.
+const PARENT_TINT: f32 = 0.22;
 
 pub struct Renderer {
     painter: Painter,
@@ -88,6 +103,10 @@ struct Painter {
     inner_font: IDWriteTextFormat,
     sub_font: IDWriteTextFormat,
     hub_font: IDWriteTextFormat,
+    /// Disc under the rings (centre to the outer edge of the outer ring); built once.
+    wheel_plate: ID2D1Geometry,
+    /// Round-joined stroke style of the shadow passes.
+    round_join: ID2D1StrokeStyle,
     /// Bold format of the letter shown instead of an icon.
     letter_font: IDWriteTextFormat,
     dwrite: IDWriteFactory,
@@ -197,6 +216,30 @@ impl Painter {
             ctx.SetDpi(96.0, 96.0);
             ctx.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
             let brush = ctx.CreateSolidColorBrush(&palette.fg, None)?;
+            let plate_radius = layout.outer_radius();
+            let wheel_plate: ID2D1Geometry = d2d_factory
+                .CreateEllipseGeometry(&D2D1_ELLIPSE {
+                    point: Vector2 {
+                        X: size as f32 / 2.0,
+                        Y: size as f32 / 2.0,
+                    },
+                    radiusX: plate_radius,
+                    radiusY: plate_radius,
+                })?
+                .cast()?;
+            let round_join = d2d_factory.CreateStrokeStyle(
+                &D2D1_STROKE_STYLE_PROPERTIES1 {
+                    startCap: D2D1_CAP_STYLE_FLAT,
+                    endCap: D2D1_CAP_STYLE_FLAT,
+                    dashCap: D2D1_CAP_STYLE_FLAT,
+                    lineJoin: D2D1_LINE_JOIN_ROUND,
+                    miterLimit: 1.0,
+                    dashStyle: D2D1_DASH_STYLE_SOLID,
+                    dashOffset: 0.0,
+                    transformType: D2D1_STROKE_TRANSFORM_TYPE_NORMAL,
+                },
+                None,
+            )?;
 
             let dwrite: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
             let k = scale_factor(&layout);
@@ -219,6 +262,8 @@ impl Painter {
                 d2d_factory,
                 ctx,
                 brush,
+                wheel_plate,
+                round_join: round_join.into(),
                 outer_font: text_format(&dwrite, 15.0 * k, DWRITE_FONT_WEIGHT_MEDIUM)?,
                 inner_font: text_format(&dwrite, 11.5 * k, DWRITE_FONT_WEIGHT_MEDIUM)?,
                 sub_font: text_format(&dwrite, 13.5 * k, DWRITE_FONT_WEIGHT_MEDIUM)?,
@@ -266,6 +311,14 @@ impl Painter {
             (r1, r2 - stroke / 2.0)
         };
         let n = self.layout.outer_sectors();
+        // The arc being drawn: its parent is valid and it has tiles.
+        let arc = arc.filter(|a| a.parent < n && a.count > 0);
+        // Where tile content must end in a sector with a submenu, so it stays clear of the notch.
+        let notch_ring = (
+            self.layout.outer_radius() - NOTCH_FAR * k,
+            self.layout.outer_radius() - NOTCH_NEAR * k,
+        );
+        let notch_clear = notch_ring.0 - NOTCH_CLEARANCE * k;
 
         // SAFETY: guaranteed by the caller.
         unsafe {
@@ -275,6 +328,34 @@ impl Painter {
                 b: 0.0,
                 a: 0.0,
             }));
+
+            // Plates under the tiles: the wheel disc and, while an arc is open, a band joined to
+            // it; the gaps between tiles show them as grooves. Shadows first, so neither plate is
+            // darkened by the other's shadow.
+            let arc_plate = match arc {
+                Some(a) => {
+                    let first = self.layout.sub_span(a, 0).0;
+                    let last = self.layout.sub_span(a, a.count - 1).1;
+                    // Starts inside the wheel disc so the two overlap without a seam.
+                    let ring = (
+                        self.layout.outer_radius() - 5.0 * k,
+                        self.layout.sub_radii().1,
+                    );
+                    Some(self.sector_path(c, ring, first, last)?)
+                }
+                None => None,
+            };
+            self.shadow(&self.wheel_plate, k);
+            if let Some(plate) = &arc_plate {
+                self.shadow(plate, k);
+            }
+            self.brush.SetColor(&p.plate);
+            self.ctx
+                .FillGeometry(&self.wheel_plate, &self.brush, None::<&ID2D1Brush>);
+            if let Some(plate) = &arc_plate {
+                self.ctx
+                    .FillGeometry(plate, &self.brush, None::<&ID2D1Brush>);
+            }
 
             for i in 0..self.layout.inner_sectors() {
                 let (a1, a2) = self.layout.inner_span(i);
@@ -321,13 +402,30 @@ impl Painter {
                     a2 - OUTER_HALF_GAP_DEG,
                 )?;
                 let on = hit == Hit::Outer(i);
-                self.fill_tile(&geometry, p.tile, on, stroke);
-                if self.icons.is_some() {
-                    let r = (outer_ring.0 + outer_ring.1) / 2.0;
-                    let at = polar(c, r, (a1 + a2) / 2.0);
-                    self.icon(Hit::Outer(i), at, self.icon_sizes.outer, on, k)?;
+                let has_submenu = self
+                    .config
+                    .outer_item(usize::from(i))
+                    .is_some_and(|item| !item.submenu.is_empty());
+                // The tile that opened the open arc is tinted so the arc visibly comes from it.
+                let fill = if arc.is_some_and(|a| a.parent == i) {
+                    theme::mix(p.tile, p.accent, PARENT_TINT)
                 } else {
-                    let text_ring = (outer_ring.0 + pad, outer_ring.1 - pad);
+                    p.tile
+                };
+                self.fill_tile(&geometry, fill, on, stroke);
+                let content_end = if has_submenu {
+                    outer_ring.1.min(notch_clear)
+                } else {
+                    outer_ring.1
+                };
+                if self.icons.is_some() {
+                    let size = self.icon_sizes.outer;
+                    let mid_r = (outer_ring.0 + outer_ring.1) / 2.0;
+                    let r = mid_r.min(content_end - size as f32 / 2.0);
+                    let at = polar(c, r, (a1 + a2) / 2.0);
+                    self.icon(Hit::Outer(i), at, size, on, k)?;
+                } else {
+                    let text_ring = (outer_ring.0 + pad, content_end - pad);
                     self.label(
                         Kind::Outer(i),
                         name,
@@ -346,16 +444,8 @@ impl Painter {
                     )?;
                 }
                 // Notch at the outer edge of a tile with a submenu.
-                let has_submenu = self
-                    .config
-                    .outer_item(usize::from(i))
-                    .is_some_and(|item| !item.submenu.is_empty());
                 if has_submenu {
                     let mid = (a1 + a2) / 2.0;
-                    let notch_ring = (
-                        self.layout.outer_radius() - 9.0 * k,
-                        self.layout.outer_radius() - 5.0 * k,
-                    );
                     let notch = self.sector_path(
                         c,
                         notch_ring,
@@ -377,7 +467,7 @@ impl Painter {
                 }
             }
 
-            if let Some(arc) = arc.filter(|a| a.parent < n) {
+            if let Some(arc) = arc {
                 let subs = self
                     .config
                     .outer_item(usize::from(arc.parent))
@@ -458,6 +548,29 @@ impl Painter {
             )?;
         }
         Ok(())
+    }
+
+    /// Soft shadow around `geometry`: a few wide translucent strokes of falling width, whose
+    /// inner halves end up under the (opaque) plate drawn afterwards.
+    ///
+    /// # Safety
+    /// Must be called between `BeginDraw` and `EndDraw` of `self.ctx`.
+    unsafe fn shadow(&self, geometry: &ID2D1Geometry, k: f32) {
+        let mut color = self.palette.shadow;
+        color.a /= SHADOW_PASSES as f32;
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            self.brush.SetColor(&color);
+            for pass in 0..SHADOW_PASSES {
+                let left = (SHADOW_PASSES - pass) as f32 / SHADOW_PASSES as f32;
+                self.ctx.DrawGeometry(
+                    geometry,
+                    &self.brush,
+                    2.0 * SHADOW_REACH * k * left,
+                    &self.round_join,
+                );
+            }
+        }
     }
 
     /// # Safety
@@ -544,24 +657,26 @@ impl Painter {
         let s = size as f32;
         let half = s / 2.0;
         // Text layouts are the size of the icon box and centred in it.
-        let draw_text = |text: char, font: &IDWriteTextFormat, em: f32| -> Result<()> {
-            let mut buf = [0u8; 4];
-            let layout = self.text_layout(text.encode_utf8(&mut buf), font, em, s, s)?;
-            // SAFETY: guaranteed by the caller of `icon`.
-            unsafe {
-                self.brush.SetColor(&color);
-                self.ctx.DrawTextLayout(
-                    Vector2 {
-                        X: at.0 - half,
-                        Y: at.1 - half,
-                    },
-                    &layout,
-                    &self.brush,
-                    D2D1_DRAW_TEXT_OPTIONS_NONE,
-                );
-            }
-            Ok(())
-        };
+        // `shift` moves the layout so the glyph outline, not its em box, is centred.
+        let draw_text =
+            |text: char, font: &IDWriteTextFormat, em: f32, shift: (f32, f32)| -> Result<()> {
+                let mut buf = [0u8; 4];
+                let layout = self.text_layout(text.encode_utf8(&mut buf), font, em, s, s)?;
+                // SAFETY: guaranteed by the caller of `icon`.
+                unsafe {
+                    self.brush.SetColor(&color);
+                    self.ctx.DrawTextLayout(
+                        Vector2 {
+                            X: at.0 - half - shift.0,
+                            Y: at.1 - half - shift.1,
+                        },
+                        &layout,
+                        &self.brush,
+                        D2D1_DRAW_TEXT_OPTIONS_NONE,
+                    );
+                }
+                Ok(())
+            };
         // SAFETY: guaranteed by the caller.
         unsafe {
             match icons.icon_for(hit) {
@@ -581,9 +696,10 @@ impl Painter {
                         None,
                     );
                 }
-                TileIcon::Glyph(glyph) => {
+                TileIcon::Glyph(glyph, fit) => {
                     if let Some(font) = icons.glyph_format() {
-                        draw_text(glyph, font, s)?;
+                        let shift = (fit.dx * fit.scale, fit.dy * fit.scale);
+                        draw_text(glyph, font, s * fit.scale, shift)?;
                     }
                 }
                 TileIcon::Letter(letter) => {
@@ -604,7 +720,7 @@ impl Painter {
                         1.6 * k,
                         None::<&ID2D1StrokeStyle>,
                     );
-                    draw_text(letter, &self.letter_font, s * 0.55)?;
+                    draw_text(letter, &self.letter_font, s * 0.55, (0.0, 0.0))?;
                 }
                 TileIcon::Blank => {}
             }
@@ -667,7 +783,8 @@ impl Painter {
                 })
                 .unwrap_or((f32::INFINITY, f32::INFINITY))
         };
-        let fitted = fit::fit(text, measure, |h| slot(h, f32::INFINITY).0);
+        let min_scale = MIN_FONT_PX * self.layout.dpi_factor() / base;
+        let fitted = fit::fit(text, measure, |h| slot(h, f32::INFINITY).0, min_scale);
         let (text_width, height) = measure(&fitted.text, fitted.scale);
         let (width, at) = slot(height, text_width);
         let width = width.max(1.0);
@@ -865,6 +982,7 @@ mod tests {
         parent: u8,
         tiles: usize,
         hit: Hit,
+        scale_pct: u16,
     }
 
     /// Renders the case offscreen and returns the side and BGRA premultiplied pixels.
@@ -874,7 +992,7 @@ mod tests {
         config.options.outer_sectors = case.sectors;
         config.outer[usize::from(case.parent)].submenu = submenu(case.tiles);
         let arc = arc_for_hit(case.hit, &config);
-        let layout = Layout::new(96, 100, 12, case.sectors);
+        let layout = Layout::new(96, case.scale_pct, 12, case.sectors);
         let size = layout.size_px();
         let device = create_d3d_device().expect("D3D device");
         let dxgi: IDXGIDevice = device.cast().unwrap();
@@ -988,6 +1106,7 @@ mod tests {
             parent,
             tiles,
             hit,
+            scale_pct: 100,
         };
         use ThemeChoice::{Dark, Light};
         use ViewMode::{Icons as I, Names as N};
@@ -1006,6 +1125,22 @@ mod tests {
             case("icons-light-arc5", Light, I, 12, 2, 5, Hit::Sub(2, 4)),
             case("icons-dark-parent0-arc5", Dark, I, 12, 0, 5, Hit::Sub(0, 2)),
             case("icons-dark-4sectors-arc5", Dark, I, 4, 3, 5, Hit::Sub(3, 3)),
+            // Submenu notch next to a name, arc closed.
+            case(
+                "names-light-notch-no-arc",
+                Light,
+                N,
+                12,
+                9,
+                3,
+                Hit::Inner(0),
+            ),
+            case("icons-dark-notch-no-arc", Dark, I, 12, 9, 3, Hit::Inner(0)),
+            // Smallest scale: labels stay at the minimum font size (trimmed when needed).
+            Case {
+                scale_pct: 60,
+                ..case("names-light-60pct", Light, N, 12, 9, 3, Hit::Inner(0))
+            },
         ];
         for case in &cases {
             let (size, pixels) = render(case);
