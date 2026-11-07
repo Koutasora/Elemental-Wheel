@@ -6,19 +6,19 @@ a potem zapisuje `config.json` atomowo; działające koło samo przeładowuje ko
 Poprawiony `save()`: do `.bak` trafia tylko poprawny plik.
 
 ## Kryteria zamknięcia
-- [ ] Edytor wczytuje konfigurację z `%APPDATA%\Elemental-Wheel\config.json` albo z `--config <ścieżka>` i pokazuje błędy i ostrzeżenia wczytania
-- [ ] Podgląd koła: oba pierścienie, liczba sektorów z opcji, nazwy, motyw jasny albo ciemny, łuk podmenu zaznaczonego kafelka; kliknięcie kafelka w podglądzie go zaznacza
-- [ ] Edycja kafelka: nazwa, typ akcji z polami właściwymi dla typu (program: ścieżka, argumenty, folder roboczy; plik/folder; adres; skrót; komenda edycji z listy; wklejenie tekstu; polecenie; akcja systemowa z listy), ikona (ścieżka i wybór pliku), opróżnienie slotu
-- [ ] Podmenu tylko w pierścieniu zewnętrznym: dodawanie, usuwanie, zmiana kolejności, najwyżej 5 kafelków
-- [ ] Nazwę da się zmienić w każdym elemencie, także w komendach edycji w pierścieniu wewnętrznym
-- [ ] Opcje: motyw, rozmiar 60–140%, liczba sektorów 4–12, widok, `hold_ms`, `move_px`, wyłączenie w pełnym ekranie, lista wykluczonych programów
-- [ ] Przeciągnięcie pliku lub programu na slot podglądu tworzy element „program” albo „otwórz” z nazwą z pliku
-- [ ] Zapis: walidacja przed zapisem (przy błędzie plik zostaje nietknięty), znacznik niezapisanych zmian, pytanie przy zamykaniu z niezapisanymi zmianami; `save()` kopiuje do `.bak` tylko poprawny istniejący plik
-- [ ] Testy: `save()` i `.bak` w `wheel-core`; logika modelu edytora bez okna (zmiana typu akcji, podmenu, zmiana liczby sektorów)
-- [ ] `cargo build --release`, `cargo test`, clippy `-D warnings` i `cargo fmt --check` czyste
+- [x] Edytor wczytuje konfigurację z `%APPDATA%\Elemental-Wheel\config.json` albo z `--config <ścieżka>` i pokazuje błędy i ostrzeżenia wczytania
+- [x] Podgląd koła: oba pierścienie, liczba sektorów z opcji, nazwy, motyw jasny albo ciemny, łuk podmenu zaznaczonego kafelka; kliknięcie kafelka w podglądzie go zaznacza
+- [x] Edycja kafelka: nazwa, typ akcji z polami właściwymi dla typu (program: ścieżka, argumenty, folder roboczy; plik/folder; adres; skrót; komenda edycji z listy; wklejenie tekstu; polecenie; akcja systemowa z listy), ikona (ścieżka i wybór pliku), opróżnienie slotu
+- [x] Podmenu tylko w pierścieniu zewnętrznym: dodawanie, usuwanie, zmiana kolejności, najwyżej 5 kafelków
+- [x] Nazwę da się zmienić w każdym elemencie, także w komendach edycji w pierścieniu wewnętrznym
+- [x] Opcje: motyw, rozmiar 60–140%, liczba sektorów 4–12, widok, `hold_ms`, `move_px`, wyłączenie w pełnym ekranie, lista wykluczonych programów
+- [x] Przeciągnięcie pliku lub programu na slot podglądu tworzy element „program” albo „otwórz” z nazwą z pliku
+- [x] Zapis: walidacja przed zapisem (przy błędzie plik zostaje nietknięty), znacznik niezapisanych zmian, pytanie przy zamykaniu z niezapisanymi zmianami; `save()` kopiuje do `.bak` tylko poprawny istniejący plik
+- [x] Testy: `save()` i `.bak` w `wheel-core`; logika modelu edytora bez okna (zmiana typu akcji, podmenu, zmiana liczby sektorów)
+- [x] `cargo build --release`, `cargo test`, clippy `-D warnings` i `cargo fmt --check` czyste
 - [ ] Test na LAB z konfiguracją w scratchpadzie (`%APPDATA%` nietknięty): zrzuty edytora, zapis, przeładowanie w działającym kole
 - [ ] Układ okna zatwierdzony przez użytkownika na zrzucie przed dopracowaniem
-- [ ] `README.md` i `CHECKLISTA.md` zaktualizowane
+- [x] `README.md` i `CHECKLISTA.md` zaktualizowane
 
 ## Plan
 - [x] `crates/wheel-core/src/config.rs`: `save()` kopiuje do `.bak` tylko plik, który się wczytuje bez błędu; testy
