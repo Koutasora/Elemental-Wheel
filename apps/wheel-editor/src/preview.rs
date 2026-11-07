@@ -8,7 +8,7 @@ use eframe::egui::text::LayoutJob;
 use eframe::egui::{
     Color32, Context, CursorIcon, FontId, Painter, Pos2, Sense, Shape, Stroke, Ui, Vec2, vec2,
 };
-use wheel_core::{Action, Hit, Layout, SubArc, arc_for_hit, hit_test_arc};
+use wheel_core::{Action, Hit, Layout, MAX_SCALE_PCT, SubArc, arc_for_hit, hit_test_arc};
 
 use crate::model::{Model, Selection};
 use crate::theme;
@@ -94,10 +94,12 @@ pub fn show(ui: &mut Ui, model: &Model) -> Outcome {
     let empty_fill = ui.visuals().extreme_bg_color;
 
     let config = &model.config;
-    let layout = Layout::new(96, 100, config.options.outer_sectors);
+    let layout = Layout::new(96, config.options.scale_pct, config.options.outer_sectors);
     let n = layout.outer_sectors();
     let radii = layout.radii();
-    let fit = (rect.width().min(rect.height()) / layout.size_px() as f32).max(0.1);
+    // The largest scale fills the area (with its submenu arc), smaller ones are proportionally smaller.
+    let largest = Layout::new(96, MAX_SCALE_PCT, config.options.outer_sectors);
+    let fit = (rect.width().min(rect.height()) / largest.size_px() as f32).max(0.1);
     let center = rect.center();
     // Ring edges as in the mockup: 4 px around the center, 4 px between the rings.
     let u = layout.outer_radius() / 210.0;
