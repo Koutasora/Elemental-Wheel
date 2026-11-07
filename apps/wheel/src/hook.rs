@@ -535,12 +535,7 @@ fn run_effect(effect: Effect) {
             };
             print_line(&selection_text(hit, &config));
             post_to_window(window, WM_WHEEL_CLOSE, 0, 0);
-            let item = match hit {
-                Hit::Outer(i) => config.outer_item(usize::from(i)),
-                Hit::Inner(i) => config.inner_item(usize::from(i)),
-                Hit::Center => None,
-            };
-            if let Some(item) = item {
+            if let Some(item) = wheel_core::item_for_hit(hit, &config) {
                 actions::run(&item.action, target, window.0 as isize);
             }
         }
@@ -579,6 +574,12 @@ fn selection_text(hit: Hit, config: &WheelConfig) -> String {
             "selected: inner {} \"{}\"",
             i + 1,
             name(config.inner_item(usize::from(i)))
+        ),
+        Hit::Sub(p, k) => format!(
+            "selected: outer {} submenu {} \"{}\"",
+            p + 1,
+            k + 1,
+            name(wheel_core::item_for_hit(hit, config))
         ),
         Hit::Center => "selected: center".to_string(),
     }

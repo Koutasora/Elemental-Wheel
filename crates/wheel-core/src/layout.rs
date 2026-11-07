@@ -1,7 +1,7 @@
 //! Wheel dimensions in physical pixels, from monitor DPI and user scale.
 //! Angles use the same convention as `geometry`: 0 = up, clockwise; sector 0 is centred at 0.
 
-use crate::geometry::{INNER_SECTORS, Radii, clamp_outer_sectors};
+use crate::geometry::{INNER_SECTORS, Radii, SubArc, clamp_outer_sectors, sub_tile_span};
 
 /// Smallest allowed scale, in percent.
 pub const MIN_SCALE_PCT: u16 = 60;
@@ -12,10 +12,14 @@ pub const DEFAULT_SCALE_PCT: u16 = 100;
 
 // Base dimensions at 100% and 96 DPI, from the mockup in `docs/koncept.html`
 // (R.c = 60, inner ring 64..122, outer ring 126..210). The ring boundary sits in the middle
-// of the 122..126 gap.
+// of the 122..126 gap. The submenu arc band is 218..292; the outer ring boundary for hits
+// beyond the wheel sits in the middle of the 210..218 gap.
 const BASE_CENTER: f32 = 60.0;
 const BASE_INNER: f32 = 124.0;
 const BASE_OUTER: f32 = 210.0;
+const BASE_OUTER_LIMIT: f32 = 214.0;
+const BASE_SUB_INNER: f32 = 218.0;
+const BASE_SUB_OUTER: f32 = 292.0;
 
 /// Clamps the scale to `MIN_SCALE_PCT..=MAX_SCALE_PCT`.
 pub fn clamp_scale_pct(pct: u16) -> u16 {
@@ -44,12 +48,18 @@ impl Layout {
         Radii {
             center: BASE_CENTER * self.factor,
             inner: BASE_INNER * self.factor,
+            outer: BASE_OUTER_LIMIT * self.factor,
         }
     }
 
     /// Outer edge of the outer ring in physical pixels.
     pub fn outer_radius(&self) -> f32 {
         BASE_OUTER * self.factor
+    }
+
+    /// Inner and outer edge of the submenu arc band in physical pixels.
+    pub fn sub_radii(&self) -> (f32, f32) {
+        (BASE_SUB_INNER * self.factor, BASE_SUB_OUTER * self.factor)
     }
 
     pub fn outer_sectors(&self) -> u8 {
@@ -66,9 +76,14 @@ impl Layout {
         span(i, INNER_SECTORS)
     }
 
-    /// Side length of a square window that fits the whole wheel.
+    /// Start and end angle of tile `k` of the submenu arc `arc`, in degrees.
+    pub fn sub_span(&self, arc: SubArc, k: u8) -> (f32, f32) {
+        sub_tile_span(arc, k, self.outer_sectors)
+    }
+
+    /// Side length of a square window that fits the wheel with its submenu arc band.
     pub fn size_px(&self) -> u32 {
-        (self.outer_radius() * 2.0).ceil() as u32
+        (self.sub_radii().1 * 2.0).ceil() as u32
     }
 }
 
@@ -113,7 +128,10 @@ mod tests {
         assert!(close(l.radii().center, 60.0));
         assert!(close(l.radii().inner, 124.0));
         assert!(close(l.outer_radius(), 210.0));
-        assert_eq!(l.size_px(), 420);
+        assert!(close(l.radii().outer, 214.0));
+        assert!(close(l.sub_radii().0, 218.0));
+        assert!(close(l.sub_radii().1, 292.0));
+        assert_eq!(l.size_px(), 584);
     }
 
     #[test]
@@ -126,6 +144,9 @@ mod tests {
                 assert!(close(l.radii().center, base.radii().center * k));
                 assert!(close(l.radii().inner, base.radii().inner * k));
                 assert!(close(l.outer_radius(), base.outer_radius() * k));
+                assert!(close(l.radii().outer, base.radii().outer * k));
+                assert!(close(l.sub_radii().0, base.sub_radii().0 * k));
+                assert!(close(l.sub_radii().1, base.sub_radii().1 * k));
             }
         }
         let l144 = Layout::new(144, 100, 12);
@@ -139,13 +160,47 @@ mod tests {
     }
 
     #[test]
-    fn size_fits_wheel_rounded_up() {
+    fn size_fits_sub_band_rounded_up() {
         for dpi in [96u32, 120, 144, 192] {
             for pct in [60u16, 77, 100, 140] {
                 let l = Layout::new(dpi, pct, 12);
-                assert!(l.size_px() as f32 >= l.outer_radius() * 2.0);
-                assert!((l.size_px() as f32) < l.outer_radius() * 2.0 + 1.0);
+                assert!(l.size_px() as f32 >= l.sub_radii().1 * 2.0);
+                assert!((l.size_px() as f32) < l.sub_radii().1 * 2.0 + 1.0);
             }
+        }
+    }
+
+    #[test]
+    fn sub_span_is_centred_on_parent() {
+        let l = Layout::new(96, 100, 8);
+        let arc = SubArc {
+            parent: 2,
+            count: 4,
+        };
+        assert!(close(l.sub_span(arc, 0).0, 90.0 - 52.0));
+        assert!(close(l.sub_span(arc, 3).1, 90.0 + 52.0));
+    }
+
+    #[test]
+    fn sub_span_wraps_over_zero() {
+        let l = Layout::new(96, 100, 12);
+        let arc = SubArc {
+            parent: 0,
+            count: 5,
+        };
+        assert!(close(l.sub_span(arc, 0).0, -65.0));
+        assert!(close(l.sub_span(arc, 2).0, -13.0));
+        assert!(close(l.sub_span(arc, 4).1, 65.0));
+    }
+
+    #[test]
+    fn radii_are_ordered() {
+        for pct in [60, 100, 140] {
+            let l = Layout::new(144, pct, 12);
+            assert!(l.radii().inner < l.outer_radius());
+            assert!(l.outer_radius() < l.radii().outer);
+            assert!(l.radii().outer < l.sub_radii().0);
+            assert!(l.sub_radii().0 < l.sub_radii().1);
         }
     }
 

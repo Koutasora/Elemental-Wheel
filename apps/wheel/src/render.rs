@@ -296,6 +296,8 @@ impl Renderer {
                     .get(i as usize)
                     .copied()
                     .unwrap_or(""),
+                Hit::Sub(..) => wheel_core::item_for_hit(hit, &self.config)
+                    .map_or("", |item| item.name.as_str()),
             };
             self.label(
                 Kind::Hub,

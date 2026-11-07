@@ -11,6 +11,11 @@ pub const MIN_OUTER_SECTORS: u8 = 4;
 /// Largest allowed number of outer ring sectors.
 pub const MAX_OUTER_SECTORS: u8 = 12;
 
+/// Angular width of one submenu tile, in degrees.
+pub const SUB_TILE_DEG: f32 = 26.0;
+/// Largest number of tiles in a submenu arc.
+pub const MAX_SUB_TILES: u8 = 5;
+
 /// Clamps the outer ring sector count to `MIN_OUTER_SECTORS..=MAX_OUTER_SECTORS`.
 pub fn clamp_outer_sectors(n: u8) -> u8 {
     n.clamp(MIN_OUTER_SECTORS, MAX_OUTER_SECTORS)
@@ -23,6 +28,9 @@ pub struct Radii {
     pub center: f32,
     /// Below this distance (and not in the center) the point is in the inner ring.
     pub inner: f32,
+    /// Below this distance (and not in the inner ring) the point is in the outer ring. Beyond it
+    /// an open submenu arc can be hit; it sits in the middle of the gap before the arc band.
+    pub outer: f32,
 }
 
 /// Result of a hit test.
@@ -31,6 +39,17 @@ pub enum Hit {
     Center,
     Inner(u8),
     Outer(u8),
+    /// A tile of an open submenu arc: the outer sector of the parent and the index in its submenu.
+    Sub(u8, u8),
+}
+
+/// An open submenu arc, centred on the outer sector `parent`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SubArc {
+    /// Outer sector the arc belongs to.
+    pub parent: u8,
+    /// Number of tiles, `1..=MAX_SUB_TILES`.
+    pub count: u8,
 }
 
 /// Angle of the point in degrees, in `0..360`: 0 is up, clockwise.
@@ -51,19 +70,46 @@ pub fn sector_at(angle_deg: f32, sectors: u8) -> u8 {
     ((a / width) as u8).min(sectors - 1)
 }
 
-/// Finds what is under the point. The inner ring always has `INNER_SECTORS` sectors, the outer
-/// ring `outer_sectors`; outside the wheel the outer ring is chosen by direction.
+/// Start and end angle, in degrees, of tile `k` of the arc `arc` for `outer_sectors` outer
+/// sectors. The arc is `count * SUB_TILE_DEG` wide and centred on the middle of its parent sector.
+pub fn sub_tile_span(arc: SubArc, k: u8, outer_sectors: u8) -> (f32, f32) {
+    let middle = arc.parent as f32 * 360.0 / outer_sectors.max(1) as f32;
+    let start = middle - arc.count as f32 * SUB_TILE_DEG / 2.0 + k as f32 * SUB_TILE_DEG;
+    (start, start + SUB_TILE_DEG)
+}
+
+/// Finds what is under the point with no submenu arc open; see `hit_test_arc`.
 pub fn hit_test(x: f32, y: f32, r: &Radii, outer_sectors: u8) -> Hit {
+    hit_test_arc(x, y, r, outer_sectors, None)
+}
+
+/// Finds what is under the point. The inner ring always has `INNER_SECTORS` sectors, the outer
+/// ring `outer_sectors`. Beyond `r.outer`, a point within the angular range of the open `arc`
+/// is a `Sub` tile at any distance (so releasing further out still picks the tile); any other
+/// point is the outer sector in its direction. An arc with a parent outside the outer ring or
+/// a count outside `1..=MAX_SUB_TILES` is ignored.
+pub fn hit_test_arc(x: f32, y: f32, r: &Radii, outer_sectors: u8, arc: Option<SubArc>) -> Hit {
     let dist = x.hypot(y);
     if dist < r.center {
         return Hit::Center;
     }
     let angle = angle_deg(x, y);
     if dist < r.inner {
-        Hit::Inner(sector_at(angle, INNER_SECTORS))
-    } else {
-        Hit::Outer(sector_at(angle, outer_sectors))
+        return Hit::Inner(sector_at(angle, INNER_SECTORS));
     }
+    if dist >= r.outer
+        && let Some(arc) =
+            arc.filter(|a| a.parent < outer_sectors && (1..=MAX_SUB_TILES).contains(&a.count))
+    {
+        let middle = arc.parent as f32 * 360.0 / outer_sectors as f32;
+        let delta = (angle - middle + 180.0).rem_euclid(360.0) - 180.0;
+        let half = arc.count as f32 * SUB_TILE_DEG / 2.0;
+        if delta.abs() <= half {
+            let k = (((delta + half) / SUB_TILE_DEG) as u8).min(arc.count - 1);
+            return Hit::Sub(arc.parent, k);
+        }
+    }
+    Hit::Outer(sector_at(angle, outer_sectors))
 }
 
 #[cfg(test)]
@@ -73,6 +119,7 @@ mod tests {
     const R: Radii = Radii {
         center: 40.0,
         inner: 120.0,
+        outer: 214.0,
     };
 
     /// Point at `dist` from the center in the direction `deg` (0 = up, clockwise).
@@ -156,6 +203,114 @@ mod tests {
         assert_eq!(sector_at(angle_deg(1.0, 0.0), 12), 3);
         assert_eq!(sector_at(angle_deg(0.0, 1.0), 12), 6);
         assert_eq!(sector_at(angle_deg(-1.0, 0.0), 12), 9);
+    }
+
+    #[test]
+    fn arc_tiles_cover_arc_around_parent() {
+        for n in 4u8..=12 {
+            for parent in 0..n {
+                for count in 1u8..=5 {
+                    let arc = SubArc { parent, count };
+                    let middle = parent as f32 * 360.0 / n as f32;
+                    let first = sub_tile_span(arc, 0, n);
+                    let last = sub_tile_span(arc, count - 1, n);
+                    let half = count as f32 * SUB_TILE_DEG / 2.0;
+                    assert!((first.0 - (middle - half)).abs() < 1e-3);
+                    assert!((last.1 - (middle + half)).abs() < 1e-3);
+                    for k in 0..count {
+                        let (s, e) = sub_tile_span(arc, k, n);
+                        assert!((e - s - SUB_TILE_DEG).abs() < 1e-3);
+                        // The middle of every tile hits that tile, also far beyond the band.
+                        for dist in [250.0, 10_000.0] {
+                            let (x, y) = point((s + e) / 2.0, dist);
+                            assert_eq!(
+                                hit_test_arc(x, y, &R, n, Some(arc)),
+                                Hit::Sub(parent, k),
+                                "n={n} parent={parent} count={count} k={k} dist={dist}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn arc_angular_edges() {
+        let arc = SubArc {
+            parent: 3,
+            count: 3,
+        };
+        let middle = 90.0; // sector 3 of 12
+        let half = 3.0 * SUB_TILE_DEG / 2.0;
+        let hit = |deg: f32| {
+            let (x, y) = point(deg, 250.0);
+            hit_test_arc(x, y, &R, 12, Some(arc))
+        };
+        assert_eq!(hit(middle - half + 0.05), Hit::Sub(3, 0));
+        assert_eq!(hit(middle - half - 0.05), Hit::Outer(2));
+        assert_eq!(hit(middle + half - 0.05), Hit::Sub(3, 2));
+        assert_eq!(hit(middle + half + 0.05), Hit::Outer(4));
+        assert_eq!(hit(middle - 13.0 + 0.05), Hit::Sub(3, 1));
+        assert_eq!(hit(middle - 13.0 - 0.05), Hit::Sub(3, 0));
+    }
+
+    #[test]
+    fn arc_wraps_over_zero() {
+        for (parent, n) in [(0u8, 12u8), (11, 12), (0, 4), (3, 4)] {
+            for count in 1u8..=5 {
+                let arc = SubArc { parent, count };
+                let middle = parent as f32 * 360.0 / n as f32;
+                for k in 0..count {
+                    let (s, e) = sub_tile_span(arc, k, n);
+                    let (x, y) = point((s + e) / 2.0, 240.0);
+                    assert_eq!(
+                        hit_test_arc(x, y, &R, n, Some(arc)),
+                        Hit::Sub(parent, k),
+                        "parent={parent} n={n} count={count} k={k}"
+                    );
+                }
+                let half = count as f32 * SUB_TILE_DEG / 2.0;
+                let (x, y) = point(middle + half + 0.05, 240.0);
+                assert!(matches!(
+                    hit_test_arc(x, y, &R, n, Some(arc)),
+                    Hit::Outer(_)
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn arc_radial_boundaries() {
+        let arc = SubArc {
+            parent: 0,
+            count: 2,
+        };
+        let eps = 0.01;
+        let at = |d: f32| hit_test_arc(0.0, -d, &R, 12, Some(arc));
+        assert_eq!(at(R.outer - eps), Hit::Outer(0));
+        assert_eq!(at(R.outer), Hit::Sub(0, 1));
+        assert_eq!(at(R.inner), Hit::Outer(0));
+        let one = SubArc {
+            parent: 0,
+            count: 1,
+        };
+        assert_eq!(hit_test_arc(0.0, -250.0, &R, 12, Some(one)), Hit::Sub(0, 0));
+    }
+
+    #[test]
+    fn arc_ignores_inner_center_and_invalid_arc() {
+        let arc = SubArc {
+            parent: 0,
+            count: 5,
+        };
+        assert_eq!(hit_test_arc(0.0, 0.0, &R, 12, Some(arc)), Hit::Center);
+        assert_eq!(hit_test_arc(0.0, -80.0, &R, 12, Some(arc)), Hit::Inner(0));
+        for (parent, count) in [(6u8, 2u8), (0, 0), (0, 6)] {
+            let bad = SubArc { parent, count };
+            assert_eq!(hit_test_arc(0.0, -250.0, &R, 6, Some(bad)), Hit::Outer(0));
+        }
+        assert_eq!(hit_test_arc(0.0, -250.0, &R, 12, None), Hit::Outer(0));
     }
 
     #[test]

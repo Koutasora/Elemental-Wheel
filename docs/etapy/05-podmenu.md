@@ -19,8 +19,8 @@ Sprawdzenie fizyczną myszą przeniesione z etapu 04.
 - [ ] `CHECKLISTA.md` i `README.md` zaktualizowane (`submenu` i `icon` nie są już zarezerwowane)
 
 ## Plan
-- [ ] `crates/wheel-core/src/geometry.rs`, `layout.rs`: promienie pasma podmenu, kąty kafelków łuku, `Hit::Sub(rodzic, k)` w `hit_test` przy otwartym łuku, rozmiar okna z pasmem; testy
-- [ ] `crates/wheel-core`: czysta logika stanu łuku (który otwarty po danym trafieniu) i mapowanie trafienia na `&Item`; testy
+- [x] `crates/wheel-core/src/geometry.rs`, `layout.rs`: promienie pasma podmenu, kąty kafelków łuku, `Hit::Sub(rodzic, k)` w `hit_test` przy otwartym łuku, rozmiar okna z pasmem; testy
+- [x] `crates/wheel-core`: czysta logika stanu łuku (który otwarty po danym trafieniu) i mapowanie trafienia na `&Item`; testy
 - [ ] `apps/wheel/src/icons.rs` (nowy): ikony z plików (`SHDefExtractIconW` / `SHGetFileInfoW`, HICON na bitmapę D2D przez WIC), mapa glifów dla 12 komend edycji i 8 akcji systemowych, wybór czcionki glifów wg systemu, pamięć podręczna
 - [ ] `apps/wheel/src/render.rs`: kafelki łuku, kreska podmenu, podświetlenie, widok ikon, nazwa w środku
 - [ ] `apps/wheel/src/window.rs`, `fit.rs`: większe okno, stan łuku przy ruchu, wykonanie akcji z łuku w obu trybach
@@ -30,6 +30,10 @@ Sprawdzenie fizyczną myszą przeniesione z etapu 04.
 
 ## Decyzje
 - Domyślna konfiguracja dostaje przykładowe podmenu „Ustawienia” (Ekran, Dźwięk, Bluetooth, Aktualizacje): funkcja widoczna od pierwszego uruchomienia (decyzja użytkownika).
+- Trafianie z łukiem w osobnej funkcji `hit_test_arc(..., Option<SubArc>)`, a `hit_test` to nakładka z `None`: wyzwalacz i okno działają bez zmian, dopóki krok 5 nie poda łuku.
+- Granica pierścienia zewnętrznego `Radii.outer` = 214 (środek szczeliny 210..218 z makiety); za nią, w kącie łuku, trafienie to kafelek łuku przy dowolnej odległości; łuk z rodzicem >= liczby sektorów albo liczbą kafelków spoza 1..=5 jest pomijany.
+- Stan łuku (`arc_for_hit`) i mapowanie trafienia na element (`item_for_hit`) w nowym `submenu.rs`: to logika trafienia, nie dane konfiguracji.
+- Okno ma bok `2 * 292` (584 px przy 100% i 96 DPI zamiast 420), żeby zmieścić pasmo podmenu; rozmiar kafelków bez zmian.
 
 ## Podsumowanie
 (wypełnia /etap-zamknij)
