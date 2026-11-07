@@ -2,15 +2,38 @@
 
 use eframe::egui::{DragValue, RichText, Slider, TextEdit, Ui};
 use wheel_core::{
-    MAX_HOLD_MS, MAX_INNER_SECTORS, MAX_MOVE_PX, MAX_OUTER_SECTORS, MAX_SCALE_PCT, MIN_HOLD_MS,
-    MIN_INNER_SECTORS, MIN_MOVE_PX, MIN_OUTER_SECTORS, MIN_SCALE_PCT, ThemeChoice, ViewMode,
+    MAX_GLASS_PCT, MAX_HOLD_MS, MAX_INNER_SECTORS, MAX_MOVE_PX, MAX_OUTER_SECTORS, MAX_SCALE_PCT,
+    MIN_GLASS_PCT, MIN_HOLD_MS, MIN_INNER_SECTORS, MIN_MOVE_PX, MIN_OUTER_SECTORS, MIN_SCALE_PCT,
+    ThemeChoice, ViewMode,
 };
+use windows::Win32::Foundation::ERROR_SUCCESS;
+use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
+use windows::core::w;
 
 use crate::model::Model;
 
 fn caption(ui: &mut Ui, text: &str) {
     ui.add_space(6.0);
     ui.label(RichText::new(text).strong());
+}
+
+/// Whether Windows draws transparency effects; the wheel shows no glass when it does not.
+fn windows_transparency() -> bool {
+    let mut data: u32 = 0;
+    let mut size = size_of::<u32>() as u32;
+    // SAFETY: `data` and `size` outlive the call and `size` matches the buffer.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            w!(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"),
+            w!("EnableTransparency"),
+            RRF_RT_REG_DWORD,
+            None,
+            Some(&mut data as *mut u32 as *mut std::ffi::c_void),
+            Some(&mut size),
+        )
+    };
+    status != ERROR_SUCCESS || data != 0
 }
 
 pub fn show(ui: &mut Ui, model: &mut Model) {
@@ -36,6 +59,19 @@ pub fn show(ui: &mut Ui, model: &mut Model) {
             .step_by(10.0)
             .suffix("%"),
     );
+
+    caption(ui, "Przezroczystość szkła");
+    ui.add(
+        Slider::new(&mut o.glass_pct, MIN_GLASS_PCT..=MAX_GLASS_PCT)
+            .step_by(5.0)
+            .suffix("%"),
+    );
+    if !windows_transparency() {
+        ui.label("Przezroczystość wyłączona w Windows");
+    }
+
+    ui.add_space(8.0);
+    ui.checkbox(&mut o.animations, "Animacje");
 
     caption(ui, "Liczba sektorów wewnętrznych");
     let mut inner_sectors = o.inner_sectors;

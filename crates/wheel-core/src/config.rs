@@ -13,6 +13,7 @@ use crate::geometry::{
 };
 use crate::keys::parse_shortcut;
 use crate::layout::{DEFAULT_SCALE_PCT, MAX_SCALE_PCT, MIN_SCALE_PCT, clamp_scale_pct};
+use crate::look::{DEFAULT_GLASS_PCT, MAX_GLASS_PCT, MIN_GLASS_PCT, clamp_glass_pct};
 use crate::trigger::{
     DEFAULT_HOLD_MS, DEFAULT_MOVE_PX, MAX_HOLD_MS, MAX_MOVE_PX, MIN_HOLD_MS, MIN_MOVE_PX,
     TriggerSettings, clamp_hold_ms, clamp_move_px,
@@ -258,6 +259,11 @@ pub struct Options {
     pub disable_in_fullscreen: bool,
     /// Names of `.exe` files that get the normal right button.
     pub excluded: Vec<String>,
+    /// How transparent the glass of the wheel is, 0 (opaque look) to 100.
+    #[serde(deserialize_with = "sat_u8")]
+    pub glass_pct: u8,
+    /// Whether the wheel animates opening and highlighting.
+    pub animations: bool,
 }
 
 impl Default for Options {
@@ -272,6 +278,8 @@ impl Default for Options {
             move_px: DEFAULT_MOVE_PX,
             disable_in_fullscreen: true,
             excluded: Vec::new(),
+            glass_pct: DEFAULT_GLASS_PCT,
+            animations: true,
         }
     }
 }
@@ -484,6 +492,13 @@ impl Config {
             &mut o.move_px,
             clamp_move_px,
             (MIN_MOVE_PX, MAX_MOVE_PX),
+        );
+        clamp_warn(
+            &mut warnings,
+            "glass_pct",
+            &mut o.glass_pct,
+            clamp_glass_pct,
+            (MIN_GLASS_PCT, MAX_GLASS_PCT),
         );
         self.outer.resize(MAX_RING_ITEMS, Item::empty());
         self.inner
@@ -1027,6 +1042,35 @@ mod tests {
                 hold_ms: 2000,
                 move_px: 6
             }
+        );
+    }
+
+    #[test]
+    fn glass_and_animation_options() {
+        let o = Options::default();
+        assert_eq!((o.glass_pct, o.animations), (50, true));
+        // Missing fields get the defaults.
+        let (c, w) = Config::parse(r#"{"options":{"scale_pct":90}}"#).unwrap();
+        assert_eq!((c.options.glass_pct, c.options.animations), (50, true));
+        assert!(w.is_empty());
+        let (c, w) = Config::parse(r#"{"options":{"glass_pct":0,"animations":false}}"#).unwrap();
+        assert_eq!((c.options.glass_pct, c.options.animations), (0, false));
+        assert!(w.is_empty());
+        // Out of range: clamped with a warning, also far outside the field type.
+        let (c, w) = Config::parse(r#"{"options":{"glass_pct":250}}"#).unwrap();
+        assert_eq!(c.options.glass_pct, 100);
+        assert!(w.len() == 1 && w[0].contains("glass_pct"), "{w:?}");
+        let (c, _) = Config::parse(r#"{"options":{"glass_pct":-5}}"#).unwrap();
+        assert_eq!(c.options.glass_pct, 0);
+        // Saved and read back.
+        let mut config = Config::default();
+        config.options.glass_pct = 70;
+        config.options.animations = false;
+        let text = serde_json::to_string(&config).unwrap();
+        let (back, _) = Config::parse(&text).unwrap();
+        assert_eq!(
+            (back.options.glass_pct, back.options.animations),
+            (70, false)
         );
     }
 

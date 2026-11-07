@@ -115,7 +115,7 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
         layout,
         theme::palette(o.theme),
         config.clone(),
-        options.glass_level(),
+        options.glass_level(config.options.glass_pct),
     )
     .and_then(|r| {
         // The window is still hidden, so the snapshot shows the desktop without it.
@@ -368,8 +368,8 @@ struct RunState {
     /// `None` only while it is being re-created for another monitor DPI.
     renderer: Option<Renderer>,
     palette: Palette,
-    /// Glass look wanted (the renderer still falls back to opaque when it cannot be had).
-    glass: f32,
+    /// Glass transparency forced by a command line flag; otherwise the file's `glass_pct` counts.
+    glass_override: Option<f32>,
     config: Arc<Config>,
     settings: Settings,
     /// Size of the wheel in use. A reloaded file changes it only after the open that found the
@@ -384,6 +384,17 @@ struct RunState {
     /// The submenu arc shown; this window owns it and publishes it to the hook thread.
     arc: Option<SubArc>,
     error: Option<Error>,
+}
+
+impl RunState {
+    /// Glass look wanted (the renderer still falls back to opaque when it cannot be had).
+    fn glass_level(&self) -> f32 {
+        glass_level(self.glass_override, &self.config)
+    }
+}
+
+fn glass_level(glass_override: Option<f32>, config: &Config) -> f32 {
+    glass_override.unwrap_or(f32::from(config.options.glass_pct) / 100.0)
 }
 
 /// Background mode: a hidden click-through window plus the hook thread; runs until
@@ -405,8 +416,14 @@ pub fn run_background(options: &RunOptions, config_path: PathBuf) -> Result<()> 
     let hwnd = create_popup(RUN_CLASS, run_wnd_proc, WS_EX_TRANSPARENT, (0, 0, size))?;
 
     let palette = theme::palette(config.options.theme);
-    let glass = options.wheel.glass_level();
-    let renderer = match build_renderer(hwnd, layout, palette, &config, glass) {
+    let glass_override = options.wheel.glass_override();
+    let renderer = match build_renderer(
+        hwnd,
+        layout,
+        palette,
+        &config,
+        glass_level(glass_override, &config),
+    ) {
         Ok(r) => r,
         Err(e) => {
             // SAFETY: `hwnd` was created above and is destroyed only here.
@@ -417,7 +434,7 @@ pub fn run_background(options: &RunOptions, config_path: PathBuf) -> Result<()> 
     let state = Box::into_raw(Box::new(RunState {
         renderer: Some(renderer),
         palette,
-        glass,
+        glass_override,
         config: config.clone(),
         settings,
         scale_pct,
@@ -510,7 +527,7 @@ fn reload(hwnd: HWND, s: &mut RunState, apply_layout: bool) {
         if apply_layout {
             let at = cursor_pos().unwrap_or_default();
             let layout = layout_at(at, s.scale_pct, s.inner_sectors, s.sectors);
-            match build_renderer(hwnd, layout, s.palette, &s.config, s.glass) {
+            match build_renderer(hwnd, layout, s.palette, &s.config, s.glass_level()) {
                 Ok(renderer) => {
                     s.renderer = Some(renderer);
                     s.layout = layout;
@@ -535,7 +552,13 @@ fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<OpenKind> {
         // The monitor DPI differs: size and fonts change, so the render resources are rebuilt.
         // The old ones go first, a window can have only one composition target.
         s.renderer = None;
-        s.renderer = Some(build_renderer(hwnd, layout, s.palette, &s.config, s.glass)?);
+        s.renderer = Some(build_renderer(
+            hwnd,
+            layout,
+            s.palette,
+            &s.config,
+            s.glass_level(),
+        )?);
         s.layout = layout;
     }
     let size = layout.size_px() as i32;

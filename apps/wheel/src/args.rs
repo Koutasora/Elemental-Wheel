@@ -47,19 +47,22 @@ pub struct DemoOptions {
 }
 
 impl DemoOptions {
-    /// Transparency of the glass, 0 (opaque look, no glass) to 1 (most transparent).
-    pub fn glass_level(&self) -> f32 {
+    /// Glass transparency forced by `--no-glass` or `--glass`; these win over the file.
+    pub fn glass_override(&self) -> Option<f32> {
         if self.no_glass {
-            0.0
+            Some(0.0)
         } else {
-            self.glass
-                .map_or(DEFAULT_GLASS, |pct| f32::from(pct) / 100.0)
+            self.glass.map(|pct| f32::from(pct) / 100.0)
         }
     }
-}
 
-/// Glass transparency used when nothing asks for another one.
-const DEFAULT_GLASS: f32 = 0.5;
+    /// Transparency of the glass, 0 (opaque look, no glass) to 1 (most transparent); the
+    /// configuration's `glass_pct` unless a flag overrides it.
+    pub fn glass_level(&self, config_pct: u8) -> f32 {
+        self.glass_override()
+            .unwrap_or(f32::from(config_pct) / 100.0)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunOptions {
@@ -427,9 +430,10 @@ mod tests {
         assert_eq!(o.at, Some((960, -540)));
         assert_eq!(o.demo_hit, Some(Hit::Sub(2, 1)));
         assert!(o.no_glass);
-        assert_eq!(o.glass_level(), 0.0);
-        assert_eq!(demo(&["--demo"]).glass_level(), 0.5);
-        assert_eq!(demo(&["--demo", "--glass", "75"]).glass_level(), 0.75);
+        assert_eq!(o.glass_level(50), 0.0);
+        assert_eq!(demo(&["--demo"]).glass_level(50), 0.5);
+        assert_eq!(demo(&["--demo"]).glass_level(80), 0.8);
+        assert_eq!(demo(&["--demo", "--glass", "75"]).glass_level(50), 0.75);
         assert_eq!(demo(&["--demo", "--glass", "400"]).glass, Some(100));
         assert!(parse_strs(&["--demo", "--glass", "x"]).is_err());
         assert_eq!(

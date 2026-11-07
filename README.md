@@ -53,9 +53,9 @@ target\release\wheel-editor.exe --version
 ```
 
 - Opens `%APPDATA%\Elemental-Wheel\config.json` or the file given with `--config`. A missing file shows the defaults and is created on the first save. Load errors and warnings are shown in the bottom bar.
-- Left: preview of the wheel (both rings, sector count, names or icons, theme, submenu arc of the selected tile). Click a tile to select it.
+- Left: preview of the wheel (both rings, sector count, names or icons, theme, glass look over a sample backdrop, submenu arc of the selected tile). Click a tile to select it.
 - Right, tab "Kafelek": name, action type with its fields (program path, arguments and working folder; file or folder; URL; shortcut; edit command; text; command line; system action), icon path, emptying the slot. Outer tiles get a submenu of up to 5 tiles: add, remove, move up and down. Every name can be changed, edit commands in the inner ring included.
-- Tab "Opcje": theme, size 60-140%, inner sectors 4-12, outer sectors 4-12, view, hold time, movement threshold, full screen switch, excluded programs. Fewer sectors hide the extra items without deleting them.
+- Tab "Opcje": theme, size 60-140%, glass transparency 0-100%, animations, inner sectors 4-12, outer sectors 4-12, view, hold time, movement threshold, full screen switch, excluded programs. Fewer sectors hide the extra items without deleting them.
 - Dropping a file or folder on a tile of the preview makes it a `program` item (`.exe`, `.lnk`, `.bat`, `.cmd`) or an `open` item, named after the file; the tile keeps its submenu.
 - Save with "Zapisz" or Ctrl+S. The configuration is validated first; on an error the file is left as it was and the reason is shown. Unsaved changes are marked in the title bar and the bottom bar; closing or reloading asks first. A running `wheel.exe` picks up the saved file by itself.
 
@@ -79,7 +79,9 @@ target\release\wheel-editor.exe --version
     "hold_ms": 180,
     "move_px": 6,
     "disable_in_fullscreen": true,
-    "excluded": ["blender.exe"]
+    "excluded": ["blender.exe"],
+    "glass_pct": 50,
+    "animations": true
   },
   "outer": [
     { "name": "Notatnik", "action": { "type": "program", "path": "notepad.exe" } },
@@ -106,6 +108,8 @@ target\release\wheel-editor.exe --version
 - `system` actions: `lock`, `close_window`, `minimize_window`, `show_desktop`, `volume_mute`, `volume_up`, `volume_down`, `screenshot`.
 - `program` and `open` paths and arguments expand `%VARIABLES%`.
 - `excluded` lists program file names (case does not matter).
+- `glass_pct` (0 to 100, default 50): how transparent the glass of the wheel is; 0 gives the opaque look. Without Windows transparency (Settings > Personalization > Colors) the wheel is opaque.
+- `animations` (default `true`): animations of the wheel on or off.
 - Numbers outside the allowed range are clamped with a warning (in the log and on stderr). An invalid file (bad JSON or encoding, unknown type, invalid shortcut, too many items) is never overwritten. At start the program falls back to `config.json.bak`, then to the defaults. While running, an invalid file is ignored and the current configuration stays; either way the reason goes to the log (and stderr).
 - The config folder is watched: a changed file is reloaded within a moment, no restart needed. Exclusions, actions, names and trigger thresholds apply from the next press, wheel size and sector count from the next opening. If the folder is missing at start, the file is checked when the wheel opens instead.
 
