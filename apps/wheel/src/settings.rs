@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use wheel_core::config::LoadError;
 use wheel_core::{Config, Loaded, Source, config};
 
 use crate::args::Overrides;
@@ -94,14 +95,22 @@ impl Settings {
     }
 
     /// Reloads the file if its modification time changed. A file that vanished is never
-    /// recreated: the current configuration stays.
+    /// recreated and an invalid one is ignored (the reason is logged): the current configuration
+    /// stays. The broken version's time is remembered, so the next save reloads normally.
     pub fn refresh(&mut self) -> Option<Arc<Config>> {
         let now = modified(&self.path)?;
         if self.modified == Some(now) {
             return None;
         }
         self.modified = Some(now);
-        let loaded = config::load_existing(&self.path)?;
+        let loaded = match config::load_valid(&self.path) {
+            Ok(loaded) => loaded,
+            Err(LoadError::Missing) => return None,
+            Err(LoadError::Invalid(e)) => {
+                wheel_core::log_line!("config error: {e}; keeping the current configuration");
+                return None;
+            }
+        };
         report(&self.path, &loaded);
         let mut config = loaded.config;
         apply(&mut config, &self.overrides);
@@ -178,5 +187,42 @@ mod tests {
         fs::remove_file(&path).unwrap();
         assert!(settings.refresh().is_none());
         assert!(!path.exists(), "a vanished file is not recreated");
+    }
+
+    fn touch(path: &Path, secs: u64) {
+        let file = fs::File::options().write(true).open(path).unwrap();
+        file.set_modified(SystemTime::now() + Duration::from_secs(secs))
+            .unwrap();
+    }
+
+    #[test]
+    fn broken_file_keeps_the_current_configuration() {
+        let path = dir("settings_broken_keeps").join("config.json");
+        fs::write(&path, r#"{"options":{"scale_pct":90}}"#).unwrap();
+        let (mut settings, config) = Settings::load(path.clone(), Overrides::default());
+        assert_eq!(config.options.scale_pct, 90);
+        let bak = path.with_file_name("config.json.bak");
+        let good_bak = fs::read(&bak).unwrap();
+
+        fs::write(&path, "{ not json").unwrap();
+        touch(&path, 30);
+        assert!(settings.refresh().is_none());
+        assert_eq!(fs::read(&bak).unwrap(), good_bak);
+        assert!(settings.refresh().is_none());
+
+        fs::write(&path, r#"{"options":{"scale_pct":80}}"#).unwrap();
+        touch(&path, 60);
+        let config = settings.refresh().expect("fixed file is loaded");
+        assert_eq!(config.options.scale_pct, 80);
+    }
+
+    #[test]
+    fn vanished_file_keeps_the_current_configuration() {
+        let path = dir("settings_vanished_keeps").join("config.json");
+        fs::write(&path, r#"{"options":{"scale_pct":90}}"#).unwrap();
+        let (mut settings, _) = Settings::load(path.clone(), Overrides::default());
+        fs::remove_file(&path).unwrap();
+        assert!(settings.refresh().is_none());
+        assert!(!path.exists());
     }
 }
