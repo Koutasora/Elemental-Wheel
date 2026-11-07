@@ -53,8 +53,10 @@
 - [x] Opcje koła w edytorze (motyw, rozmiar, sektory, widok, progi, pełny ekran, wykluczenia)
 - [x] Przeciągnięcie pliku na kafelek podglądu
 - [x] Polskie komunikaty błędów i ostrzeżeń w edytorze
-- [ ] Układ okna zatwierdzony na zrzucie
-- [ ] Test na LAB: zapis, `.bak`, przeładowanie w działającym kole
+- [x] Układ okna zatwierdzony
+- [x] Test na LAB: zapis, `.bak`, przeładowanie w działającym kole
+- [x] Podgląd: rozmiar koła z opcji, widok ikon, zaokrąglone kafelki, podświetlenie pod kursorem
+- [ ] Liczba sektorów pierścienia wewnętrznego 4–12
 
 ## 07 stabilnosc-i-pomiary
 - [ ] Pomiar zużycia pamięci w tle
