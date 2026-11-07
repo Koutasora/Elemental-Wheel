@@ -15,7 +15,7 @@ log awarii w `%LOCALAPPDATA%`), a edytor na zmianę pliku z zewnątrz. `tools/so
 - [x] Pomiar czasu otwarcia (od progu przytrzymania do pierwszej klatki): pierwsze otwarcie, kolejne, po zmianie konfiguracji; mediana i maksimum w pliku etapu; cel mediana do 16 ms
 - ~~Renderer i ikony przygotowane od razu po wczytaniu konfiguracji, nie przy pierwszym otwarciu; układ tekstu glifów nie tworzony przy każdym odrysowaniu; pomiar przed i po~~ (przeniesione do etapu 09)
 - ~~Przebieg `soak.ps1` 10 min na LAB (wejście wstrzykiwane, konfiguracja w scratchpadzie, zmiany konfiguracji): bez awarii i błędów cykli, hak żywy~~ (rezygnacja, patrz Decyzje)
-- [ ] `cargo build --release`, `cargo test`, clippy `-D warnings`, `cargo fmt --check` czyste
+- [x] `cargo build --release`, `cargo test`, clippy `-D warnings`, `cargo fmt --check` czyste
 - [x] `README.md` (log, wyniki pomiarów) i `CHECKLISTA.md` zaktualizowane
 
 ## Plan
