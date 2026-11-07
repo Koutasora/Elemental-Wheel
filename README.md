@@ -61,7 +61,7 @@ target\release\wheel-editor.exe --version
 
 ## Log
 
-`wheel.exe` (`--run`, `--demo`) i `wheel-editor.exe` zapisują log do `%LOCALAPPDATA%\Elemental-Wheel\wheel.log` i `editor.log` (UTC, jedna linia na zdarzenie, z numerem procesu). Te same linie idą na stderr. Plik ma do 1 MB; po przekroczeniu poprzedni trafia do `wheel.old.log` (`editor.old.log`), a log zaczyna się od nowa. Panika też jest zapisywana. `--log <path>` wskazuje inny plik. Gdy pliku nie da się otworzyć, program działa dalej bez niego.
+`wheel.exe` (`--run`, `--demo`) and `wheel-editor.exe` write a log to `%LOCALAPPDATA%\Elemental-Wheel\wheel.log` and `editor.log` (UTC, one line per event, with the process id); the same lines go to stderr. Up to 1 MB per file; when full, it is moved to `wheel.old.log` (`editor.old.log`) and a new log starts. Panics are logged too. `--log <path>` selects another file. If the file cannot be opened, the program runs without it.
 
 ## Configuration
 

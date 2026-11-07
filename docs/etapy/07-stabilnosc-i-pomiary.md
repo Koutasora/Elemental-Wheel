@@ -6,7 +6,7 @@ log awarii w `%LOCALAPPDATA%`), a edytor na zmianę pliku z zewnątrz. Test wiel
 i żywy hak.
 
 ## Kryteria zamknięcia
-- [ ] Log `%LOCALAPPDATA%\Elemental-Wheel\wheel.log` (i `editor.log`): komunikaty dziś wypisywane na konsolę, panic z miejscem wystąpienia, limit rozmiaru z jednym starszym plikiem; w testach jawna ścieżka
+- [x] Log `%LOCALAPPDATA%\Elemental-Wheel\wheel.log` (i `editor.log`): komunikaty dziś wypisywane na konsolę, panic z miejscem wystąpienia, limit rozmiaru z jednym starszym plikiem; w testach jawna ścieżka
 - [ ] Panic w haku myszy i w wątkach akcji nie kończy procesu bez śladu: zdarzenie przepuszczone, wpis w logu
 - [ ] Zepsuty `config.json` w trakcie pracy: koło zostaje na ostatniej dobrej konfiguracji w pamięci, błąd w logu, `.bak` nietknięty; testy
 - [ ] Awaria edytora (zabity proces, także w trakcie zapisu) nie psuje `config.json`; plik tymczasowy po przerwanym zapisie nie przeszkadza kolejnemu zapisowi; test
@@ -19,7 +19,7 @@ i żywy hak.
 - [ ] `README.md` (log, wyniki pomiarów) i `CHECKLISTA.md` zaktualizowane
 
 ## Plan
-- [ ] `apps/wheel/src/log.rs` (nowy): plik logu z limitem rozmiaru, panic hook, zapis zamiast samego `eprintln!` (konsola zostaje); to samo w edytorze
+- [x] `crates/wheel-core/src/log.rs` (nowy, zamiast `apps/wheel/src/log.rs`): plik logu z limitem rozmiaru, panic hook, zapis zamiast samego `eprintln!` (konsola zostaje); to samo w edytorze
 - [ ] `apps/wheel/src/hook.rs`, `actions.rs`: `catch_unwind` w procedurze haka i wątkach akcji, przy błędzie zdarzenie przepuszczone
 - [ ] `crates/wheel-core/src/config.rs`, `apps/wheel/src/settings.rs`: przeładowanie zepsutego pliku zostawia bieżącą konfigurację (bez `.bak` i domyślnych); start bez zmian (plik, `.bak`, domyślne); testy
 - [ ] `config::save()`: test przerwanego zapisu (pozostały plik tymczasowy)
@@ -33,6 +33,9 @@ i żywy hak.
 ## Decyzje
 - Wykrywanie ręcznej zmiany pliku przy otwartym edytorze w tym etapie (decyzja użytkownika).
 - Poza zakresem: WM_DPICHANGED i wiele monitorów.
+- Log we wspólnym `wheel_core::log` (tylko std, bez zależności), bo używają go koło i edytor; czas w UTC (bez biblioteki dat), limit 1 MB, jeden starszy plik `*.old.log`.
+- Do logu trafia to, co dziś idzie przez `eprintln!` (błędy, ostrzeżenia, raport konfiguracji, strażnik); ślady wyboru na stdout zostają tylko na stdout (szum przy każdym otwarciu).
+- Przełącznik `--log <ścieżka>` w kole i edytorze, żeby testy i `soak.ps1` nie pisały do `%LOCALAPPDATA%`.
 
 ## Podsumowanie
 (wypełnia /etap-zamknij)
