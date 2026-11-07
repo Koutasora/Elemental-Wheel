@@ -64,6 +64,12 @@ impl Layout {
         (BASE_SUB_INNER * self.factor, BASE_SUB_OUTER * self.factor)
     }
 
+    /// Distance beyond which a click in click mode closes the wheel even in the direction of an
+    /// open arc: the outer edge of the arc band plus the margin (the mockup's `R.s2 + 4`).
+    pub fn sub_click_limit(&self) -> f32 {
+        (BASE_SUB_OUTER + BASE_EDGE_MARGIN) * self.factor
+    }
+
     pub fn outer_sectors(&self) -> u8 {
         self.outer_sectors
     }
@@ -236,5 +242,11 @@ mod tests {
         }
         assert!(close(total, 360.0));
         assert!(close(l.inner_span(0).0, -15.0));
+    }
+
+    #[test]
+    fn sub_click_limit_is_band_edge_plus_margin() {
+        assert!(close(Layout::new(96, 100, 12).sub_click_limit(), 296.0));
+        assert!(close(Layout::new(144, 100, 12).sub_click_limit(), 444.0));
     }
 }

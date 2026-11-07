@@ -8,13 +8,13 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::io::Write;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use wheel_core::{
-    Config as WheelConfig, Effect, Event, EventKind, Hit, Origin, Point, Trigger, Verdict,
+    Config as WheelConfig, Effect, Event, EventKind, Hit, Origin, Point, SubArc, Trigger, Verdict,
 };
 use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
@@ -86,6 +86,25 @@ static SHARED: Mutex<Option<Arc<WheelConfig>>> = Mutex::new(None);
 /// Makes `config` the one the hook thread uses from now on.
 pub fn publish(config: Arc<WheelConfig>) {
     *SHARED.lock().unwrap_or_else(PoisonError::into_inner) = Some(config);
+}
+
+/// The submenu arc shown by the wheel window, as `parent << 8 | count`; 0 = none (a real arc has
+/// at least one tile). The UI thread owns the arc and stores it on every change; the hook thread
+/// only loads it, so no lock sits on the path of a mouse event.
+static ARC: AtomicU16 = AtomicU16::new(0);
+
+/// Publishes the arc shown now (`None` when there is none or the wheel is closed).
+pub fn publish_arc(arc: Option<SubArc>) {
+    let bits = arc.map_or(0, |a| u16::from(a.parent) << 8 | u16::from(a.count));
+    ARC.store(bits, Ordering::Relaxed);
+}
+
+fn current_arc() -> Option<SubArc> {
+    let bits = ARC.load(Ordering::Relaxed);
+    (bits != 0).then_some(SubArc {
+        parent: (bits >> 8) as u8,
+        count: (bits & 0xFF) as u8,
+    })
 }
 
 fn current() -> Option<Arc<WheelConfig>> {
@@ -200,6 +219,10 @@ impl HookState {
         };
         let origin = self.origin(info.dwExtraInfo, info.flags & LLMHF_INJECTED != 0);
         if origin == Origin::Physical {
+            // The events that select classify the position with the arc the user sees.
+            if matches!(kind, EventKind::RightUp { .. } | EventKind::LeftDown { .. }) {
+                self.trigger.set_arc(current_arc());
+            }
             match kind {
                 // Every press while the wheel is closed decides afresh, so a release lost after
                 // an elevated press (UAC, secure desktop) cannot leave the flag set.

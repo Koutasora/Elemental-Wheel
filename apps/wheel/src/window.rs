@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use wheel_core::{Config, Hit, Layout, hit_test};
+use wheel_core::{Config, Hit, Layout, SubArc, arc_for_hit, hit_test_arc};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::Graphics::Gdi::{MONITOR_DEFAULTTONEAREST, MonitorFromPoint};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -55,6 +55,9 @@ struct State {
     /// Wheel center in screen pixels.
     center: (f32, f32),
     hit: Hit,
+    /// The submenu arc shown; this window owns it.
+    arc: Option<SubArc>,
+    config: Arc<Config>,
     error: Option<Error>,
 }
 
@@ -84,9 +87,9 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
         left as f32 + size as f32 / 2.0,
         top as f32 + size as f32 / 2.0,
     );
-    let hit = hit_at(&layout, center, cursor);
+    let (hit, arc) = track(&layout, &config, center, cursor, None);
     let renderer = match Renderer::new(hwnd, layout, theme::palette(o.theme), config.clone())
-        .and_then(|r| r.draw(hit, None).map(|()| r))
+        .and_then(|r| r.draw(hit, arc).map(|()| r))
     {
         Ok(r) => r,
         Err(e) => {
@@ -100,6 +103,8 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
         layout,
         center,
         hit,
+        arc,
+        config,
         error: None,
     }));
 
@@ -212,13 +217,32 @@ fn monitor_dpi(pt: POINT) -> Result<u32> {
     Ok(x)
 }
 
-fn hit_at(layout: &Layout, center: (f32, f32), cursor: POINT) -> Hit {
-    hit_test(
+fn hit_at(layout: &Layout, center: (f32, f32), cursor: POINT, arc: Option<SubArc>) -> Hit {
+    hit_test_arc(
         cursor.x as f32 - center.0,
         cursor.y as f32 - center.1,
         &layout.radii(),
         layout.outer_sectors(),
+        arc,
     )
+}
+
+/// What is under the cursor and which arc is open, given the arc that was open before. When the
+/// arc changes, the hit is computed again with the new one, so a cursor standing in the arc band
+/// at once hits the arc tile (what is shown is what gets selected).
+fn track(
+    layout: &Layout,
+    config: &Config,
+    center: (f32, f32),
+    cursor: POINT,
+    arc: Option<SubArc>,
+) -> (Hit, Option<SubArc>) {
+    let hit = hit_at(layout, center, cursor, arc);
+    let new_arc = arc_for_hit(hit, config);
+    if new_arc == arc {
+        return (hit, arc);
+    }
+    (hit_at(layout, center, cursor, new_arc), new_arc)
 }
 
 /// # Safety
@@ -231,10 +255,17 @@ unsafe fn state<'a>(hwnd: HWND) -> Option<&'a mut State> {
 
 /// Re-reads the cursor and redraws when the highlighted sector changed.
 fn poll(state: &mut State) -> Result<()> {
-    let hit = hit_at(&state.layout, state.center, cursor_pos()?);
-    if hit != state.hit {
+    let (hit, arc) = track(
+        &state.layout,
+        &state.config,
+        state.center,
+        cursor_pos()?,
+        state.arc,
+    );
+    if hit != state.hit || arc != state.arc {
         state.hit = hit;
-        state.renderer.draw(hit, None)?;
+        state.arc = arc;
+        state.renderer.draw(hit, arc)?;
     }
     Ok(())
 }
@@ -293,6 +324,8 @@ struct RunState {
     /// Wheel center in screen pixels while the wheel is shown.
     center: (f32, f32),
     hit: Hit,
+    /// The submenu arc shown; this window owns it and publishes it to the hook thread.
+    arc: Option<SubArc>,
     error: Option<Error>,
 }
 
@@ -333,6 +366,7 @@ pub fn run_background(options: &RunOptions, config_path: PathBuf) -> Result<()> 
         layout,
         center: (0.0, 0.0),
         hit: Hit::Center,
+        arc: None,
         error: None,
     }));
     // SAFETY: `state` stays valid until it is reclaimed below, after the message loop ended.
@@ -402,9 +436,11 @@ fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<()> {
         left as f32 + size as f32 / 2.0,
         top as f32 + size as f32 / 2.0,
     );
-    s.hit = hit_at(&layout, s.center, cursor_pos()?);
+    // A new wheel starts without an arc.
+    (s.hit, s.arc) = track(&layout, &s.config, s.center, cursor_pos()?, None);
+    hook::publish_arc(s.arc);
     if let Some(renderer) = &s.renderer {
-        renderer.draw(s.hit, None)?;
+        renderer.draw(s.hit, s.arc)?;
     }
     // SAFETY: `hwnd` is the live window of this thread.
     unsafe {
@@ -425,6 +461,7 @@ fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<()> {
 }
 
 fn close_wheel(hwnd: HWND) {
+    hook::publish_arc(None);
     // SAFETY: `hwnd` is the live window of this thread; the return values carry no news.
     unsafe {
         let _ = KillTimer(Some(hwnd), POLL_TIMER);
@@ -433,11 +470,15 @@ fn close_wheel(hwnd: HWND) {
 }
 
 fn poll_run(s: &mut RunState) -> Result<()> {
-    let hit = hit_at(&s.layout, s.center, cursor_pos()?);
-    if hit != s.hit {
+    let (hit, arc) = track(&s.layout, &s.config, s.center, cursor_pos()?, s.arc);
+    if hit != s.hit || arc != s.arc {
+        if arc != s.arc {
+            hook::publish_arc(arc);
+        }
         s.hit = hit;
+        s.arc = arc;
         if let Some(renderer) = &s.renderer {
-            renderer.draw(hit, None)?;
+            renderer.draw(hit, arc)?;
         }
     }
     Ok(())
