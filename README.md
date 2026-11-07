@@ -48,8 +48,10 @@ target\release\wheel.exe --quit
 ## Editor
 
 ```
-targetelease\wheel-editor.exe [--config <path>]
-targetelease\wheel-editor.exe --version
+target
+elease\wheel-editor.exe [--config <path>]
+target
+elease\wheel-editor.exe --version
 ```
 
 - Opens `%APPDATA%\Elemental-Wheel\config.json` or the file given with `--config`. A missing file shows the defaults and is created on the first save. Load errors and warnings are shown in the bottom bar.
