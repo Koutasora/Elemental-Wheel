@@ -60,6 +60,22 @@ pub enum EditCommand {
 }
 
 impl EditCommand {
+    /// Every command, in the order shown in lists.
+    pub const ALL: [EditCommand; 12] = [
+        EditCommand::Cut,
+        EditCommand::Copy,
+        EditCommand::Paste,
+        EditCommand::PastePlain,
+        EditCommand::Delete,
+        EditCommand::Undo,
+        EditCommand::Redo,
+        EditCommand::SelectAll,
+        EditCommand::Save,
+        EditCommand::Find,
+        EditCommand::Rename,
+        EditCommand::Properties,
+    ];
+
     /// The keyboard shortcut that performs the command.
     pub fn shortcut(self) -> &'static str {
         match self {
@@ -91,6 +107,20 @@ pub enum SystemAction {
     VolumeUp,
     VolumeDown,
     Screenshot,
+}
+
+impl SystemAction {
+    /// Every action, in the order shown in lists.
+    pub const ALL: [SystemAction; 8] = [
+        SystemAction::Lock,
+        SystemAction::CloseWindow,
+        SystemAction::MinimizeWindow,
+        SystemAction::ShowDesktop,
+        SystemAction::VolumeMute,
+        SystemAction::VolumeUp,
+        SystemAction::VolumeDown,
+        SystemAction::Screenshot,
+    ];
 }
 
 /// What a sector does when chosen.
@@ -498,8 +528,9 @@ fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// Saves atomically: writes `<path>.tmp`, copies an existing file to `<path>.bak`, then
-/// replaces `path` with the temporary file.
+/// Saves atomically: writes `<path>.tmp`, copies the existing file to `<path>.bak` (only if that
+/// file loads without error; a broken file leaves the backup alone), then replaces `path` with
+/// the temporary file.
 pub fn save(path: &Path, config: &Config) -> io::Result<()> {
     if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
         fs::create_dir_all(dir)?;
@@ -511,8 +542,8 @@ pub fn save(path: &Path, config: &Config) -> io::Result<()> {
     file.write_all(b"\n")?;
     file.sync_all()?;
     drop(file);
-    if path.exists() {
-        fs::copy(path, with_suffix(path, ".bak"))?;
+    if let Ok((bytes, _, _)) = read_config(path) {
+        update_backup(path, &bytes)?;
     }
     fs::rename(&tmp, path)
 }
@@ -742,6 +773,31 @@ mod tests {
         assert_eq!(fs::read(with_suffix(&path, ".bak")).unwrap(), first_text);
         assert_eq!(load(&path).config, second);
         assert!(!with_suffix(&path, ".tmp").exists());
+    }
+
+    #[test]
+    fn save_keeps_backup_when_existing_file_is_broken() {
+        let path = dir("save_keeps_backup_when_existing_file_is_broken").join("config.json");
+        save(&path, &Config::default()).unwrap();
+        let mut second = Config::default();
+        second.options.scale_pct = 80;
+        save(&path, &second).unwrap();
+        let good = fs::read(with_suffix(&path, ".bak")).unwrap();
+        fs::write(&path, "{ not json").unwrap();
+        let mut third = Config::default();
+        third.options.scale_pct = 90;
+        save(&path, &third).unwrap();
+        assert_eq!(fs::read(with_suffix(&path, ".bak")).unwrap(), good);
+        assert_eq!(load(&path).config, third);
+    }
+
+    #[test]
+    fn save_over_invalid_config_does_not_create_backup() {
+        let path = dir("save_over_invalid_config_does_not_create_backup").join("config.json");
+        fs::write(&path, "{\"version\": 99}").unwrap();
+        save(&path, &Config::default()).unwrap();
+        assert!(!with_suffix(&path, ".bak").exists());
+        assert_eq!(load(&path).source, Source::File);
     }
 
     #[test]
