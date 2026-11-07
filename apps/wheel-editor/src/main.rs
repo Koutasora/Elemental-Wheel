@@ -14,6 +14,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use eframe::egui::{
     self, Align, CentralPanel, Context, FontData, FontDefinitions, FontFamily, Frame, Id, Key,
@@ -21,9 +22,11 @@ use eframe::egui::{
 };
 use wheel_core::{Source, ThemeChoice, config};
 
-use model::{Model, Selection};
+use model::{ExternalChange, Model, Selection, read_stamp};
 
 const TITLE: &str = "Elemental Wheel – edytor";
+/// How often the config file is checked for a change made outside the editor.
+const CHECK_INTERVAL: Duration = Duration::from_secs(2);
 const FONT_PATH: &str = r"C:\Windows\Fonts\segoeui.ttf";
 /// Icon fonts in order of preference: Segoe Fluent Icons, else Segoe MDL2 Assets (Windows 10).
 const ICON_FONT_PATHS: [&str; 2] = [
@@ -201,6 +204,10 @@ enum Dialog {
     Close,
     /// "Wczytaj ponownie" with unsaved changes.
     Reload,
+    /// The file changed outside the editor while there are unsaved changes.
+    External,
+    /// Saving would overwrite a file changed outside the editor.
+    Overwrite,
 }
 
 /// A message in the bottom bar.
@@ -260,6 +267,8 @@ struct App {
     applied_theme: ThemeChoice,
     title: String,
     icons: icons::Icons,
+    last_check: Instant,
+    was_focused: bool,
 }
 
 impl App {
@@ -273,6 +282,8 @@ impl App {
             allow_close: false,
             title: String::new(),
             icons: icons::Icons::new(icon_font),
+            last_check: Instant::now(),
+            was_focused: true,
         }
     }
 
@@ -304,6 +315,39 @@ impl App {
             .or_else(|| Some(Status::info("Wczytano ponownie.".to_string())));
     }
 
+    /// Saves, but first asks when the file changed outside the editor since it was loaded.
+    fn save_checked(&mut self) {
+        if self.model.disk_changed(read_stamp(&self.model.path)) {
+            self.dialog = Some(Dialog::Overwrite);
+        } else {
+            self.save();
+        }
+    }
+
+    /// Looks for a change of the file made outside the editor.
+    fn check_external(&mut self) {
+        self.last_check = Instant::now();
+        match self.model.check_external(read_stamp(&self.model.path)) {
+            ExternalChange::None => {}
+            ExternalChange::ReloadedSilently => {
+                let note = "Plik zmieniony poza edytorem – wczytano ponownie".to_string();
+                self.status = Some(match load_status(&self.model) {
+                    Some(mut status) => {
+                        status.lines.insert(0, note);
+                        status
+                    }
+                    None => Status::info(note),
+                });
+            }
+            ExternalChange::NeedsDecision => self.dialog = Some(Dialog::External),
+            ExternalChange::Vanished => {
+                self.status = Some(Status::info(
+                    "Plik konfiguracji usunięty poza edytorem".to_string(),
+                ));
+            }
+        }
+    }
+
     fn bottom_bar(&mut self, ui: &mut Ui) {
         Panel::bottom("status").show(ui, |ui| {
             if let Some(status) = &self.status {
@@ -322,7 +366,7 @@ impl App {
                 let dirty = self.model.is_dirty();
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if ui.button("Zapisz").on_hover_text("Ctrl+S").clicked() {
-                        self.save();
+                        self.save_checked();
                     }
                     if ui.button("Wczytaj ponownie").clicked() {
                         if dirty {
@@ -367,10 +411,58 @@ impl App {
             });
     }
 
+    /// The questions about a file changed outside the editor.
+    fn external_dialog(&mut self, ctx: &Context) {
+        let external = matches!(self.dialog, Some(Dialog::External));
+        let mut choice = None;
+        let response = Modal::new(Id::unique("dialog")).show(ctx, |ui| {
+            ui.set_width(340.0);
+            ui.heading("Plik zmieniony");
+            ui.add_space(6.0);
+            ui.label(if external {
+                "Plik konfiguracji zmienił się poza edytorem."
+            } else {
+                "Plik zmienił się od wczytania. Nadpisać?"
+            });
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                let (yes, no) = if external {
+                    ("Wczytaj plik", "Zostaw moje zmiany")
+                } else {
+                    ("Nadpisz", "Anuluj")
+                };
+                if ui.button(yes).clicked() {
+                    choice = Some(true);
+                }
+                if ui.button(no).clicked() {
+                    choice = Some(false);
+                }
+            });
+        });
+        if choice.is_none() && response.should_close() {
+            choice = Some(false);
+        }
+        match (choice, external) {
+            (None, _) => return,
+            (Some(true), true) => self.reload(),
+            (Some(false), true) => self.model.keep_mine(read_stamp(&self.model.path)),
+            (Some(true), false) => {
+                self.save();
+            }
+            (Some(false), false) => {}
+        }
+        self.dialog = None;
+        self.last_check = Instant::now();
+    }
+
     fn dialog(&mut self, ctx: &Context) {
         let Some(kind) = &self.dialog else {
             return;
         };
+        if matches!(kind, Dialog::External | Dialog::Overwrite) {
+            self.external_dialog(ctx);
+            return;
+        }
         let closing = matches!(kind, Dialog::Close);
         let mut choice = None;
         let response = Modal::new(Id::unique("dialog")).show(ctx, |ui| {
@@ -439,8 +531,16 @@ impl eframe::App for App {
             self.dialog = Some(Dialog::Close);
         }
         if ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::S)) {
-            self.save();
+            self.save_checked();
         }
+
+        let focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
+        let regained = focused && !self.was_focused;
+        self.was_focused = focused;
+        if self.dialog.is_none() && (regained || self.last_check.elapsed() >= CHECK_INTERVAL) {
+            self.check_external();
+        }
+        ctx.request_repaint_after(CHECK_INTERVAL);
 
         let title = if self.model.is_dirty() {
             format!("{TITLE} *")
