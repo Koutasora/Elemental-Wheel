@@ -24,7 +24,7 @@ Sprawdzenie fizyczną myszą przeniesione z etapu 04.
 - [x] `apps/wheel/src/icons.rs` (nowy): ikony z plików (`SHDefExtractIconW` / `SHGetFileInfoW`, HICON na bitmapę D2D przez WIC), mapa glifów dla 12 komend edycji i 8 akcji systemowych, wybór czcionki glifów wg systemu, pamięć podręczna
 - [x] `apps/wheel/src/render.rs`: kafelki łuku, kreska podmenu, podświetlenie, widok ikon, nazwa w środku
 - [x] `apps/wheel/src/window.rs`, `hook.rs`, `crates/wheel-core/src/trigger.rs`: stan łuku przy ruchu, przekazanie łuku hakowi, wykonanie akcji z łuku w obu trybach
-- [ ] Domyślna konfiguracja: kafelek „Ustawienia” z podmenu Ekran, Dźwięk, Bluetooth, Aktualizacje (`ms-settings:`)
+- [x] Domyślna konfiguracja: kafelek „Ustawienia” z podmenu Ekran, Dźwięk, Bluetooth, Aktualizacje (`ms-settings:`)
 - [ ] `README.md`, `CHECKLISTA.md`
 - Sprawdzenie: tester: build, testy, clippy, fmt; skrypt PowerShell z `--accept-injected` i testowym `config.json` w scratchpadzie (`%APPDATA%` nietknięty) ze zrzutami; na końcu test fizyczną myszą przez użytkownika według listy kroków
 
