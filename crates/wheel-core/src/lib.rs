@@ -2,6 +2,7 @@
 
 pub mod config;
 pub mod geometry;
+pub mod icon;
 pub mod keys;
 pub mod layout;
 pub mod submenu;
@@ -11,9 +12,9 @@ pub use config::{
     Action, Config, EditCommand, Item, Loaded, Options, Source, SystemAction, ThemeChoice, ViewMode,
 };
 pub use geometry::{
-    DEFAULT_OUTER_SECTORS, Hit, INNER_SECTORS, MAX_OUTER_SECTORS, MAX_SUB_TILES, MIN_OUTER_SECTORS,
-    Radii, SUB_TILE_DEG, SubArc, angle_deg, clamp_outer_sectors, hit_test, hit_test_arc, sector_at,
-    sub_tile_span,
+    DEFAULT_INNER_SECTORS, DEFAULT_OUTER_SECTORS, Hit, MAX_INNER_SECTORS, MAX_OUTER_SECTORS,
+    MAX_SUB_TILES, MIN_INNER_SECTORS, MIN_OUTER_SECTORS, Radii, SUB_TILE_DEG, SubArc, angle_deg,
+    clamp_inner_sectors, clamp_outer_sectors, hit_test, hit_test_arc, sector_at, sub_tile_span,
 };
 pub use keys::{Shortcut, is_extended, parse_shortcut};
 pub use layout::{DEFAULT_SCALE_PCT, Layout, MAX_SCALE_PCT, MIN_SCALE_PCT, clamp_scale_pct};

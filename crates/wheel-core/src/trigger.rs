@@ -235,7 +235,7 @@ impl Trigger {
     pub fn new(settings: TriggerSettings) -> Trigger {
         Trigger {
             settings: settings.clamped(),
-            layout: Layout::new(96, 100, 12),
+            layout: Layout::new(96, 100, 12, 12),
             arc: None,
             state: State::Idle,
         }
@@ -443,6 +443,7 @@ impl Trigger {
             dx,
             dy,
             &self.layout.radii(),
+            self.layout.inner_sectors(),
             self.layout.outer_sectors(),
             self.arc,
         )
@@ -500,7 +501,7 @@ mod tests {
         right_down(t, 1000);
         let s = hold_elapsed(t, 1180);
         assert_eq!(s.effects, vec![open_wheel()]);
-        t.set_layout(Layout::new(96, 100, 12));
+        t.set_layout(Layout::new(96, 100, 12, 12));
         assert!(t.is_wheel_open());
     }
 
@@ -923,7 +924,7 @@ mod tests {
     fn release_uses_layout_outer_sectors() {
         let mut t = trigger();
         open(&mut t);
-        t.set_layout(Layout::new(96, 100, 4));
+        t.set_layout(Layout::new(96, 100, 12, 4));
         let s = right_up(&mut t, pt(0, 300), 1500);
         assert_eq!(s.effects, vec![Effect::Select(Hit::Outer(2))]);
     }

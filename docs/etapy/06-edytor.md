@@ -1,0 +1,77 @@
+# Etap 06: edytor
+
+## Cel
+`wheel-editor.exe` to osobne okno egui z podglądem koła. Edytuje kafelki obu pierścieni i podmenu oraz opcje programu,
+a potem zapisuje `config.json` atomowo; działające koło samo przeładowuje konfigurację po zapisie.
+Poprawiony `save()`: do `.bak` trafia tylko poprawny plik.
+
+## Kryteria zamknięcia
+- [x] Edytor wczytuje konfigurację z `%APPDATA%\Elemental-Wheel\config.json` albo z `--config <ścieżka>` i pokazuje błędy i ostrzeżenia wczytania
+- [x] Podgląd koła: oba pierścienie, liczba sektorów z opcji, nazwy, motyw jasny albo ciemny, łuk podmenu zaznaczonego kafelka; kliknięcie kafelka w podglądzie go zaznacza
+- [x] Edycja kafelka: nazwa, typ akcji z polami właściwymi dla typu (program: ścieżka, argumenty, folder roboczy; plik/folder; adres; skrót; komenda edycji z listy; wklejenie tekstu; polecenie; akcja systemowa z listy), ikona (ścieżka i wybór pliku), opróżnienie slotu
+- [x] Podmenu tylko w pierścieniu zewnętrznym: dodawanie, usuwanie, zmiana kolejności, najwyżej 5 kafelków
+- [x] Nazwę da się zmienić w każdym elemencie, także w komendach edycji w pierścieniu wewnętrznym
+- [x] Opcje: motyw, rozmiar 60–140%, liczba sektorów 4–12, widok, `hold_ms`, `move_px`, wyłączenie w pełnym ekranie, lista wykluczonych programów
+- [x] Przeciągnięcie pliku lub programu na slot podglądu tworzy element „program” albo „otwórz” z nazwą z pliku
+- [x] Zapis: walidacja przed zapisem (przy błędzie plik zostaje nietknięty), znacznik niezapisanych zmian, pytanie przy zamykaniu z niezapisanymi zmianami; `save()` kopiuje do `.bak` tylko poprawny istniejący plik
+- [x] Testy: `save()` i `.bak` w `wheel-core`; logika modelu edytora bez okna (zmiana typu akcji, podmenu, zmiana liczby sektorów)
+- [x] `cargo build --release`, `cargo test`, clippy `-D warnings` i `cargo fmt --check` czyste
+- [x] Test na LAB z konfiguracją w scratchpadzie (`%APPDATA%` nietknięty): zrzuty edytora, zapis, przeładowanie w działającym kole (ręcznie przez użytkownika)
+- [x] Układ okna zatwierdzony przez użytkownika na zrzucie przed dopracowaniem
+- [x] `README.md` i `CHECKLISTA.md` zaktualizowane
+
+## Plan
+- [x] `crates/wheel-core/src/config.rs`: `save()` kopiuje do `.bak` tylko plik, który się wczytuje bez błędu; testy
+- [x] `apps/wheel-editor/Cargo.toml`: `eframe`/`egui`, `rfd` (okno wyboru pliku)
+- [x] `apps/wheel-editor/src/model.rs`: stan edytora (konfiguracja, zaznaczenie, znacznik zmian, operacje na kafelkach i podmenu) jako czysta logika; testy
+- [x] `apps/wheel-editor/src/preview.rs`: rysowanie koła w egui z geometrii `wheel-core` (`layout`, `geometry`), trafianie kliknięciem i przeciąganiem pliku
+- [x] `apps/wheel-editor/src/panel.rs`, `options.rs`: panel kafelka i panel opcji
+- [x] `apps/wheel-editor/src/main.rs`: argumenty (`--version`, `--config`), okno, wczytanie, zapis, pytanie przy zamykaniu
+- [x] Zrzut pierwszej wersji układu do akceptacji użytkownika (układ zatwierdzony na żywym oknie)
+- [x] Podgląd: rozmiar koła z opcji (140% wypełnia pole podglądu), widok ikon (wybór ikony przeniesiony z `apps/wheel/src/icons.rs` do `wheel-core`, w edytorze ikony plików, glify Segoe, litery)
+- [x] Podgląd zgodny z kołem: zaokrąglone rogi kafelków, podświetlenie kafelka pod kursorem, zaznaczenie obramowaniem w akcencie, nazwa zaznaczonego kafelka w środku
+- [x] Liczba sektorów pierścienia wewnętrznego jako opcja `inner_sectors` 4–12 (domyślnie 12, niezależna od zewnętrznego): `wheel-core` (konfiguracja, układ, geometria, trafianie), rysowanie w kole, podgląd i panel opcji edytora, README; testy
+- [x] `README.md`, `CHECKLISTA.md`
+- Sprawdzenie: tester: build, testy, clippy, fmt; skrypt PowerShell: edytor z `--config` w scratchpadzie, zrzuty, sprawdzenie zapisu, `.bak` i przeładowania w `wheel.exe` (`--accept-injected`); na końcu krótki test ręczny użytkownika
+
+## Decyzje
+- Opcje programu i przeciąganie plików na sloty w tym etapie (są w makiecie; decyzja użytkownika).
+- Komunikaty z `wheel-core` zostają po angielsku (log, testy); edytor tłumaczy znane na polski w `messages.rs`, nieznane pokazuje bez zmian.
+- Podgląd pokazuje rozmiar względnie: 140% wypełnia pole, mniejsze proporcjonalnie (okno edytora nie ma skali ekranu koła).
+- Wybór ikony kafelka (`spec_for`, glify) we wspólnym `wheel-core`, żeby koło i podgląd pokazywały to samo; wczytywanie bitmap zostaje osobno w każdej aplikacji (Direct2D w kole, tekstury egui w edytorze).
+- Dopracowanie wyglądu edytora tylko w podglądzie koła (wybór użytkownika); panele i pasek stanu bez zmian.
+- Napisy w podglądzie skalują się z rozmiarem, z dolną granicą 8–9 pt dla czytelności; w środku pierwszeństwo ma kafelek pod kursorem (jak w kole), potem zaznaczony.
+- Test na LAB zrobił ręcznie użytkownik (zapis, `.bak`, przeładowanie, pytanie przy zamykaniu); zrzuty skryptem zablokował filtr uprawnień.
+- Pierścień wewnętrzny dostaje własną liczbę sektorów 4–12 (prośba użytkownika, większa swoboda); elementy poza zakresem ukryte, nie usuwane, jak w zewnętrznym; bez przełącznika w wierszu poleceń.
+- Poza zakresem: uruchamianie edytora z zasobnika i z drugiej kopii programu (etap 08), pomiary pamięci (etap 07).
+
+## Podsumowanie
+
+### Decyzje
+- Edytor w egui (eframe 0.37, glow) jako osobny proces; zapis przez `wheel-core::config::save()` (atomowo), koło przeładowuje plik samo przez obserwację folderu.
+- Logika edytora w `model.rs` bez okna, żeby dała się testować; okno tylko rysuje i przekazuje zdarzenia.
+- Komunikaty `wheel-core` po angielsku, tłumaczone w edytorze (`messages.rs`); nieznane bez zmian.
+- Wybór ikony (`wheel_core::icon`) wspólny dla koła i edytora; ładowanie bitmap osobno (Direct2D w kole, tekstury egui w edytorze).
+- `inner_sectors` 4–12 niezależnie od `outer_sectors`; elementy poza zakresem ukryte, nie usuwane; bez przełącznika CLI.
+- Test na LAB ręczny przez użytkownika, bo filtr uprawnień zablokował skrypt ze zrzutami ekranu.
+
+### Zrobione
+- `save()` kopiuje do `.bak` tylko plik, który się poprawnie wczytuje; testy.
+- `wheel-editor.exe` (`--config`, `--version`): podgląd koła (oba pierścienie, łuk podmenu, rozmiar, widok nazw i ikon, zaokrąglone kafelki, podświetlenie pod kursorem, zaznaczenie obramowaniem, nazwa w środku), panel kafelka (nazwa, typ akcji z polami, ikona, opróżnienie, podmenu do 5), panel opcji, przeciąganie plików na kafelki.
+- Walidacja przed zapisem, znacznik niezapisanych zmian w tytule i pasku, pytanie przy zamykaniu i ponownym wczytaniu, Ctrl+S.
+- Polskie komunikaty błędów i ostrzeżeń wczytania, zapisu i skrótów.
+- Ikony w edytorze: wątki ładujące (najwyżej 4), cache z usuwaniem nieużywanych wpisów, fallback na literę.
+- Opcja `inner_sectors` w `wheel-core` (konfiguracja, układ, trafianie), kole, edytorze i README.
+- Testy: wheel-core 101, wheel 38 (+1 ignorowany test renderu D3D), wheel-editor 24; clippy i fmt czyste.
+
+### Otwarte sprawy
+- Uruchamianie edytora z zasobnika i z drugiej kopii programu (etap 08).
+- Pomiary pamięci i czasu otwarcia, odporność na awarie edytora (etap 07).
+- Panele edytora i pasek stanu bez dopracowania wyglądu (wybór użytkownika: tylko podgląd); ewentualnie w etapie 09.
+- Brak automatycznego testu GUI edytora (zrzuty); test renderu koła pokrywa tylko 12 sektorów wewnętrznych.
+
+### Ryzyka
+- Ładowanie ikon przez Win32 (HICON, GetDIBits) w edytorze jest sprawdzone testem na plikach systemowych, ale nie na nietypowych ikonach (monochromatyczne traktowane jako błąd i zastępowane literą).
+- Przy mniejszej liczbie sektorów wewnętrznych domyślne komendy edycji zmieniają kierunki albo są ukryte; użytkownik musi je przestawić sam.
+- Font ikon Segoe jest wczytywany z `C:\Windows\Fonts`; bez niego glify zastępują litery.
+- Edytor i koło zapisują i czytają ten sam plik; edycja ręczna pliku przy otwartym edytorze nie jest wykrywana (nadpisanie przy zapisie).

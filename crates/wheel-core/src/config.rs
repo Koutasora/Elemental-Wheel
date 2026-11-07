@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::geometry::{
-    DEFAULT_OUTER_SECTORS, INNER_SECTORS, MAX_OUTER_SECTORS, MIN_OUTER_SECTORS, clamp_outer_sectors,
+    DEFAULT_INNER_SECTORS, DEFAULT_OUTER_SECTORS, MAX_INNER_SECTORS, MAX_OUTER_SECTORS,
+    MIN_INNER_SECTORS, MIN_OUTER_SECTORS, clamp_inner_sectors, clamp_outer_sectors,
 };
 use crate::keys::parse_shortcut;
 use crate::layout::{DEFAULT_SCALE_PCT, MAX_SCALE_PCT, MIN_SCALE_PCT, clamp_scale_pct};
@@ -60,6 +61,22 @@ pub enum EditCommand {
 }
 
 impl EditCommand {
+    /// Every command, in the order shown in lists.
+    pub const ALL: [EditCommand; 12] = [
+        EditCommand::Cut,
+        EditCommand::Copy,
+        EditCommand::Paste,
+        EditCommand::PastePlain,
+        EditCommand::Delete,
+        EditCommand::Undo,
+        EditCommand::Redo,
+        EditCommand::SelectAll,
+        EditCommand::Save,
+        EditCommand::Find,
+        EditCommand::Rename,
+        EditCommand::Properties,
+    ];
+
     /// The keyboard shortcut that performs the command.
     pub fn shortcut(self) -> &'static str {
         match self {
@@ -91,6 +108,20 @@ pub enum SystemAction {
     VolumeUp,
     VolumeDown,
     Screenshot,
+}
+
+impl SystemAction {
+    /// Every action, in the order shown in lists.
+    pub const ALL: [SystemAction; 8] = [
+        SystemAction::Lock,
+        SystemAction::CloseWindow,
+        SystemAction::MinimizeWindow,
+        SystemAction::ShowDesktop,
+        SystemAction::VolumeMute,
+        SystemAction::VolumeUp,
+        SystemAction::VolumeDown,
+        SystemAction::Screenshot,
+    ];
 }
 
 /// What a sector does when chosen.
@@ -216,6 +247,8 @@ pub struct Options {
     #[serde(deserialize_with = "sat_u16")]
     pub scale_pct: u16,
     #[serde(deserialize_with = "sat_u8")]
+    pub inner_sectors: u8,
+    #[serde(deserialize_with = "sat_u8")]
     pub outer_sectors: u8,
     pub view: ViewMode,
     #[serde(deserialize_with = "sat_u32")]
@@ -232,6 +265,7 @@ impl Default for Options {
         Options {
             theme: ThemeChoice::System,
             scale_pct: DEFAULT_SCALE_PCT,
+            inner_sectors: DEFAULT_INNER_SECTORS,
             outer_sectors: DEFAULT_OUTER_SECTORS,
             view: ViewMode::Names,
             hold_ms: DEFAULT_HOLD_MS,
@@ -425,6 +459,13 @@ impl Config {
         );
         clamp_warn(
             &mut warnings,
+            "inner_sectors",
+            &mut o.inner_sectors,
+            clamp_inner_sectors,
+            (MIN_INNER_SECTORS, MAX_INNER_SECTORS),
+        );
+        clamp_warn(
+            &mut warnings,
             "outer_sectors",
             &mut o.outer_sectors,
             clamp_outer_sectors,
@@ -445,7 +486,8 @@ impl Config {
             (MIN_MOVE_PX, MAX_MOVE_PX),
         );
         self.outer.resize(MAX_RING_ITEMS, Item::empty());
-        self.inner.resize(INNER_SECTORS as usize, Item::empty());
+        self.inner
+            .resize(usize::from(MAX_INNER_SECTORS), Item::empty());
         Ok(warnings)
     }
 
@@ -498,8 +540,9 @@ fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// Saves atomically: writes `<path>.tmp`, copies an existing file to `<path>.bak`, then
-/// replaces `path` with the temporary file.
+/// Saves atomically: writes `<path>.tmp`, copies the existing file to `<path>.bak` (only if that
+/// file loads without error; a broken file leaves the backup alone), then replaces `path` with
+/// the temporary file.
 pub fn save(path: &Path, config: &Config) -> io::Result<()> {
     if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
         fs::create_dir_all(dir)?;
@@ -511,8 +554,8 @@ pub fn save(path: &Path, config: &Config) -> io::Result<()> {
     file.write_all(b"\n")?;
     file.sync_all()?;
     drop(file);
-    if path.exists() {
-        fs::copy(path, with_suffix(path, ".bak"))?;
+    if let Ok((bytes, _, _)) = read_config(path) {
+        update_backup(path, &bytes)?;
     }
     fs::rename(&tmp, path)
 }
@@ -745,6 +788,31 @@ mod tests {
     }
 
     #[test]
+    fn save_keeps_backup_when_existing_file_is_broken() {
+        let path = dir("save_keeps_backup_when_existing_file_is_broken").join("config.json");
+        save(&path, &Config::default()).unwrap();
+        let mut second = Config::default();
+        second.options.scale_pct = 80;
+        save(&path, &second).unwrap();
+        let good = fs::read(with_suffix(&path, ".bak")).unwrap();
+        fs::write(&path, "{ not json").unwrap();
+        let mut third = Config::default();
+        third.options.scale_pct = 90;
+        save(&path, &third).unwrap();
+        assert_eq!(fs::read(with_suffix(&path, ".bak")).unwrap(), good);
+        assert_eq!(load(&path).config, third);
+    }
+
+    #[test]
+    fn save_over_invalid_config_does_not_create_backup() {
+        let path = dir("save_over_invalid_config_does_not_create_backup").join("config.json");
+        fs::write(&path, "{\"version\": 99}").unwrap();
+        save(&path, &Config::default()).unwrap();
+        assert!(!with_suffix(&path, ".bak").exists());
+        assert_eq!(load(&path).source, Source::File);
+    }
+
+    #[test]
     fn missing_file_is_created() {
         let path = dir("missing_file_is_created")
             .join("sub")
@@ -851,6 +919,27 @@ mod tests {
         assert_eq!(loaded.source, Source::Defaults);
         assert_eq!(fs::read(&path).unwrap(), b"{ not json");
         assert_eq!(fs::read(with_suffix(&path, ".bak")).unwrap(), b"[]");
+    }
+
+    #[test]
+    fn inner_sectors_default_missing_and_clamped() {
+        assert_eq!(Options::default().inner_sectors, 12);
+        // A file from before the option existed keeps working.
+        let (c, w) = Config::parse(r#"{"options":{"outer_sectors":6}}"#).unwrap();
+        assert_eq!((c.options.inner_sectors, c.options.outer_sectors), (12, 6));
+        assert!(w.is_empty(), "{w:?}");
+        let (c, w) = Config::parse(r#"{"options":{"inner_sectors":6}}"#).unwrap();
+        assert_eq!(c.options.inner_sectors, 6);
+        assert!(w.is_empty(), "{w:?}");
+        let (c, w) = Config::parse(r#"{"options":{"inner_sectors":1}}"#).unwrap();
+        assert_eq!(c.options.inner_sectors, 4);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("inner_sectors"), "{w:?}");
+        let (c, w) = Config::parse(r#"{"options":{"inner_sectors":300}}"#).unwrap();
+        assert_eq!(c.options.inner_sectors, 12);
+        assert_eq!(w.len(), 1, "{w:?}");
+        // Items beyond the visible count are kept.
+        assert_eq!(c.inner.len(), 12);
     }
 
     #[test]
