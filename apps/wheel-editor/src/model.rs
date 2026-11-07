@@ -231,7 +231,7 @@ impl Model {
         Ok(warnings)
     }
 
-    fn item_at(&self, selection: Selection) -> Option<&Item> {
+    pub fn item_at(&self, selection: Selection) -> Option<&Item> {
         match selection {
             Selection::None => None,
             Selection::Outer(i) => self.config.outer.get(i),

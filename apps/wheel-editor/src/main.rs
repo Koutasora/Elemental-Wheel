@@ -1,6 +1,7 @@
 // In release builds there is no console window; `--version` attaches to the parent console.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod icons;
 mod messages;
 mod model;
 mod options;
@@ -24,6 +25,13 @@ use model::{Model, Selection};
 
 const TITLE: &str = "Elemental Wheel – edytor";
 const FONT_PATH: &str = r"C:\Windows\Fonts\segoeui.ttf";
+/// Icon fonts in order of preference: Segoe Fluent Icons, else Segoe MDL2 Assets (Windows 10).
+const ICON_FONT_PATHS: [&str; 2] = [
+    r"C:\Windows\Fonts\SegoeIcons.ttf",
+    r"C:\Windows\Fonts\segmdl2.ttf",
+];
+/// Name of the font family with the icon glyphs.
+pub const ICON_FAMILY: &str = "icons";
 
 enum Command {
     Version,
@@ -114,10 +122,10 @@ fn main() -> ExitCode {
         TITLE,
         options,
         Box::new(move |cc| {
-            install_font(&cc.egui_ctx);
+            let icon_font = install_font(&cc.egui_ctx);
             let model = Model::open(path);
             theme::install(&cc.egui_ctx, model.config.options.theme);
-            Ok(Box::new(App::new(model)))
+            Ok(Box::new(App::new(model, icon_font)))
         }),
     );
     match result {
@@ -129,20 +137,35 @@ fn main() -> ExitCode {
     }
 }
 
-/// Segoe UI from the system, so that Polish letters look native; the built-in font stays as
-/// the fallback.
-fn install_font(ctx: &Context) {
-    let Ok(bytes) = std::fs::read(FONT_PATH) else {
-        return;
-    };
+/// Segoe UI from the system, so that Polish letters look native (the built-in font stays as
+/// the fallback), and the Segoe icon font as the `ICON_FAMILY` family. Returns whether the icon
+/// font was found.
+fn install_font(ctx: &Context) -> bool {
     let mut fonts = FontDefinitions::default();
-    fonts
-        .font_data
-        .insert("segoeui".to_string(), Arc::new(FontData::from_owned(bytes)));
-    if let Some(list) = fonts.families.get_mut(&FontFamily::Proportional) {
-        list.insert(0, "segoeui".to_string());
+    if let Ok(bytes) = std::fs::read(FONT_PATH) {
+        fonts
+            .font_data
+            .insert("segoeui".to_string(), Arc::new(FontData::from_owned(bytes)));
+        if let Some(list) = fonts.families.get_mut(&FontFamily::Proportional) {
+            list.insert(0, "segoeui".to_string());
+        }
+    }
+    let icon_font = ICON_FONT_PATHS
+        .iter()
+        .find_map(|path| std::fs::read(path).ok());
+    let found = icon_font.is_some();
+    if let Some(bytes) = icon_font {
+        fonts.font_data.insert(
+            "segoeicons".to_string(),
+            Arc::new(FontData::from_owned(bytes)),
+        );
+        fonts.families.insert(
+            FontFamily::Name(ICON_FAMILY.into()),
+            vec!["segoeicons".to_string()],
+        );
     }
     ctx.set_fonts(fonts);
+    found
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -214,10 +237,11 @@ struct App {
     allow_close: bool,
     applied_theme: ThemeChoice,
     title: String,
+    icons: icons::Icons,
 }
 
 impl App {
-    fn new(model: Model) -> App {
+    fn new(model: Model, icon_font: bool) -> App {
         App {
             status: load_status(&model),
             applied_theme: model.config.options.theme,
@@ -226,6 +250,7 @@ impl App {
             dialog: None,
             allow_close: false,
             title: String::new(),
+            icons: icons::Icons::new(icon_font),
         }
     }
 
@@ -408,7 +433,8 @@ impl eframe::App for App {
         self.bottom_bar(ui);
         self.side_panel(ui);
         CentralPanel::default().frame(Frame::NONE).show(ui, |ui| {
-            let out = preview::show(ui, &self.model);
+            self.icons.poll(ui.ctx());
+            let out = preview::show(ui, &self.model, &mut self.icons);
             if let Some(selection) = out.select {
                 self.model.set_selection(selection);
                 if selection != Selection::None {

@@ -6,10 +6,16 @@ use std::path::PathBuf;
 use eframe::egui::epaint::{Mesh, PathStroke};
 use eframe::egui::text::LayoutJob;
 use eframe::egui::{
-    Color32, Context, CursorIcon, FontId, Painter, Pos2, Sense, Shape, Stroke, Ui, Vec2, vec2,
+    Align2, Color32, Context, CornerRadius, CursorIcon, FontFamily, FontId, Painter, Pos2, Rect,
+    Sense, Shape, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
-use wheel_core::{Action, Hit, Layout, MAX_SCALE_PCT, SubArc, arc_for_hit, hit_test_arc};
+use wheel_core::icon::IconSizes;
+use wheel_core::{
+    Action, Hit, Item, Layout, MAX_SCALE_PCT, SubArc, ViewMode, arc_for_hit, hit_test_arc,
+};
 
+use crate::ICON_FAMILY;
+use crate::icons::{Drawn, Icons};
 use crate::model::{Model, Selection};
 use crate::theme;
 
@@ -67,6 +73,55 @@ fn label(painter: &Painter, at: Pos2, text: &str, size: f32, width: f32, color: 
     painter.galley(pos, galley, color);
 }
 
+/// Draws what `item` shows in the icons view, centred on `at`; `base_px` is the icon size at
+/// preview scale 1, `fit` the points per layout pixel and `k` the wheel scale (1.0 = 100%).
+#[allow(clippy::too_many_arguments)]
+fn tile_icon(
+    painter: &Painter,
+    icons: &mut Icons,
+    item: &Item,
+    at: Pos2,
+    base_px: u32,
+    fit: f32,
+    k: f32,
+    color: Color32,
+) {
+    let ctx = painter.ctx();
+    let size = base_px as f32 * fit;
+    // Rounded up to a multiple of 8 px, so that resizing the window does not reload every icon.
+    let px = ((size * ctx.pixels_per_point()).ceil() as u32)
+        .div_ceil(8)
+        .max(2)
+        * 8;
+    match icons.resolve(ctx, item, px) {
+        Drawn::Texture(id) => {
+            let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+            painter.image(
+                id,
+                Rect::from_center_size(at, vec2(size, size)),
+                uv,
+                Color32::WHITE,
+            );
+        }
+        Drawn::Glyph(c) => {
+            let font = FontId::new(size, FontFamily::Name(ICON_FAMILY.into()));
+            painter.text(at, Align2::CENTER_CENTER, c, font, color);
+        }
+        Drawn::Letter(c) => {
+            let outline = Rect::from_center_size(at, vec2(size, size));
+            painter.rect_stroke(
+                outline,
+                CornerRadius::same((size * 0.22).round() as u8),
+                Stroke::new((1.6 * k * fit).max(1.0), color),
+                StrokeKind::Inside,
+            );
+            let font = FontId::proportional(size * 0.55);
+            painter.text(at, Align2::CENTER_CENTER, c, font, color);
+        }
+        Drawn::Blank => {}
+    }
+}
+
 /// Cursor position inside the window, in points. winit sends no cursor moves while a file is
 /// dragged over the window on Windows, so the system cursor is read directly.
 fn cursor_in_window(ctx: &Context) -> Option<Pos2> {
@@ -80,7 +135,7 @@ fn cursor_in_window(ctx: &Context) -> Option<Pos2> {
     Some(Pos2::new(p.x as f32 / ppp, p.y as f32 / ppp) - inner.min.to_vec2())
 }
 
-pub fn show(ui: &mut Ui, model: &Model) -> Outcome {
+pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
     let mut out = Outcome::default();
     let (rect, response) = ui.allocate_exact_size(ui.available_size(), Sense::click());
     let painter = ui.painter_at(rect);
@@ -107,6 +162,8 @@ pub fn show(ui: &mut Ui, model: &Model) -> Outcome {
     let outer_ring = (radii.inner + 2.0 * u, layout.outer_radius());
     let (sub_in, sub_out) = layout.sub_radii();
     let scale = |(a, b): (f32, f32)| (a * fit, b * fit);
+    let icons_view = config.options.view == ViewMode::Icons;
+    let sizes = IconSizes::scaled(u);
 
     let open_arc: Option<SubArc> = match model.selection {
         Selection::Outer(i) | Selection::Sub(i, _) => u8::try_from(i)
@@ -137,7 +194,8 @@ pub fn show(ui: &mut Ui, model: &Model) -> Outcome {
     {
         out.select = Some(s);
     }
-    if response.hover_pos().and_then(tile_at).is_some() {
+    let hovered = response.hover_pos().and_then(tile_at);
+    if hovered.is_some() {
         ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
     }
 
@@ -190,14 +248,21 @@ pub fn show(ui: &mut Ui, model: &Model) -> Outcome {
         let st = tile_style(Selection::Inner(i), item.action != Action::None, inner_fill);
         let r = scale(inner_ring);
         annular(&painter, center, r, (a0 + GAP_DEG, a1 - GAP_DEG), &st);
-        label(
-            &painter,
-            polar(center, (r.0 + r.1) / 2.0, (a0 + a1) / 2.0),
-            &item.name,
-            (11.0 * fit).clamp(8.0, 15.0),
-            (r.1 - r.0) * 0.8,
-            st.text,
-        );
+        let mid_r = (r.0 + r.1) / 2.0;
+        if icons_view {
+            // As in the wheel, inner icons sit 2 px outwards of the ring's middle.
+            let at = polar(center, mid_r + 2.0 * u * fit, (a0 + a1) / 2.0);
+            tile_icon(&painter, icons, item, at, sizes.inner, fit, u, st.text);
+        } else {
+            label(
+                &painter,
+                polar(center, mid_r, (a0 + a1) / 2.0),
+                &item.name,
+                (11.0 * fit).clamp(8.0, 15.0),
+                (r.1 - r.0) * 0.8,
+                st.text,
+            );
+        }
     }
 
     for (i, item) in config.outer.iter().enumerate().take(usize::from(n)) {
@@ -206,14 +271,19 @@ pub fn show(ui: &mut Ui, model: &Model) -> Outcome {
         let r = scale(outer_ring);
         annular(&painter, center, r, (a0 + GAP_DEG, a1 - GAP_DEG), &st);
         let mid = (a0 + a1) / 2.0;
-        label(
-            &painter,
-            polar(center, (r.0 + r.1) / 2.0, mid),
-            &item.name,
-            (13.0 * fit).clamp(9.0, 17.0),
-            (r.1 - r.0) * 0.85,
-            st.text,
-        );
+        let at = polar(center, (r.0 + r.1) / 2.0, mid);
+        if icons_view {
+            tile_icon(&painter, icons, item, at, sizes.outer, fit, u, st.text);
+        } else {
+            label(
+                &painter,
+                at,
+                &item.name,
+                (13.0 * fit).clamp(9.0, 17.0),
+                (r.1 - r.0) * 0.85,
+                st.text,
+            );
+        }
         if !item.submenu.is_empty() {
             // A short line at the outer edge marks a tile with a submenu.
             let mark_r = r.1 - 7.0 * fit;
@@ -246,15 +316,36 @@ pub fn show(ui: &mut Ui, model: &Model) -> Outcome {
                 outer_fill,
             );
             annular(&painter, center, r, (a0 + GAP_DEG, a1 - GAP_DEG), &st);
-            label(
-                &painter,
-                polar(center, (r.0 + r.1) / 2.0, (a0 + a1) / 2.0),
-                &item.name,
-                (12.0 * fit).clamp(9.0, 16.0),
-                (r.1 - r.0) * 0.9,
-                st.text,
-            );
+            let at = polar(center, (r.0 + r.1) / 2.0, (a0 + a1) / 2.0);
+            if icons_view {
+                tile_icon(&painter, icons, item, at, sizes.sub, fit, u, st.text);
+            } else {
+                label(
+                    &painter,
+                    at,
+                    &item.name,
+                    (12.0 * fit).clamp(9.0, 16.0),
+                    (r.1 - r.0) * 0.9,
+                    st.text,
+                );
+            }
         }
+    }
+
+    // The centre shows the name of the tile under the cursor, else of the selected one.
+    let shown = hovered
+        .filter(|s| *s != Selection::None)
+        .unwrap_or(model.selection);
+    if let Some(item) = model.item_at(shown) {
+        let r = radii.center * fit;
+        label(
+            &painter,
+            center,
+            &item.name,
+            (14.0 * fit).clamp(9.0, 18.0),
+            r * 1.5,
+            text_color,
+        );
     }
     out
 }
