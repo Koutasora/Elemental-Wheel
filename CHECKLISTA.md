@@ -37,8 +37,12 @@
 - [x] Lista wykluczonych programów i wyłączenie w pełnym ekranie
 
 ## 05 podmenu
-- [ ] Łuk z maksymalnie 5 dodatkowymi kafelkami po najechaniu
-- [ ] Widok kafelków: nazwy albo ikony (ikona z .exe, litera gdy brak)
+- [x] Łuk z maksymalnie 5 dodatkowymi kafelkami po najechaniu
+- [x] Wybór kafelka łuku puszczeniem, kliknięciem i kierunkiem; kreska przy kafelku z podmenu
+- [x] Widok kafelków: nazwy albo ikony (ikona z .exe, glify dla komend i akcji, litera gdy brak)
+- [x] Przykładowe podmenu „Ustawienia” w domyślnej konfiguracji
+- [x] Test automatyczny na LAB (wejście wstrzykiwane): łuk, tryb klikania, krawędź ekranu, widok ikon
+- [ ] Sprawdzenie fizyczną myszą
 
 ## 06 edytor
 - [ ] Edytor jako osobny proces z podglądem

@@ -20,7 +20,7 @@ fn main() -> ExitCode {
     match args::parse(std::env::args().skip(1)) {
         Ok(Command::Info) => {
             println!(
-                "Elemental Wheel (stage 04). Options for --demo and --run: \
+                "Elemental Wheel (stage 05). Options for --demo and --run: \
                  [--theme system|light|dark] [--scale 60..140] [--sectors 4..12] \
                  [--config <path>].\n  \
                  They override config.json (default %APPDATA%\\Elemental-Wheel\\config.json).\n  \

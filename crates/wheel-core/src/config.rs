@@ -33,7 +33,7 @@ pub enum ThemeChoice {
     Dark,
 }
 
-/// How items are shown (icons are used from stage 05).
+/// How items are shown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ViewMode {
@@ -137,9 +137,9 @@ pub enum Action {
 pub struct Item {
     pub name: String,
     pub action: Action,
-    /// Unused until stage 05.
+    /// Icon file (`.ico`, `.exe` or `.dll`, optionally `,index`) for the icon view.
     pub icon: Option<String>,
-    /// Unused until stage 05; up to 5 items without a submenu of their own.
+    /// Up to 5 items shown as an arc beyond an outer sector; they have no submenu of their own.
     pub submenu: Vec<Item>,
 }
 
