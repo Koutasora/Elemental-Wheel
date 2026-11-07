@@ -68,4 +68,31 @@ Przed zmianą renderera (2026-11-07):
 | po zmianie konfiguracji: mediana / max | – | – | 89,2 / 96,6 ms (5) |
 
 ## Podsumowanie
-(wypełnia /etap-zamknij)
+
+### Decyzje
+- Wspólny log `wheel_core::log` (tylko std, UTC, 1 MB + `*.old.log`), `--log` dla testów; do logu idzie to, co szło przez `eprintln!`.
+- Panika przechwytywana w haku, procedurach okna i wątkach akcji; po panice koło się chowa, wyzwalacz wraca do spoczynku, zdarzenie idzie dalej.
+- Zepsuty plik w trakcie pracy zostawia bieżącą konfigurację; start bez zmian (plik, `.bak`, domyślne).
+- Edytor rozpoznaje zmianę pliku po czasie modyfikacji i długości; pyta przy konflikcie i przed nadpisaniem nowszego pliku.
+- Ukryta flaga `--stats` (tylko `--run`): czas otwarcia od progu w haku do `Commit`/`SetWindowPos`, pamięć i uchwyty co 60 s.
+- Skrócony zakres (decyzja użytkownika): bez testu wielogodzinnego i przebiegu `soak.ps1`; renderer po wczytaniu konfiguracji i pamięć widoku ikon do etapu 09; błąd po Escape jako znany.
+
+### Zrobione
+- Log koła i edytora w `%LOCALAPPDATA%\Elemental-Wheel`, panic hook z miejscem wystąpienia.
+- `catch_unwind` w haku, oknie i akcjach; ukryta flaga `--test-panic hook|window|action`; sprawdzone na żywo.
+- Odporność na zepsuty `config.json` w trakcie pracy i na zabity edytor; test pozostałego `config.json.tmp`.
+- Wykrywanie zmiany pliku z zewnątrz w edytorze (fokus i co kilka sekund), testy modelu.
+- `--stats` i `tools/soak.ps1` (wejście wstrzykiwane, łuk podmenu, Escape, zmiany i zepsucie konfiguracji, CSV, podsumowanie z werdyktem, blokada ścieżek z danymi użytkownika także w postaci 8.3).
+- Pomiary (LAB, 96 DPI): otwarcie mediana ok. 3,2 ms (max 6 ms), po zmianie konfiguracji 89 ms; pamięć prywatna: nazwy 13,9 MB, ikony 17 MB; w 6 min pamięć w granicach 0,4 MB, uchwyty stałe.
+- README (log, pomiary, znany błąd), CHECKLISTA; build, 192 testy, clippy, fmt czyste.
+
+### Otwarte sprawy
+- Etap 09: przygotowanie renderera i ikon po wczytaniu konfiguracji (89 ms → ok. 3 ms), pamięć podręczna układu tekstu glifów, pamięć widoku ikon do 15 MB.
+- Znany błąd: przytrzymanie tuż po zamknięciu koła Escape czasem nie otwiera koła (ok. 2 na 48 prób wejściem wstrzykiwanym); przyczyna nieustalona.
+- `--stats` nazywa `dpi` otwarcie, przy którym zmienia się rozmiar z konfiguracji wykrytej dopiero przy poprzednim otwarciu.
+
+### Ryzyka
+- Błąd po Escape widziany tylko przy wejściu wstrzykiwanym; nie wiadomo, czy dotyczy fizycznej myszy.
+- Brak testu wielogodzinnego: wolny wyciek nie jest wykluczony (w krótkich pomiarach niewidoczny).
+- `soak.ps1` z domyślnym widokiem ikon kończy się FAIL, dopóki pamięć przekracza 15 MB.
+- Pomiar czasu kończy się przed faktycznym pokazaniem klatki przez DWM.

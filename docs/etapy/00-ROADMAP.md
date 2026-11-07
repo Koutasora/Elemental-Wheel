@@ -10,6 +10,6 @@ Statusy: PLANOWANY, W TOKU, ZAMKNIĘTY. W danej chwili najwyżej jeden etap ma s
 | 04 | akcje-i-konfiguracja | ZAMKNIĘTY | 04-akcje-i-konfiguracja.md |
 | 05 | podmenu | ZAMKNIĘTY | 05-podmenu.md |
 | 06 | edytor | ZAMKNIĘTY | 06-edytor.md |
-| 07 | stabilnosc-i-pomiary | W TOKU | 07-stabilnosc-i-pomiary.md |
+| 07 | stabilnosc-i-pomiary | ZAMKNIĘTY | 07-stabilnosc-i-pomiary.md |
 | 08 | instalator-i-wydanie | PLANOWANY | |
 | 09 | wyglad-i-animacje | PLANOWANY | |
