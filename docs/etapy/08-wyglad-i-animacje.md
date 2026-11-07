@@ -17,7 +17,7 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - [ ] `cargo build --release`, `cargo test`, clippy `-D warnings`, `cargo fmt --check` czyste; README i CHECKLISTA zaktualizowane
 
 ## Plan
-- [ ] `apps/wheel/src/render.rs`, `theme.rs`: nieprzezroczyste wypełnienia, cień, akcent, minimalna czcionka; zrzuty do akceptacji przed animacjami
+- [x] `apps/wheel/src/render.rs`, `theme.rs`: nieprzezroczyste wypełnienia, cień, akcent, minimalna czcionka; zrzuty do akceptacji przed animacjami
 - [ ] `apps/wheel/src/window.rs`, `render.rs`: animacje otwarcia i zamknięcia przez DirectComposition (przezroczystość i skala, bez ponownego rysowania klatek), podświetlenie i łuk przez interpolację na istniejącym zegarze 16 ms
 - [ ] `crates/wheel-core/src/config.rs`, `apps/wheel-editor/src/options.rs`: opcje `animations` (domyślnie włączona) i `glass_pct` (suwak w edytorze), testy
 - [ ] `apps/wheel/src/window.rs`, `render.rs`, `icons.rs`: renderer i ikony po wczytaniu konfiguracji, pamięć podręczna układów tekstu, mniejsze bitmapy ikon
@@ -32,6 +32,7 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - Wygląd, runda 1: podkład pod kafelkami (rowki zamiast prześwitu), cień, rodzic łuku zabarwiony akcentem 22%, znacznik podmenu nie zasłania nazwy, glify wyrównane do 72% pola ikony.
 - Wygląd, runda 2 (użytkownik): bardziej zaokrąglone rogi kafelków i próba efektu szkła (prawdziwe rozmycie tła); minimum czcionki 8 px zamiast 9 (przy 60% 9 px obcinało nazwy), cień w jasnym motywie o połowę słabszy.
 - Szkło systemowe (HostBackdropBrush) odrzucone: rozmycie za mocne i nieregulowane, wymaga nieudokumentowanego API; zamiast niego migawka ekranu pod kołem przy otwarciu, rozmycie i nasycenie w D2D, połysk i poświata tekstu (cel jakości: Vista Aero / macOS, decyzja użytkownika).
+- Szkło z migawki zaakceptowane przez użytkownika (runda 3: rozmycie σ 9 px, nasycenie 1.4, tint ciemny 0.45 / jasny 0.42 przy mocy 50, połysk u góry, poświata tekstu). Do poprawy: migawka BitBlt ok. 31 ms na LAB (RDP) → robiona w tle przy wciśnięciu prawego przycisku (180 ms progu wystarcza); pamięć 31 MB → rozmycie na migawce zmniejszonej 4×, zwalnianie bitmap po zamknięciu.
 - Moc przezroczystości szkła jako suwak w opcjach (`glass_pct`, decyzja użytkownika).
 - Podglądy wyglądu tylko lokalnie (plik HTML na LAB), nie na claude.ai (zasada użytkownika).
 - Poza zakresem: znany błąd po Escape (decyzja z etapu 07), zasobnik i tryb bez konsoli (etap 09).
