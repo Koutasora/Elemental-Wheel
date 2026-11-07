@@ -28,6 +28,9 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 ## Decyzje
 - Kolejność etapów zamieniona (decyzja użytkownika): 08 wyglad-i-animacje, 09 instalator-i-wydanie, żeby jedno wydanie 1.0.0 na końcu miało gotowy wygląd.
 - Wydanie: Inno Setup (instalacja dla jednego użytkownika) i wersja 1.0.0 (decyzje użytkownika, do etapu 09).
+- Wygląd, runda 1: podkład pod kafelkami (rowki zamiast prześwitu), cień, rodzic łuku zabarwiony akcentem 22%, znacznik podmenu nie zasłania nazwy, glify wyrównane do 72% pola ikony.
+- Wygląd, runda 2 (użytkownik): bardziej zaokrąglone rogi kafelków i próba efektu szkła (prawdziwe rozmycie tła); minimum czcionki 8 px zamiast 9 (przy 60% 9 px obcinało nazwy), cień w jasnym motywie o połowę słabszy.
+- Podglądy wyglądu tylko lokalnie (plik HTML na LAB), nie na claude.ai (zasada użytkownika).
 - Poza zakresem: znany błąd po Escape (decyzja z etapu 07), zasobnik i tryb bez konsoli (etap 09).
 
 ## Podsumowanie
