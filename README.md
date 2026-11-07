@@ -119,7 +119,7 @@ Release build, 1920x1080 at 96 DPI, 8 outer and 8 inner sectors, one submenu; me
 | opening, median / max | 3.3 / 5.2 ms | 3.2 / 4.9 ms |
 | first opening after a config change | | 89 ms |
 
-No growth of memory or handles over the measured runs.
+Over 6-minute runs: private memory within 0.4 MB, handle count stable.
 
 ## Known issues
 

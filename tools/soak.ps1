@@ -17,10 +17,34 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # --- paths and refusals -----------------------------------------------------------------------
-$WorkDir = [IO.Path]::GetFullPath($WorkDir).TrimEnd('\')
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class LongPath {
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    static extern uint GetLongPathNameW(string shortPath, StringBuilder longPath, uint size);
+    // Long form of `path` (8.3 names expanded); the part that does not exist yet is kept as is.
+    public static string Of(string path) {
+        string full = System.IO.Path.GetFullPath(path).TrimEnd('\\');
+        string head = full, tail = "";
+        while (!System.IO.Directory.Exists(head) && !System.IO.File.Exists(head)) {
+            string parent = System.IO.Path.GetDirectoryName(head);
+            if (string.IsNullOrEmpty(parent)) return full;
+            tail = System.IO.Path.GetFileName(head) + (tail.Length > 0 ? "\\" + tail : "");
+            head = parent;
+        }
+        var sb = new StringBuilder(32768);
+        if (GetLongPathNameW(head, sb, (uint)sb.Capacity) == 0) return full;
+        string longHead = sb.ToString().TrimEnd('\\');
+        return tail.Length > 0 ? longHead + "\\" + tail : longHead;
+    }
+}
+'@
+$WorkDir = [LongPath]::Of($WorkDir)
 foreach ($root in @($env:APPDATA, $env:LOCALAPPDATA)) {
     if (-not $root) { continue }
-    $user = (Join-Path $root 'Elemental-Wheel').TrimEnd('\')
+    $user = [LongPath]::Of((Join-Path $root 'Elemental-Wheel'))
     if ($WorkDir -ieq $user -or $WorkDir.StartsWith($user + '\', [StringComparison]::OrdinalIgnoreCase)) {
         Write-Host "Refusing: WorkDir $WorkDir is inside $user (real user data)."
         exit 1

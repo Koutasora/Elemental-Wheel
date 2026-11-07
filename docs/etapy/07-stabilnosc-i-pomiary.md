@@ -2,8 +2,8 @@
 
 ## Cel
 Zmierzyć pamięć i czas otwarcia koła i zapisać wyniki; uodpornić koło na błędy (ostatnia dobra konfiguracja w pamięci,
-log awarii w `%LOCALAPPDATA%`), a edytor na zmianę pliku z zewnątrz. Przebieg `soak.ps1` na LAB potwierdza stabilność
-i żywy hak.
+log awarii w `%LOCALAPPDATA%`), a edytor na zmianę pliku z zewnątrz. `tools/soak.ps1` zostaje jako narzędzie testu i pomiarów
+(wejście wstrzykiwane).
 
 ## Kryteria zamknięcia
 - [x] Log `%LOCALAPPDATA%\Elemental-Wheel\wheel.log` (i `editor.log`): komunikaty dziś wypisywane na konsolę, panic z miejscem wystąpienia, limit rozmiaru z jednym starszym plikiem; w testach jawna ścieżka
@@ -48,7 +48,7 @@ i żywy hak.
 - Kolejność kroków: `soak.ps1` przed zmianą renderera, bo służy też do pomiaru „przed”.
 - `soak.ps1` mierzy osobno widok `names` i `icons` (w konfiguracji nie ma widoku z oboma naraz); pomiar czasu otwarcia bez zmian konfiguracji (`-NoConfigChanges`), czas po zmianie konfiguracji w osobnym przebiegu.
 - Błąd znaleziony w `soak.ps1`: przytrzymanie tuż po anulowaniu Escape czasem nie otwiera koła (5 z 6 błędów cykli); diagnoza i poprawka przed zmianą renderera, bo przebieg `soak.ps1` wymaga zera błędów cykli.
-- Bez testu wielogodzinnego i bez przebiegu `soak.ps1` przy zamknięciu (decyzja użytkownika): komputer jest regularnie restartowany, a koło można w każdej chwili uruchomić ponownie; odłączony hak naprawia strażnik (etap 03); pomiary 6 min nie pokazały wzrostu pamięci ani uchwytów. `soak.ps1` zostaje jako narzędzie.
+- Bez testu wielogodzinnego i bez przebiegu `soak.ps1` przy zamknięciu (decyzja użytkownika): komputer jest regularnie restartowany, a koło można w każdej chwili uruchomić ponownie; odłączony hak naprawia strażnik (etap 03); w pomiarach 6 min pamięć prywatna w granicach 0,4 MB, liczba uchwytów stała. `soak.ps1` zostaje jako narzędzie.
 - Skrócony zakres (decyzja użytkownika): przygotowanie renderera po wczytaniu konfiguracji (otwarcie po zmianie konfiguracji 89 ms zamiast ok. 3 ms) i pamięć widoku ikon (17 MB przy celu 15 MB) przeniesione do etapu 09; poprawka błędu po Escape zostaje w etapie 07.
 - Błąd po Escape zostaje jako znany (decyzja użytkownika: koło używane rzadko): opisany w README i CHECKLISTA; reprodukcja: ok. 2 błędy na 48 par „otwórz, Escape, otwórz”, ślad diagnostyczny cofnięty bez ustalenia przyczyny.
 
