@@ -486,7 +486,8 @@ impl Config {
             (MIN_MOVE_PX, MAX_MOVE_PX),
         );
         self.outer.resize(MAX_RING_ITEMS, Item::empty());
-        self.inner.resize(usize::from(MAX_INNER_SECTORS), Item::empty());
+        self.inner
+            .resize(usize::from(MAX_INNER_SECTORS), Item::empty());
         Ok(warnings)
     }
 

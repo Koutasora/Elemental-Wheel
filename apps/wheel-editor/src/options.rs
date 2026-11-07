@@ -2,8 +2,8 @@
 
 use eframe::egui::{DragValue, RichText, Slider, TextEdit, Ui};
 use wheel_core::{
-    MAX_HOLD_MS, MAX_MOVE_PX, MAX_OUTER_SECTORS, MAX_SCALE_PCT, MIN_HOLD_MS, MIN_MOVE_PX,
-    MIN_OUTER_SECTORS, MIN_SCALE_PCT, ThemeChoice, ViewMode,
+    MAX_HOLD_MS, MAX_INNER_SECTORS, MAX_MOVE_PX, MAX_OUTER_SECTORS, MAX_SCALE_PCT, MIN_HOLD_MS,
+    MIN_INNER_SECTORS, MIN_MOVE_PX, MIN_OUTER_SECTORS, MIN_SCALE_PCT, ThemeChoice, ViewMode,
 };
 
 use crate::model::Model;
@@ -36,6 +36,19 @@ pub fn show(ui: &mut Ui, model: &mut Model) {
             .step_by(10.0)
             .suffix("%"),
     );
+
+    caption(ui, "Liczba sektorów wewnętrznych");
+    let mut inner_sectors = o.inner_sectors;
+    if ui
+        .add(Slider::new(
+            &mut inner_sectors,
+            MIN_INNER_SECTORS..=MAX_INNER_SECTORS,
+        ))
+        .changed()
+    {
+        model.set_inner_sectors(inner_sectors);
+    }
+    let o = &model.config.options;
 
     caption(ui, "Liczba sektorów zewnętrznych");
     let mut sectors = o.outer_sectors;

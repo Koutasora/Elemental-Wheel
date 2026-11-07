@@ -7,7 +7,7 @@ use std::mem::ManuallyDrop;
 use std::sync::Arc;
 
 use wheel_core::icon::IconSizes;
-use wheel_core::{Config, Hit, INNER_SECTORS, Layout, SubArc, ViewMode};
+use wheel_core::{Config, Hit, Layout, SubArc, ViewMode};
 
 use windows::Win32::Foundation::{E_FAIL, HMODULE, HWND};
 use windows::Win32::Graphics::Direct2D::Common::{
@@ -201,8 +201,16 @@ impl Painter {
             let dwrite: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
             let k = scale_factor(&layout);
             let icon_sizes = IconSizes::scaled(k);
-            let icons = (config.options.view == ViewMode::Icons)
-                .then(|| Icons::new(&ctx, &dwrite, &config, layout.outer_sectors(), icon_sizes));
+            let icons = (config.options.view == ViewMode::Icons).then(|| {
+                Icons::new(
+                    &ctx,
+                    &dwrite,
+                    &config,
+                    layout.inner_sectors(),
+                    layout.outer_sectors(),
+                    icon_sizes,
+                )
+            });
             Ok(Painter {
                 layout,
                 palette,
@@ -268,7 +276,7 @@ impl Painter {
                 a: 0.0,
             }));
 
-            for i in 0..INNER_SECTORS {
+            for i in 0..self.layout.inner_sectors() {
                 let (a1, a2) = self.layout.inner_span(i);
                 let geometry = self.sector_path(
                     c,
@@ -866,7 +874,7 @@ mod tests {
         config.options.outer_sectors = case.sectors;
         config.outer[usize::from(case.parent)].submenu = submenu(case.tiles);
         let arc = arc_for_hit(case.hit, &config);
-        let layout = Layout::new(96, 100, case.sectors);
+        let layout = Layout::new(96, 100, 12, case.sectors);
         let size = layout.size_px();
         let device = create_d3d_device().expect("D3D device");
         let dxgi: IDXGIDevice = device.cast().unwrap();

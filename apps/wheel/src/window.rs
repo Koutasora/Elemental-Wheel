@@ -69,7 +69,12 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
     let cursor = cursor_pos()?;
     let (_, config) = Settings::load(config_path, options.overrides);
     let o = &config.options;
-    let layout = Layout::new(monitor_dpi(cursor)?, o.scale_pct, o.outer_sectors);
+    let layout = Layout::new(
+        monitor_dpi(cursor)?,
+        o.scale_pct,
+        o.inner_sectors,
+        o.outer_sectors,
+    );
     let size = layout.size_px() as i32;
     let left = cursor.x - size / 2;
     let top = cursor.y - size / 2;
@@ -202,8 +207,13 @@ fn cursor_pos() -> Result<POINT> {
 }
 
 /// Wheel layout for the monitor under `pt` (96 DPI if its DPI cannot be read).
-pub fn layout_at(pt: POINT, scale_pct: u16, sectors: u8) -> Layout {
-    Layout::new(monitor_dpi(pt).unwrap_or(96), scale_pct, sectors)
+pub fn layout_at(pt: POINT, scale_pct: u16, inner_sectors: u8, outer_sectors: u8) -> Layout {
+    Layout::new(
+        monitor_dpi(pt).unwrap_or(96),
+        scale_pct,
+        inner_sectors,
+        outer_sectors,
+    )
 }
 
 /// Effective DPI of the monitor under `pt`.
@@ -222,6 +232,7 @@ fn hit_at(layout: &Layout, center: (f32, f32), cursor: POINT, arc: Option<SubArc
         cursor.x as f32 - center.0,
         cursor.y as f32 - center.1,
         &layout.radii(),
+        layout.inner_sectors(),
         layout.outer_sectors(),
         arc,
     )
@@ -319,6 +330,7 @@ struct RunState {
     /// Size of the wheel in use. A reloaded file changes it only after the open that found the
     /// change, because the hook thread has already laid that one out with the old values.
     scale_pct: u16,
+    inner_sectors: u8,
     sectors: u8,
     layout: Layout,
     /// Wheel center in screen pixels while the wheel is shown.
@@ -340,8 +352,9 @@ pub fn run_background(options: &RunOptions, config_path: PathBuf) -> Result<()> 
         Some(dir) if !dir.as_os_str().is_empty() => dir.to_path_buf(),
         _ => PathBuf::from("."),
     };
-    let (scale_pct, sectors) = (config.options.scale_pct, config.options.outer_sectors);
-    let layout = layout_at(cursor_pos()?, scale_pct, sectors);
+    let o = &config.options;
+    let (scale_pct, inner_sectors, sectors) = (o.scale_pct, o.inner_sectors, o.outer_sectors);
+    let layout = layout_at(cursor_pos()?, scale_pct, inner_sectors, sectors);
     let size = layout.size_px() as i32;
     let hwnd = create_popup(RUN_CLASS, run_wnd_proc, WS_EX_TRANSPARENT, (0, 0, size))?;
 
@@ -362,6 +375,7 @@ pub fn run_background(options: &RunOptions, config_path: PathBuf) -> Result<()> 
         config: config.clone(),
         settings,
         scale_pct,
+        inner_sectors,
         sectors,
         layout,
         center: (0.0, 0.0),
@@ -413,6 +427,7 @@ fn reload(s: &mut RunState, apply_layout: bool) {
         if apply_layout {
             // The wheel is hidden, so no open is in flight with the old size.
             s.scale_pct = config.options.scale_pct;
+            s.inner_sectors = config.options.inner_sectors;
             s.sectors = config.options.outer_sectors;
         }
         s.config = config;
@@ -422,7 +437,7 @@ fn reload(s: &mut RunState, apply_layout: bool) {
 
 /// Shows the wheel centred at `center` without activating the window.
 fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<()> {
-    let layout = layout_at(center, s.scale_pct, s.sectors);
+    let layout = layout_at(center, s.scale_pct, s.inner_sectors, s.sectors);
     if layout != s.layout || s.renderer.is_none() {
         // The monitor DPI differs: size and fonts change, so the render resources are rebuilt.
         // The old ones go first, a window can have only one composition target.
@@ -504,6 +519,7 @@ unsafe extern "system" fn run_wnd_proc(
                     reload(s, false);
                     let opened = open_wheel(hwnd, s, center);
                     s.scale_pct = s.config.options.scale_pct;
+                    s.inner_sectors = s.config.options.inner_sectors;
                     s.sectors = s.config.options.outer_sectors;
                     opened
                 })

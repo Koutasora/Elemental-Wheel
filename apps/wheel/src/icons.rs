@@ -7,7 +7,7 @@ use std::cell::Cell;
 use std::collections::HashMap;
 
 use wheel_core::icon::{IconSizes, IconSpec, first_letter, spec_for};
-use wheel_core::{Config, Hit, INNER_SECTORS, Item};
+use wheel_core::{Config, Hit, Item};
 
 use windows::Win32::Foundation::MAX_PATH;
 use windows::Win32::Graphics::Direct2D::{ID2D1Bitmap, ID2D1DeviceContext};
@@ -60,13 +60,14 @@ pub struct Icons {
 }
 
 impl Icons {
-    /// Loads the icons of the inner ring, the first `outer_sectors` outer sectors and their
+    /// Loads the icons of the first `inner_sectors` inner sectors, the first `outer_sectors` outer sectors and their
     /// submenus; sizes are in px of the device context (96 DPI). A file that cannot be loaded
     /// becomes a letter, and so does a glyph the font lacks (or any glyph without an icon font).
     pub fn new(
         ctx: &ID2D1DeviceContext,
         dwrite: &IDWriteFactory,
         config: &Config,
+        inner_sectors: u8,
         outer_sectors: u8,
         sizes: IconSizes,
     ) -> Icons {
@@ -85,7 +86,7 @@ impl Icons {
             items.iter().map(|item| loader.tile(item, size)).collect()
         };
         let outer_items = &config.outer[..config.outer.len().min(usize::from(outer_sectors))];
-        let inner_items = &config.inner[..config.inner.len().min(INNER_SECTORS as usize)];
+        let inner_items = &config.inner[..config.inner.len().min(usize::from(inner_sectors))];
         Icons {
             inner: tiles(inner_items, sizes.inner),
             outer: tiles(outer_items, sizes.outer),

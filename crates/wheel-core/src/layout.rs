@@ -258,6 +258,9 @@ mod tests {
     #[test]
     fn sub_click_limit_is_band_edge_plus_margin() {
         assert!(close(Layout::new(96, 100, 12, 12).sub_click_limit(), 296.0));
-        assert!(close(Layout::new(144, 100, 12, 12).sub_click_limit(), 444.0));
+        assert!(close(
+            Layout::new(144, 100, 12, 12).sub_click_limit(),
+            444.0
+        ));
     }
 }

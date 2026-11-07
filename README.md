@@ -24,7 +24,7 @@ Shows the wheel centred under the cursor without taking focus; closes on a click
 
 - `--theme` - `system` (default) follows the Windows app theme
 - `--scale` - size in percent relative to the monitor DPI (default 100)
-- `--sectors` - sectors in the outer ring (default 12); the inner ring always has 12
+- `--sectors` - sectors in the outer ring (default 12); the inner ring has its own count, `inner_sectors` in the config file (default 12, no command-line switch)
 - `--config` - config file to use instead of `%APPDATA%\Elemental-Wheel\config.json`
 
 Options given on the command line override the file.
@@ -55,7 +55,7 @@ target\release\wheel-editor.exe --version
 - Opens `%APPDATA%\Elemental-Wheel\config.json` or the file given with `--config`. A missing file shows the defaults and is created on the first save. Load errors and warnings are shown in the bottom bar.
 - Left: preview of the wheel (both rings, sector count, names or icons, theme, submenu arc of the selected tile). Click a tile to select it.
 - Right, tab "Kafelek": name, action type with its fields (program path, arguments and working folder; file or folder; URL; shortcut; edit command; text; command line; system action), icon path, emptying the slot. Outer tiles get a submenu of up to 5 tiles: add, remove, move up and down. Every name can be changed, edit commands in the inner ring included.
-- Tab "Opcje": theme, size 60-140%, outer sectors 4-12, view, hold time, movement threshold, full screen switch, excluded programs. Fewer sectors hide the extra items without deleting them.
+- Tab "Opcje": theme, size 60-140%, inner sectors 4-12, outer sectors 4-12, view, hold time, movement threshold, full screen switch, excluded programs. Fewer sectors hide the extra items without deleting them.
 - Dropping a file or folder on a tile of the preview makes it a `program` item (`.exe`, `.lnk`, `.bat`, `.cmd`) or an `open` item, named after the file; the tile keeps its submenu.
 - Save with "Zapisz" or Ctrl+S. The configuration is validated first; on an error the file is left as it was and the reason is shown. Unsaved changes are marked in the title bar and the bottom bar; closing or reloading asks first. A running `wheel.exe` picks up the saved file by itself.
 
@@ -69,6 +69,7 @@ target\release\wheel-editor.exe --version
   "options": {
     "theme": "system",
     "scale_pct": 100,
+    "inner_sectors": 12,
     "outer_sectors": 12,
     "view": "names",
     "hold_ms": 180,
@@ -93,6 +94,7 @@ target\release\wheel-editor.exe --version
 ```
 
 - `outer` and `inner` hold up to 12 items each; the index is the sector (0 at the top, clockwise). Missing sectors are empty.
+- `inner_sectors` and `outer_sectors` (4 to 12, default 12 each, independent; a file without `inner_sectors` uses 12) set how many sectors each ring shows. Items with a higher index stay in the file but are hidden: not drawn, not selectable.
 - `submenu`: up to 5 items of an outer sector, shown as an arc centred on its direction; submenu items cannot have their own submenu.
 - `view`: `names` or `icons`. In the icon view a tile shows `icon` if set (`.ico`, `.exe` or `.dll`, optionally `,index`; `%VARIABLES%` expand), otherwise the icon of the program, file or folder, a built-in symbol for edit commands, system actions, URLs, shortcuts, text and commands, or the first letter of the name. The centre shows the name of the tile under the cursor.
 - Action types: `none`, `program` (`path`, `args`, `working_dir`), `open` (file or folder), `url`, `shortcut` (`keys`, e.g. `Ctrl+Shift+V`, `Win+V`, `F2`), `edit`, `paste_text` (`text`; the clipboard is restored afterwards), `command` (`line`, run with `cmd /c` without a window), `system`.

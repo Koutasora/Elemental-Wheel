@@ -191,11 +191,13 @@ pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
     let empty_fill = ui.visuals().extreme_bg_color;
 
     let config = &model.config;
-    let layout = Layout::new(96, config.options.scale_pct, config.options.outer_sectors);
+    let o = &config.options;
+    let layout = Layout::new(96, o.scale_pct, o.inner_sectors, o.outer_sectors);
     let n = layout.outer_sectors();
+    let n_inner = layout.inner_sectors();
     let radii = layout.radii();
     // The largest scale fills the area (with its submenu arc), smaller ones are proportionally smaller.
-    let largest = Layout::new(96, MAX_SCALE_PCT, config.options.outer_sectors);
+    let largest = Layout::new(96, MAX_SCALE_PCT, o.inner_sectors, o.outer_sectors);
     let fit = (rect.width().min(rect.height()) / largest.size_px() as f32).max(0.1);
     let center = rect.center();
     // Ring edges as in the mockup: 4 px around the center, 4 px between the rings.
@@ -219,7 +221,7 @@ pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
     let tile_at = |pos: Pos2| -> Option<Selection> {
         let d: Vec2 = (pos - center) / fit;
         let dist = d.length();
-        match hit_test_arc(d.x, d.y, &radii, n, open_arc) {
+        match hit_test_arc(d.x, d.y, &radii, n_inner, n, open_arc) {
             Hit::Center => Some(Selection::None),
             Hit::Inner(i) => Some(Selection::Inner(usize::from(i))),
             Hit::Outer(i) => {
@@ -290,7 +292,7 @@ pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
         }
     };
 
-    for (i, item) in config.inner.iter().enumerate() {
+    for (i, item) in config.inner.iter().enumerate().take(usize::from(n_inner)) {
         let (a0, a1) = layout.inner_span(i as u8);
         let st = tile_style(Selection::Inner(i), item.action != Action::None, inner_fill);
         let r = scale(inner_ring);

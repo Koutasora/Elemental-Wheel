@@ -171,7 +171,11 @@ mod tests {
                 // Middle of the sector, and just inside both of its boundaries.
                 for off in [0.0, w / 2.0 - 0.1, -(w / 2.0 - 0.1)] {
                     let (x, y) = point(i as f32 * w + off, 80.0);
-                    assert_eq!(hit_test(x, y, &R, n, 12), Hit::Inner(i), "n={n} i={i} off={off}");
+                    assert_eq!(
+                        hit_test(x, y, &R, n, 12),
+                        Hit::Inner(i),
+                        "n={n} i={i} off={off}"
+                    );
                 }
             }
             // The inner count does not change the outer ring.
@@ -335,7 +339,10 @@ mod tests {
             parent: 0,
             count: 1,
         };
-        assert_eq!(hit_test_arc(0.0, -250.0, &R, 12, 12, Some(one)), Hit::Sub(0, 0));
+        assert_eq!(
+            hit_test_arc(0.0, -250.0, &R, 12, 12, Some(one)),
+            Hit::Sub(0, 0)
+        );
     }
 
     #[test]
@@ -345,10 +352,16 @@ mod tests {
             count: 5,
         };
         assert_eq!(hit_test_arc(0.0, 0.0, &R, 12, 12, Some(arc)), Hit::Center);
-        assert_eq!(hit_test_arc(0.0, -80.0, &R, 12, 12, Some(arc)), Hit::Inner(0));
+        assert_eq!(
+            hit_test_arc(0.0, -80.0, &R, 12, 12, Some(arc)),
+            Hit::Inner(0)
+        );
         for (parent, count) in [(6u8, 2u8), (0, 0), (0, 6)] {
             let bad = SubArc { parent, count };
-            assert_eq!(hit_test_arc(0.0, -250.0, &R, 12, 6, Some(bad)), Hit::Outer(0));
+            assert_eq!(
+                hit_test_arc(0.0, -250.0, &R, 12, 6, Some(bad)),
+                Hit::Outer(0)
+            );
         }
         assert_eq!(hit_test_arc(0.0, -250.0, &R, 12, 12, None), Hit::Outer(0));
     }

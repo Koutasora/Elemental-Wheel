@@ -5,7 +5,8 @@ use std::path::PathBuf;
 use eframe::egui::{ComboBox, RichText, TextEdit, Ui};
 use rfd::FileDialog;
 use wheel_core::{
-    Action, EditCommand, MAX_SUB_TILES, SystemAction, clamp_outer_sectors, parse_shortcut,
+    Action, EditCommand, MAX_SUB_TILES, SystemAction, clamp_inner_sectors, clamp_outer_sectors,
+    parse_shortcut,
 };
 
 use crate::model::{ActionKind, Model, Selection, edit_label, system_label};
@@ -83,13 +84,18 @@ fn pick_icon() -> Option<String> {
 
 fn location(model: &Model) -> String {
     let n = usize::from(clamp_outer_sectors(model.config.options.outer_sectors));
+    let n_inner = usize::from(clamp_inner_sectors(model.config.options.inner_sectors));
     match model.selection {
         Selection::Outer(i) => format!(
             "pierścień zewnętrzny, sektor {}/{n}, {:.0}°",
             i + 1,
             i as f32 * 360.0 / n as f32
         ),
-        Selection::Inner(i) => format!("pierścień wewnętrzny, sektor {}/12, {}°", i + 1, i * 30),
+        Selection::Inner(i) => format!(
+            "pierścień wewnętrzny, sektor {}/{n_inner}, {:.0}°",
+            i + 1,
+            i as f32 * 360.0 / n_inner as f32
+        ),
         Selection::Sub(p, k) => format!(
             "podmenu, sektor {}, kafelek {}/{}",
             p + 1,

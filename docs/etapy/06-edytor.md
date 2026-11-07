@@ -30,7 +30,7 @@ Poprawiony `save()`: do `.bak` trafia tylko poprawny plik.
 - [x] Zrzut pierwszej wersji układu do akceptacji użytkownika (układ zatwierdzony na żywym oknie)
 - [x] Podgląd: rozmiar koła z opcji (140% wypełnia pole podglądu), widok ikon (wybór ikony przeniesiony z `apps/wheel/src/icons.rs` do `wheel-core`, w edytorze ikony plików, glify Segoe, litery)
 - [x] Podgląd zgodny z kołem: zaokrąglone rogi kafelków, podświetlenie kafelka pod kursorem, zaznaczenie obramowaniem w akcencie, nazwa zaznaczonego kafelka w środku
-- [ ] Liczba sektorów pierścienia wewnętrznego jako opcja `inner_sectors` 4–12 (domyślnie 12, niezależna od zewnętrznego): `wheel-core` (konfiguracja, układ, geometria, trafianie), rysowanie w kole, podgląd i panel opcji edytora, README; testy
+- [x] Liczba sektorów pierścienia wewnętrznego jako opcja `inner_sectors` 4–12 (domyślnie 12, niezależna od zewnętrznego): `wheel-core` (konfiguracja, układ, geometria, trafianie), rysowanie w kole, podgląd i panel opcji edytora, README; testy
 - [x] `README.md`, `CHECKLISTA.md`
 - Sprawdzenie: tester: build, testy, clippy, fmt; skrypt PowerShell: edytor z `--config` w scratchpadzie, zrzuty, sprawdzenie zapisu, `.bak` i przeładowania w `wheel.exe` (`--accept-injected`); na końcu krótki test ręczny użytkownika
 

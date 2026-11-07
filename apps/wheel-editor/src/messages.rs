@@ -43,7 +43,8 @@ fn place(text: &str) -> Option<String> {
 fn option_name(name: &str) -> &str {
     match name {
         "scale_pct" => "rozmiar koła",
-        "outer_sectors" => "liczba sektorów",
+        "inner_sectors" => "liczba sektorów wewnętrznych",
+        "outer_sectors" => "liczba sektorów zewnętrznych",
         "hold_ms" => "czas przytrzymania",
         "move_px" => "ruch",
         other => other,
@@ -176,6 +177,14 @@ mod tests {
         assert_eq!(
             pl("options.hold_ms = 5000 is outside 50..=2000, using 2000"),
             "opcja „czas przytrzymania” = 5000 jest poza zakresem 50–2000, użyto 2000"
+        );
+        assert_eq!(
+            pl("options.inner_sectors = 20 is outside 4..=12, using 12"),
+            "opcja „liczba sektorów wewnętrznych” = 20 jest poza zakresem 4–12, użyto 12"
+        );
+        assert_eq!(
+            pl("options.outer_sectors = 1 is outside 4..=12, using 4"),
+            "opcja „liczba sektorów zewnętrznych” = 1 jest poza zakresem 4–12, użyto 4"
         );
     }
 

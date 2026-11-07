@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 
 use wheel_core::config;
 use wheel_core::{
-    Action, Config, EditCommand, Item, MAX_OUTER_SECTORS, MAX_SUB_TILES, MIN_OUTER_SECTORS, Source,
-    SystemAction, clamp_outer_sectors,
+    Action, Config, EditCommand, Item, MAX_INNER_SECTORS, MAX_OUTER_SECTORS, MAX_SUB_TILES,
+    MIN_INNER_SECTORS, MIN_OUTER_SECTORS, Source, SystemAction, clamp_inner_sectors,
+    clamp_outer_sectors,
 };
 
 /// The tile selected in the preview.
@@ -260,10 +261,11 @@ impl Model {
     /// Clears a selection that points outside the active sectors or submenu.
     fn fix_selection(&mut self) {
         let n = usize::from(clamp_outer_sectors(self.config.options.outer_sectors));
+        let n_inner = usize::from(clamp_inner_sectors(self.config.options.inner_sectors));
         let valid = match self.selection {
             Selection::None => true,
             Selection::Outer(i) => i < n && i < self.config.outer.len(),
-            Selection::Inner(i) => i < self.config.inner.len(),
+            Selection::Inner(i) => i < n_inner && i < self.config.inner.len(),
             Selection::Sub(p, k) => {
                 p < n
                     && self
@@ -390,6 +392,12 @@ impl Model {
                 self.selection = Selection::Sub(p, k);
             }
         }
+    }
+
+    /// Sets the number of inner sectors (clamped). Items are kept, only hidden.
+    pub fn set_inner_sectors(&mut self, n: u8) {
+        self.config.options.inner_sectors = n.clamp(MIN_INNER_SECTORS, MAX_INNER_SECTORS);
+        self.fix_selection();
     }
 
     /// Sets the number of outer sectors (clamped). Items are kept, only hidden.
@@ -577,6 +585,31 @@ mod tests {
         assert_eq!(m.config.options.outer_sectors, 12);
         m.set_selection(Selection::Outer(9));
         assert_eq!(m.selection, Selection::Outer(9));
+    }
+
+    #[test]
+    fn changing_inner_sector_count_keeps_items_and_fixes_selection() {
+        let mut m = model();
+        let name = m.config.inner[9].name.clone();
+        m.set_selection(Selection::Inner(9));
+        assert_eq!(m.selection, Selection::Inner(9));
+        m.set_inner_sectors(6);
+        assert_eq!(m.selection, Selection::None);
+        assert_eq!(m.config.inner.len(), 12);
+        assert_eq!(m.config.inner[9].name, name);
+        m.set_selection(Selection::Inner(9));
+        assert_eq!(m.selection, Selection::None);
+        m.set_selection(Selection::Inner(5));
+        assert_eq!(m.selection, Selection::Inner(5));
+        m.set_inner_sectors(0);
+        assert_eq!(m.config.options.inner_sectors, 4);
+        assert_eq!(m.selection, Selection::None);
+        m.set_inner_sectors(200);
+        assert_eq!(m.config.options.inner_sectors, 12);
+        m.set_selection(Selection::Inner(9));
+        assert_eq!(m.selection, Selection::Inner(9));
+        // The outer ring is independent.
+        assert_eq!(m.config.options.outer_sectors, 12);
     }
 
     #[test]

@@ -539,7 +539,8 @@ fn run_effect(effect: Effect) {
                 x: center.x,
                 y: center.y,
             };
-            let layout = layout_at(at, config.options.scale_pct, config.options.outer_sectors);
+            let o = &config.options;
+            let layout = layout_at(at, o.scale_pct, o.inner_sectors, o.outer_sectors);
             with_state(|s| s.trigger.set_layout(layout));
             post_to_window(
                 window,
