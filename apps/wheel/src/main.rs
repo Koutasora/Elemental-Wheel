@@ -2,6 +2,7 @@ mod actions;
 mod args;
 mod fit;
 mod hook;
+mod icons;
 mod instance;
 mod render;
 mod settings;

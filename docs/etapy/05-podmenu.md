@@ -21,7 +21,7 @@ Sprawdzenie fizyczną myszą przeniesione z etapu 04.
 ## Plan
 - [x] `crates/wheel-core/src/geometry.rs`, `layout.rs`: promienie pasma podmenu, kąty kafelków łuku, `Hit::Sub(rodzic, k)` w `hit_test` przy otwartym łuku, rozmiar okna z pasmem; testy
 - [x] `crates/wheel-core`: czysta logika stanu łuku (który otwarty po danym trafieniu) i mapowanie trafienia na `&Item`; testy
-- [ ] `apps/wheel/src/icons.rs` (nowy): ikony z plików (`SHDefExtractIconW` / `SHGetFileInfoW`, HICON na bitmapę D2D przez WIC), mapa glifów dla 12 komend edycji i 8 akcji systemowych, wybór czcionki glifów wg systemu, pamięć podręczna
+- [x] `apps/wheel/src/icons.rs` (nowy): ikony z plików (`SHDefExtractIconW` / `SHGetFileInfoW`, HICON na bitmapę D2D przez WIC), mapa glifów dla 12 komend edycji i 8 akcji systemowych, wybór czcionki glifów wg systemu, pamięć podręczna
 - [ ] `apps/wheel/src/render.rs`: kafelki łuku, kreska podmenu, podświetlenie, widok ikon, nazwa w środku
 - [ ] `apps/wheel/src/window.rs`, `fit.rs`: większe okno, stan łuku przy ruchu, wykonanie akcji z łuku w obu trybach
 - [ ] Domyślna konfiguracja: kafelek „Ustawienia” z podmenu Ekran, Dźwięk, Bluetooth, Aktualizacje (`ms-settings:`)
@@ -34,6 +34,11 @@ Sprawdzenie fizyczną myszą przeniesione z etapu 04.
 - Granica pierścienia zewnętrznego `Radii.outer` = 214 (środek szczeliny 210..218 z makiety); za nią, w kącie łuku, trafienie to kafelek łuku przy dowolnej odległości; łuk z rodzicem >= liczby sektorów albo liczbą kafelków spoza 1..=5 jest pomijany.
 - Stan łuku (`arc_for_hit`) i mapowanie trafienia na element (`item_for_hit`) w nowym `submenu.rs`: to logika trafienia, nie dane konfiguracji.
 - Okno ma bok `2 * 292` (584 px przy 100% i 96 DPI zamiast 420), żeby zmieścić pasmo podmenu; rozmiar kafelków bez zmian.
+- Ikony ładowane tylko przy `view: icons`, razem z Rendererem (odbudowa po zmianie konfiguracji odświeża pamięć podręczną); w widoku nazw zbędne, oszczędność pamięci i czasu otwarcia.
+- `icon` w konfiguracji: ścieżka z opcjonalnym `,N` (konwencja Windows, ujemne N = identyfikator zasobu), zmienne środowiskowe rozwijane, sama nazwa programu szukana przez `SearchPathW`; ładowanie `SHDefExtractIconW` w rozmiarze docelowym, a dla folderów i dokumentów `SHGetFileInfoW`; błąd daje pierwszą literę.
+- Glify także dla adresu (globus), skrótu (klawiatura), wklejenia tekstu i polecenia (wiersz poleceń); `wklej bez formatu` = E8E9. Czcionka: Segoe Fluent Icons, potem Segoe MDL2 Assets, sprawdzane przez `HasCharacter`; brak glifu daje literę.
+- Rozmiary ikon z makiety: 24 px (wewnętrzny), 36 px (zewnętrzny), 30 px (podmenu) przy 100%, skalowane z kołem.
+- COM (STA) inicjowany raz na wątku UI przy budowie ikon (wymaga go WIC); wcześniej miał go tylko wątek akcji.
 
 ## Podsumowanie
 (wypełnia /etap-zamknij)

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::mem::ManuallyDrop;
 use std::sync::Arc;
 
-use wheel_core::{Config, Hit, INNER_SECTORS, Layout};
+use wheel_core::{Config, Hit, INNER_SECTORS, Layout, ViewMode};
 
 use windows::Win32::Foundation::{E_FAIL, HMODULE, HWND};
 use windows::Win32::Graphics::Direct2D::Common::{
@@ -48,6 +48,7 @@ use windows::core::{Error, Interface, Result, w};
 use windows_numerics::Vector2;
 
 use crate::fit;
+use crate::icons::{IconSizes, Icons};
 use crate::theme::Palette;
 
 /// Outer radius of the mockup at 100% and 96 DPI; the mockup's other sizes (fonts, gaps,
@@ -76,6 +77,9 @@ pub struct Renderer {
     inner_font: IDWriteTextFormat,
     hub_font: IDWriteTextFormat,
     dwrite: IDWriteFactory,
+    /// Tile icons for the icons view; `None` in the names view. Used in step 4.
+    #[allow(dead_code)]
+    icons: Option<Icons>,
     /// Fitted text layouts per label (kind, text), built on first use: the layout never changes
     /// for the lifetime of the renderer.
     layouts: RefCell<HashMap<(Kind, String), FittedLabel>>,
@@ -131,6 +135,15 @@ impl Renderer {
 
             let dwrite: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
             let k = scale_factor(&layout);
+            let icons = (config.options.view == ViewMode::Icons).then(|| {
+                Icons::new(
+                    &ctx,
+                    &dwrite,
+                    &config,
+                    layout.outer_sectors(),
+                    IconSizes::scaled(k),
+                )
+            });
             Ok(Renderer {
                 layout,
                 palette,
@@ -147,6 +160,7 @@ impl Renderer {
                 inner_font: text_format(&dwrite, 11.5 * k)?,
                 hub_font: text_format(&dwrite, 14.0 * k)?,
                 dwrite,
+                icons,
                 layouts: RefCell::new(HashMap::new()),
             })
         }
