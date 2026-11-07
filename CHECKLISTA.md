@@ -62,7 +62,9 @@
 - [ ] Pomiar zużycia pamięci w tle
 - [ ] Pomiar czasu otwarcia koła
 - [ ] Odporność na awarie edytora i błędną konfigurację
-- [ ] Log awarii i test wielogodzinny
+- [x] Log w `%LOCALAPPDATA%\Elemental-Wheel` (koło i edytor), limit 1 MB, `--log`
+- [x] Panika w haku, oknie koła i akcji przechwycona i zapisana w logu; koło działa dalej
+- [ ] Test wielogodzinny
 
 ## 08 instalator-i-wydanie
 - [ ] Instalator, który wypisuje zainstalowaną wersję
