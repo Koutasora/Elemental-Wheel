@@ -2,7 +2,7 @@
 
 ## Cel
 Zmierzyć pamięć i czas otwarcia koła i zapisać wyniki; uodpornić koło na błędy (ostatnia dobra konfiguracja w pamięci,
-log awarii w `%LOCALAPPDATA%`), a edytor na zmianę pliku z zewnątrz. Test wielogodzinny na LAB potwierdza brak wycieków
+log awarii w `%LOCALAPPDATA%`), a edytor na zmianę pliku z zewnątrz. Przebieg `soak.ps1` na LAB potwierdza stabilność
 i żywy hak.
 
 ## Kryteria zamknięcia
@@ -14,7 +14,7 @@ i żywy hak.
 - [ ] Pomiar pamięci w tle (prywatna, working set, uchwyty, GDI/USER) w widoku nazw i ikon, wyniki w pliku etapu; cel do 15 MB prywatnej
 - [ ] Pomiar czasu otwarcia (od progu przytrzymania do pierwszej klatki): pierwsze otwarcie, kolejne, po zmianie konfiguracji; mediana i maksimum w pliku etapu; cel mediana do 16 ms
 - [ ] Renderer i ikony przygotowane od razu po wczytaniu konfiguracji, nie przy pierwszym otwarciu; układ tekstu glifów nie tworzony przy każdym odrysowaniu; pomiar przed i po
-- [ ] Test wielogodzinny na LAB (co najmniej 4 h, wejście wstrzykiwane, konfiguracja w scratchpadzie): bez awarii, hak żywy, wzrost pamięci prywatnej do 1 MB, liczba uchwytów stała
+- [ ] Przebieg `soak.ps1` 10 min na LAB (wejście wstrzykiwane, konfiguracja w scratchpadzie, zmiany konfiguracji): bez awarii i błędów cykli, hak żywy
 - [ ] `cargo build --release`, `cargo test`, clippy `-D warnings`, `cargo fmt --check` czyste
 - [ ] `README.md` (log, wyniki pomiarów) i `CHECKLISTA.md` zaktualizowane
 
@@ -28,7 +28,7 @@ i żywy hak.
 - [ ] `apps/wheel/src/window.rs`, `render.rs`, `icons.rs`: przygotowanie renderera i ikon po wczytaniu konfiguracji, pamięć podręczna układu tekstu glifów
 - [x] `tools/soak.ps1`: `wheel.exe --run --accept-injected --stats --config <scratchpad>`, cykliczne otwieranie i zamykanie (z łukiem podmenu), zmiany pliku konfiguracji (także na zepsuty), zbieranie CSV
 - [ ] Wyniki pomiarów do pliku etapu i `README.md`; `CHECKLISTA.md`
-- Sprawdzenie: tester: build, testy, clippy, fmt; krótki przebieg `soak.ps1` (10 min), potem pełny (co najmniej 4 h) z CSV; pomiary przed i po zmianach renderera; `%APPDATA%` nietknięty
+- Sprawdzenie: tester: build, testy, clippy, fmt; przebieg `soak.ps1` (10 min) z CSV; pomiary przed i po zmianach renderera; `%APPDATA%` nietknięty
 
 ## Decyzje
 - Wykrywanie ręcznej zmiany pliku przy otwartym edytorze w tym etapie (decyzja użytkownika).
@@ -46,7 +46,8 @@ i żywy hak.
 - Pamięć i uchwyty w logu przy starcie i co 60 s, wiersze `stats ...` w formacie `klucz=wartość`, żeby `soak.ps1` mógł je zamienić na CSV.
 - Kolejność kroków: `soak.ps1` przed zmianą renderera, bo służy też do pomiaru „przed”.
 - `soak.ps1` mierzy osobno widok `names` i `icons` (w konfiguracji nie ma widoku z oboma naraz); pomiar czasu otwarcia bez zmian konfiguracji (`-NoConfigChanges`), czas po zmianie konfiguracji w osobnym przebiegu.
-- Błąd znaleziony w `soak.ps1`: przytrzymanie tuż po anulowaniu Escape czasem nie otwiera koła (5 z 6 błędów cykli); diagnoza i poprawka przed zmianą renderera, bo test wielogodzinny wymaga zera błędów cykli.
+- Błąd znaleziony w `soak.ps1`: przytrzymanie tuż po anulowaniu Escape czasem nie otwiera koła (5 z 6 błędów cykli); diagnoza i poprawka przed zmianą renderera, bo przebieg `soak.ps1` wymaga zera błędów cykli.
+- Bez testu wielogodzinnego (decyzja użytkownika): komputer jest regularnie restartowany, a koło można w każdej chwili uruchomić ponownie; odłączony hak naprawia strażnik (etap 03). Zostaje 10-minutowy przebieg `soak.ps1`.
 
 ## Pomiary
 LAB: AMD Radeon Vega 11, 1920x1080, 96 DPI, wersja release, wejście wstrzykiwane, 6 min na przebieg, konfiguracja 8 sektorów zewnętrznych (jeden z podmenu 3 pozycji) i 8 wewnętrznych.
