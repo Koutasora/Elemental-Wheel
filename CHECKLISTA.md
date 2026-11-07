@@ -46,10 +46,15 @@
 - [x] Sprawdzenie fizyczną myszą
 
 ## 06 edytor
-- [ ] Edytor jako osobny proces z podglądem
-- [ ] Edycja elementu: nazwa, typ akcji, cel, ikona, podmenu
-- [ ] Edytowalna nazwa każdego elementu, także komend edycji w pierścieniu wewnętrznym
-- [ ] Zapis konfiguracji do JSON
+- [x] Edytor jako osobny proces z podglądem
+- [x] Edycja elementu: nazwa, typ akcji, cel, ikona, podmenu
+- [x] Edytowalna nazwa każdego elementu, także komend edycji w pierścieniu wewnętrznym
+- [x] Zapis konfiguracji do JSON (walidacja przed zapisem, `.bak` tylko z poprawnego pliku)
+- [x] Opcje koła w edytorze (motyw, rozmiar, sektory, widok, progi, pełny ekran, wykluczenia)
+- [x] Przeciągnięcie pliku na kafelek podglądu
+- [x] Polskie komunikaty błędów i ostrzeżeń w edytorze
+- [ ] Układ okna zatwierdzony na zrzucie
+- [ ] Test na LAB: zapis, `.bak`, przeładowanie w działającym kole
 
 ## 07 stabilnosc-i-pomiary
 - [ ] Pomiar zużycia pamięci w tle

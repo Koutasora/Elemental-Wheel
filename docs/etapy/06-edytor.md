@@ -28,7 +28,7 @@ Poprawiony `save()`: do `.bak` trafia tylko poprawny plik.
 - [x] `apps/wheel-editor/src/panel.rs`, `options.rs`: panel kafelka i panel opcji
 - [x] `apps/wheel-editor/src/main.rs`: argumenty (`--version`, `--config`), okno, wczytanie, zapis, pytanie przy zamykaniu
 - [ ] Zrzut pierwszej wersji układu do akceptacji użytkownika
-- [ ] `README.md`, `CHECKLISTA.md`
+- [x] `README.md`, `CHECKLISTA.md`
 - Sprawdzenie: tester: build, testy, clippy, fmt; skrypt PowerShell: edytor z `--config` w scratchpadzie, zrzuty, sprawdzenie zapisu, `.bak` i przeładowania w `wheel.exe` (`--accept-injected`); na końcu krótki test ręczny użytkownika
 
 ## Decyzje

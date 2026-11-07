@@ -2,7 +2,7 @@
 
 Action wheel opened by holding the right mouse button, laid out like the circle of fifths (Windows 10/11).
 
-Status: stage 05, choosing a sector runs its action (program, file, URL, shortcut, edit command, text, command, system action); outer sectors can have a submenu arc of up to 5 tiles; tiles show names or icons. The choice is also printed.
+Status: stage 06, choosing a sector runs its action (program, file, URL, shortcut, edit command, text, command, system action); outer sectors can have a submenu arc of up to 5 tiles; tiles show names or icons. The choice is also printed. A separate editor window edits the tiles and options.
 
 ## Build
 
@@ -45,9 +45,23 @@ target\release\wheel.exe --quit
 - `--hold-ms`, `--move-px` - hold time and movement threshold (defaults 180 and 6).
 - The action runs in the window under the cursor when the button went down. Windows blocks injected input to windows of programs run as administrator, where the wheel does not open anyway.
 
+## Editor
+
+```
+targetelease\wheel-editor.exe [--config <path>]
+targetelease\wheel-editor.exe --version
+```
+
+- Opens `%APPDATA%\Elemental-Wheel\config.json` or the file given with `--config`. A missing file shows the defaults and is created on the first save. Load errors and warnings are shown in the bottom bar.
+- Left: preview of the wheel (both rings, sector count, names or icons, theme, submenu arc of the selected tile). Click a tile to select it.
+- Right, tab "Kafelek": name, action type with its fields (program path, arguments and working folder; file or folder; URL; shortcut; edit command; text; command line; system action), icon path, emptying the slot. Outer tiles get a submenu of up to 5 tiles: add, remove, move up and down. Every name can be changed, edit commands in the inner ring included.
+- Tab "Opcje": theme, size 60-140%, outer sectors 4-12, view, hold time, movement threshold, full screen switch, excluded programs. Fewer sectors hide the extra items without deleting them.
+- Dropping a file or folder on a tile of the preview makes it a `program` item (`.exe`, `.lnk`, `.bat`, `.cmd`) or an `open` item, named after the file; the tile keeps its submenu.
+- Save with "Zapisz" or Ctrl+S. The configuration is validated first; on an error the file is left as it was and the reason is shown. Unsaved changes are marked in the title bar and the bottom bar; closing or reloading asks first. A running `wheel.exe` picks up the saved file by itself.
+
 ## Configuration
 
-`%APPDATA%\Elemental-Wheel\config.json`, created with the defaults on first start. UTF-8 (a UTF-16 file with BOM, as PowerShell 5.1 writes it, is read too). Every valid file that is loaded is copied to `config.json.bak` (the last good version); saving is atomic (temporary file, then replace).
+`%APPDATA%\Elemental-Wheel\config.json`, created with the defaults on first start. UTF-8 (a UTF-16 file with BOM, as PowerShell 5.1 writes it, is read too). Every valid file that is loaded is copied to `config.json.bak` (the last good version); saving is atomic (temporary file, then replace) and copies the previous file to `.bak` only if it loads without error.
 
 ```json
 {
