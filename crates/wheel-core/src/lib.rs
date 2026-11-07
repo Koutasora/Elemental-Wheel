@@ -2,6 +2,7 @@
 
 pub mod config;
 pub mod geometry;
+pub mod icon;
 pub mod keys;
 pub mod layout;
 pub mod submenu;

@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::mem::ManuallyDrop;
 use std::sync::Arc;
 
+use wheel_core::icon::IconSizes;
 use wheel_core::{Config, Hit, INNER_SECTORS, Layout, SubArc, ViewMode};
 
 use windows::Win32::Foundation::{E_FAIL, HMODULE, HWND};
@@ -50,7 +51,7 @@ use windows::core::{Error, Interface, Result, w};
 use windows_numerics::Vector2;
 
 use crate::fit;
-use crate::icons::{IconSizes, Icons, TileIcon};
+use crate::icons::{Icons, TileIcon};
 use crate::theme::Palette;
 
 /// Outer radius of the mockup at 100% and 96 DPI; the mockup's other sizes (fonts, gaps,
