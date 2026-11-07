@@ -86,7 +86,7 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
     );
     let hit = hit_at(&layout, center, cursor);
     let renderer = match Renderer::new(hwnd, layout, theme::palette(o.theme), config.clone())
-        .and_then(|r| r.draw(hit).map(|()| r))
+        .and_then(|r| r.draw(hit, None).map(|()| r))
     {
         Ok(r) => r,
         Err(e) => {
@@ -234,7 +234,7 @@ fn poll(state: &mut State) -> Result<()> {
     let hit = hit_at(&state.layout, state.center, cursor_pos()?);
     if hit != state.hit {
         state.hit = hit;
-        state.renderer.draw(hit)?;
+        state.renderer.draw(hit, None)?;
     }
     Ok(())
 }
@@ -314,7 +314,7 @@ pub fn run_background(options: &RunOptions, config_path: PathBuf) -> Result<()> 
 
     let palette = theme::palette(config.options.theme);
     let renderer = match Renderer::new(hwnd, layout, palette, config.clone())
-        .and_then(|r| r.draw(Hit::Center).map(|()| r))
+        .and_then(|r| r.draw(Hit::Center, None).map(|()| r))
     {
         Ok(r) => r,
         Err(e) => {
@@ -404,7 +404,7 @@ fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<()> {
     );
     s.hit = hit_at(&layout, s.center, cursor_pos()?);
     if let Some(renderer) = &s.renderer {
-        renderer.draw(s.hit)?;
+        renderer.draw(s.hit, None)?;
     }
     // SAFETY: `hwnd` is the live window of this thread.
     unsafe {
@@ -437,7 +437,7 @@ fn poll_run(s: &mut RunState) -> Result<()> {
     if hit != s.hit {
         s.hit = hit;
         if let Some(renderer) = &s.renderer {
-            renderer.draw(hit)?;
+            renderer.draw(hit, None)?;
         }
     }
     Ok(())

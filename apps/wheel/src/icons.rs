@@ -24,8 +24,10 @@ use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
 };
 use windows::Win32::System::Environment::ExpandEnvironmentStringsW;
+use windows::Win32::UI::Controls::{IImageList, ILD_TRANSPARENT};
 use windows::Win32::UI::Shell::{
-    SHDefExtractIconW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGetFileInfoW,
+    SHDefExtractIconW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGFI_SYSICONINDEX,
+    SHGetFileInfoW, SHGetImageList, SHIL_EXTRALARGE, SHIL_JUMBO,
 };
 use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, HICON};
 use windows::core::{Interface, PCWSTR, Result, w};
@@ -74,7 +76,6 @@ pub enum IconSpec {
 }
 
 /// What a tile draws once loaded.
-#[allow(dead_code)] // fields are read in step 4 (render.rs)
 pub enum TileIcon<'a> {
     Bitmap(&'a ID2D1Bitmap),
     /// Draw with `Icons::glyph_format`.
@@ -221,7 +222,6 @@ impl Icons {
     }
 
     /// What the tile `hit` shows; `Blank` for the centre and unknown tiles.
-    #[allow(dead_code)] // used in step 4 (render.rs)
     pub fn icon_for(&self, hit: Hit) -> TileIcon<'_> {
         let tile = match hit {
             Hit::Inner(i) => self.inner.get(usize::from(i)),
@@ -243,7 +243,6 @@ impl Icons {
     /// Centred text format of the glyph font at the outer-ring icon size (resize per use with
     /// `SetFontSize` on a layout); `None` when no icon font exists, in which case no tile is a
     /// `Glyph`.
-    #[allow(dead_code)] // used in step 4 (render.rs)
     pub fn glyph_format(&self) -> Option<&IDWriteTextFormat> {
         self.glyph_format.as_ref()
     }
@@ -383,7 +382,7 @@ fn load_wic(
 ) -> Result<IWICBitmapSource> {
     let file = wide(path);
     let hicon = extract_icon(&file, index, size)
-        .or_else(|| shell_icon(&file))
+        .or_else(|| shell_icon(&file, size))
         .ok_or_else(|| windows::core::Error::from(windows::Win32::Foundation::E_FAIL))?;
     // SAFETY: `hicon` is a valid icon owned here; it is destroyed once WIC has copied it.
     let converter = unsafe {
@@ -428,10 +427,34 @@ fn extract_icon(file: &[u16], index: i32, size: u32) -> Option<HICON> {
     Some(large)
 }
 
-/// The shell's large icon for `file` (NUL-terminated); works for folders and documents.
-fn shell_icon(file: &[u16]) -> Option<HICON> {
+/// The shell icon for `file` (NUL-terminated); works for folders and documents. Taken from the
+/// system image list in a size of at least `size` (48 px, or 256 px beyond that): the plain large
+/// icon is 32 px with an empty margin and would look small once scaled to the tile's icon box.
+fn shell_icon(file: &[u16], size: u32) -> Option<HICON> {
     let mut info = SHFILEINFOW::default();
+    let list = if size <= 48 {
+        SHIL_EXTRALARGE
+    } else {
+        SHIL_JUMBO
+    };
     // SAFETY: `file` is NUL-terminated; `info` is a valid out structure of the size given.
+    let from_list = unsafe {
+        let ok = SHGetFileInfoW(
+            PCWSTR(file.as_ptr()),
+            FILE_ATTRIBUTE_NORMAL,
+            Some(&mut info),
+            size_of::<SHFILEINFOW>() as u32,
+            SHGFI_SYSICONINDEX,
+        );
+        (ok != 0)
+            .then(|| SHGetImageList::<IImageList>(list as i32).ok())
+            .flatten()
+            .and_then(|images| images.GetIcon(info.iIcon, ILD_TRANSPARENT.0).ok())
+    };
+    if from_list.is_some() {
+        return from_list;
+    }
+    // SAFETY: as above.
     let ok = unsafe {
         SHGetFileInfoW(
             PCWSTR(file.as_ptr()),

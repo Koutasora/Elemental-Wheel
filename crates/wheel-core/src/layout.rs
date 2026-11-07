@@ -20,6 +20,8 @@ const BASE_OUTER: f32 = 210.0;
 const BASE_OUTER_LIMIT: f32 = 214.0;
 const BASE_SUB_INNER: f32 = 218.0;
 const BASE_SUB_OUTER: f32 = 292.0;
+// Free space around the arc band, so its outline and antialiasing are not clipped by the window.
+const BASE_EDGE_MARGIN: f32 = 4.0;
 
 /// Clamps the scale to `MIN_SCALE_PCT..=MAX_SCALE_PCT`.
 pub fn clamp_scale_pct(pct: u16) -> u16 {
@@ -81,9 +83,10 @@ impl Layout {
         sub_tile_span(arc, k, self.outer_sectors)
     }
 
-    /// Side length of a square window that fits the wheel with its submenu arc band.
+    /// Side length of a square window that fits the wheel with its submenu arc band and a small
+    /// margin around it.
     pub fn size_px(&self) -> u32 {
-        (self.sub_radii().1 * 2.0).ceil() as u32
+        ((BASE_SUB_OUTER + BASE_EDGE_MARGIN) * self.factor * 2.0).ceil() as u32
     }
 }
 
@@ -131,7 +134,7 @@ mod tests {
         assert!(close(l.radii().outer, 214.0));
         assert!(close(l.sub_radii().0, 218.0));
         assert!(close(l.sub_radii().1, 292.0));
-        assert_eq!(l.size_px(), 584);
+        assert_eq!(l.size_px(), 592);
     }
 
     #[test]
@@ -164,8 +167,12 @@ mod tests {
         for dpi in [96u32, 120, 144, 192] {
             for pct in [60u16, 77, 100, 140] {
                 let l = Layout::new(dpi, pct, 12);
-                assert!(l.size_px() as f32 >= l.sub_radii().1 * 2.0);
-                assert!((l.size_px() as f32) < l.sub_radii().1 * 2.0 + 1.0);
+                let margin = BASE_EDGE_MARGIN * l.factor;
+                let side = (l.sub_radii().1 + margin) * 2.0;
+                assert!(l.size_px() as f32 >= side);
+                assert!((l.size_px() as f32) < side + 1.0);
+                // At least 2 px free on each side even at the smallest scale.
+                assert!(margin >= 2.0);
             }
         }
     }
