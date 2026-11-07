@@ -4,12 +4,14 @@
 # --stats lines of the log into CSV files and a summary. Exit code 0 = PASS, 1 = FAIL.
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\soak.ps1 -WorkDir <dir> [-Minutes 10]
+#     [-View names|icons] [-NoConfigChanges] [-ConfigEveryMinutes 2] [-Progress <file>]
 param(
     [Parameter(Mandatory = $true)][string]$WorkDir,
     [int]$Minutes = 10,
     [string]$Exe,
     [int]$ConfigEveryMinutes = 2,
     [switch]$NoConfigChanges,
+    [ValidateSet('names', 'icons')][string]$View = 'icons',
     [string]$Progress
 )
 $ErrorActionPreference = 'Stop'
@@ -142,7 +144,7 @@ function New-ConfigText($v) {
         version = 1
         options = @{
             theme = $v.theme; scale_pct = $v.scale; inner_sectors = 8; outer_sectors = $v.outer
-            view = 'icons'; hold_ms = $holdMs; move_px = 6; disable_in_fullscreen = $false; excluded = @()
+            view = $View; hold_ms = $holdMs; move_px = 6; disable_in_fullscreen = $false; excluded = @()
         }
         outer = $outer
         inner = $inner
@@ -464,7 +466,7 @@ if ($script:cycleErrors -gt 0) { $fails += "cycle errors: $($script:cycleErrors)
 if ($script:logErrors -gt 0) { $fails += "log errors/panics: $($script:logErrors) (errors.txt)" }
 
 $s = New-Object System.Collections.Generic.List[string]
-$s.Add(("soak: duration {0:hh\:mm\:ss}, requested {1} min, dpi {2}, screen {3}x{4}" -f $elapsed, $Minutes, $dpi, $screenW, $screenH))
+$s.Add(("soak: duration {0:hh\:mm\:ss}, requested {1} min, view {5}, dpi {2}, screen {3}x{4}" -f $elapsed, $Minutes, $dpi, $screenW, $screenH, $View))
 $s.Add("cycles: $cycles, cycle errors: $($script:cycleErrors), log errors: $($script:logErrors), expected config errors: $($script:expectedErrors)")
 $s.Add("config changes: good $configChanges, broken $brokenWrites")
 $s.Add('open times (total_ms), median / max / count:')
