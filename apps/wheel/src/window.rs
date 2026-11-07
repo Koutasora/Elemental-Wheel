@@ -42,6 +42,11 @@ pub const WM_WHEEL_CLOSE: u32 = WM_APP + 2;
 pub const WM_WHEEL_QUIT: u32 = WM_APP + 3;
 /// Posted by the config folder watcher: something in the folder changed.
 pub const WM_CONFIG_CHANGED: u32 = WM_APP + 4;
+/// Posted by the hook thread when the right button goes down and the wheel may open at
+/// (wparam, lparam) = (x, y): take the snapshot of the desktop now.
+pub const WM_WHEEL_PRESS: u32 = WM_APP + 5;
+/// Posted by the hook thread when that press turned out to be a click or a drag: drop the snapshot.
+pub const WM_WHEEL_DISCARD: u32 = WM_APP + 6;
 
 const POLL_TIMER: usize = 1;
 const POLL_MS: u32 = 16;
@@ -114,7 +119,7 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
     )
     .and_then(|r| {
         // The window is still hidden, so the snapshot shows the desktop without it.
-        log_glass(r.prepare(left, top));
+        log_glass("demo", r.prepare(left, top));
         r.draw(hit, arc).map(|()| r)
     }) {
         Ok(r) => r,
@@ -382,7 +387,8 @@ struct RunState {
 }
 
 /// Background mode: a hidden click-through window plus the hook thread; runs until
-/// `WM_WHEEL_QUIT`. The render resources are created once up front so that opening is fast.
+/// `WM_WHEEL_QUIT`. The render resources are created up front (and again after a configuration
+/// change) so that opening is fast.
 pub fn run_background(options: &RunOptions, config_path: PathBuf) -> Result<()> {
     // SAFETY: called once at startup before any window exists.
     unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)? };
@@ -400,9 +406,7 @@ pub fn run_background(options: &RunOptions, config_path: PathBuf) -> Result<()> 
 
     let palette = theme::palette(config.options.theme);
     let glass = options.wheel.glass_level();
-    let renderer = match Renderer::new(hwnd, layout, palette, config.clone(), glass)
-        .and_then(|r| r.draw(Hit::Center, None).map(|()| r))
-    {
+    let renderer = match build_renderer(hwnd, layout, palette, &config, glass) {
         Ok(r) => r,
         Err(e) => {
             // SAFETY: `hwnd` was created above and is destroyed only here.
@@ -472,9 +476,25 @@ unsafe fn run_state<'a>(hwnd: HWND) -> Option<&'a mut RunState> {
     unsafe { (GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut RunState).as_mut() }
 }
 
-/// Picks up a changed config file: the hook thread gets the new configuration, the wheel the
-/// new look (rebuilt in `open_wheel`).
-fn reload(s: &mut RunState, apply_layout: bool) {
+/// Creates the renderer with everything it would otherwise build at the first open (see
+/// `Renderer::warm`) and shows its first frame.
+fn build_renderer(
+    hwnd: HWND,
+    layout: Layout,
+    palette: Palette,
+    config: &Arc<Config>,
+    glass: f32,
+) -> Result<Renderer> {
+    let renderer = Renderer::new(hwnd, layout, palette, config.clone(), glass)?;
+    renderer.warm();
+    renderer.draw(Hit::Center, None)?;
+    Ok(renderer)
+}
+
+/// Picks up a changed config file: the hook thread gets the new configuration. When the wheel is
+/// hidden (`apply_layout`) the renderer with the new look is built at once; otherwise it is
+/// rebuilt in `open_wheel`.
+fn reload(hwnd: HWND, s: &mut RunState, apply_layout: bool) {
     if let Some(config) = s.settings.refresh() {
         hook::publish(config.clone());
         s.palette = theme::palette(config.options.theme);
@@ -485,7 +505,20 @@ fn reload(s: &mut RunState, apply_layout: bool) {
             s.sectors = config.options.outer_sectors;
         }
         s.config = config;
+        // The old renderer goes first, a window can have only one composition target.
         s.renderer = None;
+        if apply_layout {
+            let at = cursor_pos().unwrap_or_default();
+            let layout = layout_at(at, s.scale_pct, s.inner_sectors, s.sectors);
+            match build_renderer(hwnd, layout, s.palette, &s.config, s.glass) {
+                Ok(renderer) => {
+                    s.renderer = Some(renderer);
+                    s.layout = layout;
+                }
+                // The open will try again and report the error.
+                Err(e) => wheel_core::log_line!("cannot rebuild the renderer after a reload: {e}"),
+            }
+        }
     }
 }
 
@@ -502,13 +535,7 @@ fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<OpenKind> {
         // The monitor DPI differs: size and fonts change, so the render resources are rebuilt.
         // The old ones go first, a window can have only one composition target.
         s.renderer = None;
-        s.renderer = Some(Renderer::new(
-            hwnd,
-            layout,
-            s.palette,
-            s.config.clone(),
-            s.glass,
-        )?);
+        s.renderer = Some(build_renderer(hwnd, layout, s.palette, &s.config, s.glass)?);
         s.layout = layout;
     }
     let size = layout.size_px() as i32;
@@ -525,7 +552,7 @@ fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<OpenKind> {
         // without it.
         let times = renderer.prepare(left, top);
         if stats::enabled() {
-            log_glass(times);
+            log_glass("open", times);
         }
         renderer.draw(s.hit, s.arc)?;
     }
@@ -547,10 +574,28 @@ fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<OpenKind> {
     Ok(kind)
 }
 
+/// Takes the snapshot of the desktop for a wheel that may open at `at`; the window is hidden
+/// now. `open_wheel` uses it if the wheel does open there with the same layout.
+fn take_snapshot(s: &RunState, at: POINT) {
+    let Some(renderer) = &s.renderer else {
+        return;
+    };
+    let layout = layout_at(at, s.scale_pct, s.inner_sectors, s.sectors);
+    if layout != s.layout {
+        // Another monitor DPI: the open rebuilds the renderer anyway.
+        return;
+    }
+    let size = layout.size_px() as i32;
+    let times = renderer.snapshot(at.x - size / 2, at.y - size / 2);
+    if stats::enabled() {
+        log_glass("press", times);
+    }
+}
+
 /// Logs how long the snapshot of the desktop and its blur took (capture, upload plus blur).
-fn log_glass(times: Option<(f64, f64)>) {
+fn log_glass(when: &str, times: Option<(f64, f64)>) {
     if let Some((capture, blur)) = times {
-        wheel_core::log_line!("glass: capture_ms={capture:.3} blur_ms={blur:.3}");
+        wheel_core::log_line!("glass {when}: capture_ms={capture:.3} blur_ms={blur:.3}");
     }
 }
 
@@ -611,7 +656,7 @@ unsafe fn run_wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                 let started = stats::open_started();
                 guard::fire(PanicTest::Window);
                 run_state(hwnd).map_or(Ok(()), |s| {
-                    reload(s, false);
+                    reload(hwnd, s, false);
                     let opened = open_wheel(hwnd, s, center);
                     if let (Some(started), Ok(kind)) = (started, &opened) {
                         stats::open_finished(started, *kind);
@@ -622,8 +667,27 @@ unsafe fn run_wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                     opened.map(|_| ())
                 })
             }
-            WM_WHEEL_CLOSE => {
-                close_wheel(hwnd);
+            WM_WHEEL_PRESS => {
+                let at = POINT {
+                    x: wparam.0 as i32,
+                    y: lparam.0 as i32,
+                };
+                // Only while the wheel is hidden; a failure costs nothing, the open takes the
+                // snapshot itself then.
+                if !IsWindowVisible(hwnd).as_bool()
+                    && let Some(s) = run_state(hwnd)
+                {
+                    take_snapshot(s, at);
+                }
+                return LRESULT(0);
+            }
+            WM_WHEEL_DISCARD | WM_WHEEL_CLOSE => {
+                if msg == WM_WHEEL_CLOSE {
+                    close_wheel(hwnd);
+                }
+                if let Some(Some(renderer)) = run_state(hwnd).map(|s| s.renderer.as_ref()) {
+                    renderer.release_snapshot();
+                }
                 return LRESULT(0);
             }
             WM_TIMER if wparam.0 == POLL_TIMER => run_state(hwnd).map_or(Ok(()), poll_run),
@@ -646,7 +710,7 @@ unsafe fn run_wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                 }
                 let _ = KillTimer(Some(hwnd), CONFIG_TIMER);
                 if let Some(s) = run_state(hwnd) {
-                    reload(s, true);
+                    reload(hwnd, s, true);
                 }
                 return LRESULT(0);
             }

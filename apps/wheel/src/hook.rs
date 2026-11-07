@@ -53,7 +53,7 @@ use crate::actions;
 use crate::args::PanicTest;
 use crate::guard;
 use crate::watchdog;
-use crate::window::{WM_WHEEL_CLOSE, WM_WHEEL_OPEN, layout_at};
+use crate::window::{WM_WHEEL_CLOSE, WM_WHEEL_DISCARD, WM_WHEEL_OPEN, WM_WHEEL_PRESS, layout_at};
 
 /// `dwExtraInfo` of the input this program injects ("ELWH").
 pub const MARKER: usize = 0x454C_5748;
@@ -265,6 +265,14 @@ impl HookState {
                         self.trigger.reset();
                         return false;
                     }
+                    // The wheel opens at this point once the hold time has elapsed; the window
+                    // takes the desktop snapshot meanwhile.
+                    post_to_window(
+                        self.window,
+                        WM_WHEEL_PRESS,
+                        info.pt.x as isize as usize,
+                        info.pt.y as isize,
+                    );
                 }
                 EventKind::RightUp { .. } if self.passthrough_right => {
                     self.passthrough_right = false;
@@ -590,17 +598,23 @@ fn run_effect(effect: Effect) {
         Effect::StartHoldTimer(ms) => {
             with_state(|s| s.start_timer(ms));
         }
-        Effect::ReplayClick { down_pos, up_pos } => send_mouse(&[
-            mouse_input(down_pos, MOUSEEVENTF_RIGHTDOWN),
-            mouse_input(up_pos, MOUSEEVENTF_RIGHTUP),
-        ]),
+        Effect::ReplayClick { down_pos, up_pos } => {
+            discard_snapshot();
+            send_mouse(&[
+                mouse_input(down_pos, MOUSEEVENTF_RIGHTDOWN),
+                mouse_input(up_pos, MOUSEEVENTF_RIGHTUP),
+            ]);
+        }
         Effect::ReplayDragStart {
             down_pos,
             current_pos,
-        } => send_mouse(&[
-            mouse_input(down_pos, MOUSEEVENTF_RIGHTDOWN),
-            mouse_input(current_pos, MOUSE_EVENT_FLAGS(0)),
-        ]),
+        } => {
+            discard_snapshot();
+            send_mouse(&[
+                mouse_input(down_pos, MOUSEEVENTF_RIGHTDOWN),
+                mouse_input(current_pos, MOUSE_EVENT_FLAGS(0)),
+            ]);
+        }
         Effect::OpenWheel { center } => {
             let (Some(window), Some(config)) = (with_state(|s| s.window), current()) else {
                 return;
@@ -641,6 +655,13 @@ fn run_effect(effect: Effect) {
             print_line("cancelled");
             post_to_window(window, WM_WHEEL_CLOSE, 0, 0);
         }
+    }
+}
+
+/// The press did not open the wheel (a click or a drag): the window can drop its snapshot.
+fn discard_snapshot() {
+    if let Some(window) = with_state(|s| s.window) {
+        post_to_window(window, WM_WHEEL_DISCARD, 0, 0);
     }
 }
 

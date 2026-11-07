@@ -25,7 +25,8 @@ fn base() -> Instant {
 pub enum OpenKind {
     /// The renderer was kept.
     Same,
-    /// The renderer was rebuilt after a configuration change.
+    /// The renderer was rebuilt by the open itself because a configuration change had not been
+    /// applied yet (normally it is rebuilt right after the change, outside any open).
     Reload,
     /// The renderer was rebuilt because the layout (monitor DPI) changed.
     Dpi,

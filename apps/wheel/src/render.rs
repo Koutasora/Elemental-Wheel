@@ -3,12 +3,13 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use wheel_core::icon::IconSizes;
-use wheel_core::{Config, Hit, Layout, SubArc, ViewMode};
+use wheel_core::{Config, Hit, Layout, SubArc, ViewMode, arc_for_hit};
 
 use std::time::Instant;
 
@@ -64,7 +65,7 @@ use windows::Win32::Graphics::Dxgi::{
     IDXGIDevice, IDXGIFactory2, IDXGISurface, IDXGISwapChain1,
 };
 use windows::core::{Error, Interface, Result, w};
-use windows_numerics::Vector2;
+use windows_numerics::{Matrix3x2, Vector2};
 
 use crate::backdrop;
 use crate::fit;
@@ -142,6 +143,8 @@ struct Painter {
     /// Tile shapes of the inner and the outer ring; built once.
     inner_tiles: Vec<ID2D1Geometry>,
     outer_tiles: Vec<ID2D1Geometry>,
+    /// Notch at the outer edge of each outer tile that has a submenu; built once.
+    notches: Vec<Option<ID2D1Geometry>>,
     /// Shapes of the submenu arcs drawn so far, by (parent, tile count).
     arcs: RefCell<HashMap<(u8, u8), Rc<ArcShapes>>>,
     /// GPU resources of the glass look; `None` when it is off or could not be set up.
@@ -159,6 +162,8 @@ struct Painter {
     /// Fitted text layouts per label (kind, text), built on first use: the layout never changes
     /// for the lifetime of the renderer.
     layouts: RefCell<HashMap<(Kind, String), FittedLabel>>,
+    /// Layouts of the letters and glyphs shown as icons, by (glyph font, character, box side).
+    icon_layouts: RefCell<HashMap<(bool, char, u32), IDWriteTextLayout>>,
 }
 
 /// Direct2D objects of the glass look. The snapshot of the desktop is blurred once per open into
@@ -168,23 +173,36 @@ struct Frost {
     /// Second context: bakes label halos while `Painter::ctx` is in the middle of a frame.
     aux: ID2D1DeviceContext,
     aux_brush: ID2D1SolidColorBrush,
-    /// Snapshot (window plus `pad` px on every side) as uploaded to the GPU, input of the blur.
-    source: ID2D1Bitmap1,
-    /// Gaussian blur of `source`, then saturation and brightness.
+    /// Gaussian blur of the snapshot (input 0, set per snapshot).
+    blur: ID2D1Effect,
+    /// Saturation and brightness of the blur.
     tone: ID2D1Effect,
     /// Soft shadow of a label, for its halo.
     shadow: ID2D1Effect,
-    /// Blurred snapshot cropped to the window.
-    result: ID2D1Bitmap1,
-    backdrop: ID2D1BitmapBrush1,
+    /// The blurred snapshot of the current open (or press); it exists only while the wheel is
+    /// shown or about to be.
+    snap: RefCell<Option<Snap>>,
     /// White to transparent, top to bottom; the points are set per use.
     sheen: ID2D1LinearGradientBrush,
     /// Where the sheen lies on the disc.
     sheen_shape: ID2D1Geometry,
     /// Extra snapshot pixels on every side, so that the blur has real pixels to draw from.
     pad: u32,
+    /// Extra pixels around the window that a press-time snapshot covers, for the distance the
+    /// pointer can travel before the wheel opens.
+    margin: i32,
     /// Standard deviation of the label halo, in px.
     halo_sigma: f32,
+}
+
+/// The blurred desktop for one open, `SCALE` times smaller than the screen.
+struct Snap {
+    /// Paints the blurred snapshot of the window area plus `margin` px on every side at full
+    /// size, positioned for the window; see `Painter::place_snapshot`.
+    brush: ID2D1BitmapBrush1,
+    /// Top-left corner of the window the snapshot was taken for.
+    taken: (i32, i32),
+    margin: i32,
 }
 
 impl Renderer {
@@ -245,37 +263,51 @@ impl Renderer {
         }
     }
 
-    /// Takes the snapshot of the desktop for the glass look: call it with the window still
-    /// hidden, right before `draw`, giving the window's top-left corner in screen pixels. Without
-    /// it, or when it fails (logged), `draw` paints the opaque look. Returns the milliseconds the
-    /// capture and the upload plus blur took, `None` when there is no glass look.
+    /// Makes the blurred desktop for the glass look ready for `draw`: call it with the window
+    /// still hidden, giving the window's top-left corner in screen pixels. It uses the snapshot
+    /// taken by `snapshot` when that covers the window, otherwise takes one now. Without it, or
+    /// when it fails (logged), `draw` paints the opaque look. Returns the milliseconds the
+    /// capture and the upload plus blur took (0 for a snapshot taken earlier), `None` when there
+    /// is no glass look.
     pub fn prepare(&self, left: i32, top: i32) -> Option<(f64, f64)> {
         let frost = self.painter.frost.as_ref()?;
         self.painter.glass.set(false);
-        let side = self.painter.size + 2 * frost.pad;
-        let pad = frost.pad as i32;
-        let started = Instant::now();
-        let snapshot = match backdrop::capture(left - pad, top - pad, side) {
-            Ok(snapshot) => snapshot,
-            Err(e) => {
-                wheel_core::log_line!("glass: cannot capture the desktop: {e}; opaque look");
-                return None;
-            }
-        };
-        let uploaded = self.painter.upload(snapshot.pixels(), snapshot.pitch());
-        // The pixels are on the GPU now; the CPU copy is not kept.
-        drop(snapshot);
-        let captured = Instant::now();
-        let blurred = uploaded.and_then(|()| self.painter.blur());
-        if let Err(e) = blurred {
-            wheel_core::log_line!("glass: cannot blur the desktop: {e}; opaque look");
-            return None;
+        let mut times = (0.0, 0.0);
+        if !self.painter.place_snapshot(left, top) {
+            times = self.take_snapshot(left, top, 0)?;
+            self.painter.place_snapshot(left, top);
         }
-        self.painter.glass.set(true);
-        Some((
-            (captured - started).as_secs_f64() * 1e3,
-            captured.elapsed().as_secs_f64() * 1e3,
-        ))
+        self.painter.glass.set(frost.snap.borrow().is_some());
+        Some(times)
+    }
+
+    /// Takes the snapshot early, when the button goes down and the window (which opens with its
+    /// top-left corner at (`left`, `top`) unless the pointer moves) is still hidden, so that
+    /// `prepare` finds it ready. Returns the milliseconds as `prepare` does.
+    pub fn snapshot(&self, left: i32, top: i32) -> Option<(f64, f64)> {
+        let margin = self.painter.frost.as_ref()?.margin;
+        self.take_snapshot(left, top, margin)
+    }
+
+    /// Frees the snapshot (the wheel closed, or the press did not open it).
+    pub fn release_snapshot(&self) {
+        self.painter.release_snapshot();
+    }
+
+    fn take_snapshot(&self, left: i32, top: i32, margin: i32) -> Option<(f64, f64)> {
+        self.painter
+            .take_snapshot(left, top, margin)
+            .map_err(|e| wheel_core::log_line!("glass: cannot take the snapshot: {e}; opaque look"))
+            .ok()
+    }
+
+    /// Builds everything that would otherwise be made on first use (label layouts and halos,
+    /// submenu shapes, effect pipelines), so that the first open is as fast as the later ones.
+    /// Failures are logged; the wheel still draws, only slower the first time.
+    pub fn warm(&self) {
+        if let Err(e) = self.painter.warm() {
+            wheel_core::log_line!("cannot warm the renderer up: {e}");
+        }
     }
 
     /// Draws the whole wheel with `hit` highlighted and the submenu `arc` open (if any), and
@@ -370,6 +402,30 @@ impl Painter {
                     sector_path(&d2d_factory, c, rings.outer, span, round)
                 })
                 .collect::<Result<Vec<_>>>()?;
+            let notch_ring = (
+                layout.outer_radius() - NOTCH_FAR * k,
+                layout.outer_radius() - NOTCH_NEAR * k,
+            );
+            let notches = (0..layout.outer_sectors())
+                .map(|i| {
+                    let has_submenu = config
+                        .outer_item(usize::from(i))
+                        .is_some_and(|item| !item.submenu.is_empty());
+                    if !has_submenu {
+                        return Ok(None);
+                    }
+                    let (a1, a2) = layout.outer_span(i);
+                    let mid = (a1 + a2) / 2.0;
+                    sector_path(
+                        &d2d_factory,
+                        c,
+                        notch_ring,
+                        (mid - NOTCH_HALF_DEG, mid + NOTCH_HALF_DEG),
+                        0.0,
+                    )
+                    .map(Some)
+                })
+                .collect::<Result<Vec<_>>>()?;
             let frost = if glass > 0.0 {
                 Frost::new(
                     &d2d_device,
@@ -381,6 +437,7 @@ impl Painter {
                     plate_radius,
                     &wheel_plate,
                     glass,
+                    (config.options.move_px as f32 * layout.dpi_factor()).ceil() as i32,
                 )
                 .map_err(|e| wheel_core::log_line!("glass: {e}; using the opaque look"))
                 .ok()
@@ -410,6 +467,7 @@ impl Painter {
                 wheel_plate,
                 inner_tiles,
                 outer_tiles,
+                notches,
                 arcs: RefCell::new(HashMap::new()),
                 frost,
                 glass: Cell::new(false),
@@ -423,6 +481,7 @@ impl Painter {
                 icons,
                 icon_sizes,
                 layouts: RefCell::new(HashMap::new()),
+                icon_layouts: RefCell::new(HashMap::new()),
             })
         }
     }
@@ -445,43 +504,165 @@ impl Painter {
         }
     }
 
-    /// Copies the snapshot pixels (BGRA, `pitch` bytes per row, window side plus the padding
-    /// on both sides) to the GPU.
-    fn upload(&self, bgra: &[u8], pitch: u32) -> Result<()> {
+    /// Sides, in shrunk pixels, of the blurred result for a window plus `margin` px on every
+    /// side, of the blur input, and the padding of the input.
+    fn snapshot_sides(&self, margin: i32) -> (i32, i32, i32) {
+        let frost = self.frost.as_ref().expect("glass look");
+        let q = backdrop::SCALE as i32;
+        let result = (self.size as i32 + 2 * margin + q - 1) / q;
+        let pad = (frost.pad as i32 + q - 1) / q;
+        (result, result + 2 * pad, pad)
+    }
+
+    /// Captures the desktop around the window whose top-left corner will be at (`left`, `top`),
+    /// `margin` px more on every side, shrinks and blurs it into `frost.snap`. Returns the
+    /// milliseconds of the capture (with the shrinking) and of the upload plus blur.
+    fn take_snapshot(&self, left: i32, top: i32, margin: i32) -> Result<(f64, f64)> {
+        if self.frost.is_none() {
+            return Err(Error::from(E_FAIL));
+        }
+        let q = backdrop::SCALE as i32;
+        let (_, source_side, pad) = self.snapshot_sides(margin);
+        let started = Instant::now();
+        // The result starts exactly at the window's top-left corner minus `margin`; the blur
+        // input extends it by the padding.
+        let origin = (left - margin - pad * q, top - margin - pad * q);
+        let shot = backdrop::capture(origin.0, origin.1, (source_side * q) as u32)?;
+        let small = backdrop::downscale(shot.pixels(), (source_side * q) as usize);
+        drop(shot);
+        let captured = Instant::now();
+        self.blur_snapshot(&small, (left, top), margin)?;
+        Ok((
+            (captured - started).as_secs_f64() * 1e3,
+            captured.elapsed().as_secs_f64() * 1e3,
+        ))
+    }
+
+    /// Uploads the shrunk snapshot `small` (BGRA, `snapshot_sides(margin).1` px square) taken for
+    /// the window at `taken` and blurs it into `frost.snap`.
+    fn blur_snapshot(&self, small: &[u8], taken: (i32, i32), margin: i32) -> Result<()> {
         let frost = self.frost.as_ref().ok_or_else(|| Error::from(E_FAIL))?;
-        // SAFETY: `bgra` holds the whole bitmap at `pitch` bytes per row, as `CopyFromMemory`
-        // reads it.
+        let (result_side, source_side, pad) = self.snapshot_sides(margin);
+        let (source_side, result_side) = (source_side as u32, result_side as u32);
+        let source = new_bitmap(
+            &self.ctx,
+            source_side,
+            source_side,
+            D2D1_BITMAP_OPTIONS_NONE,
+        )?;
+        let result = new_bitmap(
+            &self.ctx,
+            result_side,
+            result_side,
+            D2D1_BITMAP_OPTIONS_TARGET,
+        )?;
+        // SAFETY: `small` holds the whole bitmap at `source_side` * 4 bytes per row.
+        unsafe { source.CopyFromMemory(None, small.as_ptr().cast(), source_side * 4)? };
+        // SAFETY: the device context and the effect chain are owned by `self` and valid; EndDraw
+        // closes the BeginDraw.
         unsafe {
-            frost
-                .source
-                .CopyFromMemory(None, bgra.as_ptr().cast(), pitch)
+            frost.blur.SetInput(0, &source, true);
+            self.ctx.SetTarget(&result);
+            self.ctx.BeginDraw();
+            let offset = Vector2 {
+                X: -(pad as f32),
+                Y: -(pad as f32),
+            };
+            let drawn = frost.tone.GetOutput().map(|output| {
+                self.ctx.DrawImage(
+                    &output,
+                    Some(&offset),
+                    None,
+                    D2D1_INTERPOLATION_MODE_LINEAR,
+                    D2D1_COMPOSITE_MODE_SOURCE_COPY,
+                );
+            });
+            let ended = self.ctx.EndDraw(None, None);
+            self.ctx.SetTarget(None::<&ID2D1Image>);
+            // Lets go of the input, so that the effect does not keep the snapshot alive.
+            frost.blur.SetInput(0, None::<&ID2D1Image>, true);
+            drawn?;
+            ended?;
+        }
+        // SAFETY: plain COM call.
+        let brush = unsafe { self.ctx.CreateBitmapBrush(&result, None, None)? };
+        frost.snap.replace(Some(Snap {
+            brush,
+            taken,
+            margin,
+        }));
+        Ok(())
+    }
+
+    /// Positions the snapshot for the window at (`left`, `top`) and returns true, or returns
+    /// false when there is none or it does not cover that window.
+    fn place_snapshot(&self, left: i32, top: i32) -> bool {
+        let Some(frost) = &self.frost else {
+            return false;
+        };
+        let snap = frost.snap.borrow();
+        let Some(snap) = snap.as_ref() else {
+            return false;
+        };
+        let Some(d) = backdrop::shift(snap.taken, (left, top), snap.margin) else {
+            return false;
+        };
+        // The brush maps a shrunk pixel to `SCALE` window pixels; the result starts `margin`
+        // pixels (and the shift of the window) before the window's corner.
+        let q = backdrop::SCALE as f32;
+        let matrix = Matrix3x2 {
+            M11: q,
+            M12: 0.0,
+            M21: 0.0,
+            M22: q,
+            M31: -((d.0 + snap.margin) as f32),
+            M32: -((d.1 + snap.margin) as f32),
+        };
+        // SAFETY: plain COM call.
+        unsafe { snap.brush.SetTransform(&matrix) };
+        true
+    }
+
+    fn release_snapshot(&self) {
+        self.glass.set(false);
+        if let Some(frost) = &self.frost {
+            frost.snap.replace(None);
         }
     }
 
-    /// Blurs the uploaded snapshot into the bitmap the frames paint from.
-    fn blur(&self) -> Result<()> {
-        let frost = self.frost.as_ref().ok_or_else(|| Error::from(E_FAIL))?;
-        // SAFETY: the device context and the effect chain are owned by `self` and valid;
-        // EndDraw closes the BeginDraw.
-        unsafe {
-            self.ctx.SetTarget(&frost.result);
-            self.ctx.BeginDraw();
-            let offset = Vector2 {
-                X: -(frost.pad as f32),
-                Y: -(frost.pad as f32),
-            };
-            let output = frost.tone.GetOutput()?;
-            self.ctx.DrawImage(
-                &output,
-                Some(&offset),
-                None,
-                D2D1_INTERPOLATION_MODE_LINEAR,
-                D2D1_COMPOSITE_MODE_SOURCE_COPY,
-            );
-            let ended = self.ctx.EndDraw(None, None);
-            self.ctx.SetTarget(None::<&ID2D1Image>);
-            ended
+    /// Draws every label and submenu once into a scratch bitmap, and runs the glass pipeline
+    /// once, so that their caches and GPU pipelines exist before the first open.
+    fn warm(&self) -> Result<()> {
+        let target = new_bitmap(&self.ctx, self.size, self.size, D2D1_BITMAP_OPTIONS_TARGET)?;
+        let n = self.layout.outer_sectors();
+        let hits = std::iter::once(Hit::Center)
+            .chain((0..self.layout.inner_sectors()).map(Hit::Inner))
+            .chain((0..n).map(Hit::Outer));
+        for hit in hits {
+            self.paint(&target, hit, None)?;
         }
+        let mut first_arc = None;
+        for parent in 0..n {
+            let Some(arc) = self.valid_arc(arc_for_hit(Hit::Outer(parent), &self.config)) else {
+                continue;
+            };
+            first_arc.get_or_insert(arc);
+            // The hub shows the name of the highlighted submenu tile.
+            for j in 0..arc.count {
+                self.paint(&target, Hit::Sub(parent, j), Some(arc))?;
+            }
+        }
+        if self.frost.is_some() {
+            // The effects run and the glass fills are drawn once, over a corner of the desktop.
+            self.take_snapshot(0, 0, 0)?;
+            if self.place_snapshot(0, 0) {
+                self.glass.set(true);
+                let drawn = self.paint(&target, Hit::Center, first_arc);
+                self.release_snapshot();
+                drawn?;
+            }
+        }
+        Ok(())
     }
 
     /// The arc as it is drawn: its parent is valid and it has tiles.
@@ -601,7 +782,8 @@ impl Painter {
                 .chain(arc_plate)
                 .collect::<Vec<_>>();
             let frost = self.frost.as_ref().filter(|_| glass);
-            if let Some(frost) = frost {
+            let backdrop = frost.and_then(|f| f.snap.borrow().as_ref().map(|s| s.brush.clone()));
+            if let (Some(frost), Some(backdrop)) = (frost, &backdrop) {
                 let outline = arc_shapes
                     .as_ref()
                     .map_or(&self.wheel_plate, |shapes| &shapes.outline);
@@ -613,8 +795,7 @@ impl Painter {
                     .DrawGeometry(outline, &self.brush, 2.0, None::<&ID2D1StrokeStyle>);
                 // The blurred desktop, a tint over it, and the faint darkening of the grooves.
                 for plate in &plates {
-                    self.ctx
-                        .FillGeometry(*plate, &frost.backdrop, None::<&ID2D1Brush>);
+                    self.ctx.FillGeometry(*plate, backdrop, None::<&ID2D1Brush>);
                 }
                 for color in [&frost.style.tint, &p.plate] {
                     self.brush.SetColor(color);
@@ -731,15 +912,7 @@ impl Painter {
                     )?;
                 }
                 // Notch at the outer edge of a tile with a submenu.
-                if has_submenu {
-                    let mid = (a1 + a2) / 2.0;
-                    let notch = sector_path(
-                        &self.d2d_factory,
-                        c,
-                        notch_ring,
-                        (mid - NOTCH_HALF_DEG, mid + NOTCH_HALF_DEG),
-                        0.0,
-                    )?;
+                if let Some(notch) = &self.notches[usize::from(i)] {
                     // While only its arc is open the tile itself is not highlighted, so the notch
                     // takes the accent colour instead of the text colour on accent.
                     let color = if on {
@@ -751,7 +924,7 @@ impl Painter {
                     };
                     self.brush.SetColor(color);
                     self.ctx
-                        .FillGeometry(&notch, &self.brush, None::<&ID2D1Brush>);
+                        .FillGeometry(notch, &self.brush, None::<&ID2D1Brush>);
                 }
             }
 
@@ -937,25 +1110,36 @@ impl Painter {
         let half = s / 2.0;
         // Text layouts are the size of the icon box and centred in it.
         // `shift` moves the layout so the glyph outline, not its em box, is centred.
-        let draw_text =
-            |text: char, font: &IDWriteTextFormat, em: f32, shift: (f32, f32)| -> Result<()> {
-                let mut buf = [0u8; 4];
-                let layout = self.text_layout(text.encode_utf8(&mut buf), font, em, s, s)?;
-                // SAFETY: guaranteed by the caller of `icon`.
-                unsafe {
-                    self.brush.SetColor(&color);
-                    self.ctx.DrawTextLayout(
-                        Vector2 {
-                            X: at.0 - half - shift.0,
-                            Y: at.1 - half - shift.1,
-                        },
-                        &layout,
-                        &self.brush,
-                        D2D1_DRAW_TEXT_OPTIONS_NONE,
-                    );
+        let draw_text = |text: char,
+                         glyph: bool,
+                         font: &IDWriteTextFormat,
+                         em: f32,
+                         shift: (f32, f32)|
+         -> Result<()> {
+            let mut layouts = self.icon_layouts.borrow_mut();
+            let key = (glyph, text, size);
+            let layout = match layouts.entry(key) {
+                Entry::Occupied(e) => e.into_mut(),
+                Entry::Vacant(e) => {
+                    let mut buf = [0u8; 4];
+                    e.insert(self.text_layout(text.encode_utf8(&mut buf), font, em, s, s)?)
                 }
-                Ok(())
             };
+            // SAFETY: guaranteed by the caller of `icon`.
+            unsafe {
+                self.brush.SetColor(&color);
+                self.ctx.DrawTextLayout(
+                    Vector2 {
+                        X: at.0 - half - shift.0,
+                        Y: at.1 - half - shift.1,
+                    },
+                    &*layout,
+                    &self.brush,
+                    D2D1_DRAW_TEXT_OPTIONS_NONE,
+                );
+            }
+            Ok(())
+        };
         // SAFETY: guaranteed by the caller.
         unsafe {
             match icons.icon_for(hit) {
@@ -978,7 +1162,7 @@ impl Painter {
                 TileIcon::Glyph(glyph, fit) => {
                     if let Some(font) = icons.glyph_format() {
                         let shift = (fit.dx * fit.scale, fit.dy * fit.scale);
-                        draw_text(glyph, font, s * fit.scale, shift)?;
+                        draw_text(glyph, true, font, s * fit.scale, shift)?;
                     }
                 }
                 TileIcon::Letter(letter) => {
@@ -999,7 +1183,7 @@ impl Painter {
                         1.6 * k,
                         None::<&ID2D1StrokeStyle>,
                     );
-                    draw_text(letter, &self.letter_font, s * 0.55, (0.0, 0.0))?;
+                    draw_text(letter, false, &self.letter_font, s * 0.55, (0.0, 0.0))?;
                 }
                 TileIcon::Blank => {}
             }
@@ -1135,8 +1319,10 @@ impl Frost {
         radius: f32,
         wheel_plate: &ID2D1Geometry,
         level: f32,
+        margin: i32,
     ) -> Result<Frost> {
         let style = palette.glass_style(level);
+        // The snapshot is blurred after it is shrunk.
         let sigma = BLUR_SIGMA * k;
         let halo_sigma = HALO_SIGMA * k;
         // Three standard deviations reach almost all of a Gaussian.
@@ -1149,15 +1335,12 @@ impl Frost {
             aux.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
             let aux_brush = aux.CreateSolidColorBrush(&style.halo, None)?;
 
-            let side = size + 2 * pad;
-            let source = new_bitmap(ctx, side, side, D2D1_BITMAP_OPTIONS_NONE)?;
             let blur = ctx.CreateEffect(&CLSID_D2D1GaussianBlur)?;
-            blur.SetInput(0, &source, true);
             set_effect(
                 &blur,
                 D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION.0,
                 D2D1_PROPERTY_TYPE_FLOAT,
-                &[sigma],
+                &[sigma / backdrop::SCALE as f32],
             )?;
             // Hard borders: the padding keeps them outside the window.
             set_effect(
@@ -1206,9 +1389,6 @@ impl Frost {
                 D2D1_PROPERTY_TYPE_VECTOR4,
                 &[h.r, h.g, h.b, h.a],
             )?;
-
-            let result = new_bitmap(ctx, size, size, D2D1_BITMAP_OPTIONS_TARGET)?;
-            let backdrop = ctx.CreateBitmapBrush(&result, None, None)?;
 
             let white = |a| D2D1_COLOR_F {
                 r: 1.0,
@@ -1265,14 +1445,14 @@ impl Frost {
                 style,
                 aux,
                 aux_brush,
-                source,
+                blur,
                 tone,
                 shadow,
-                result,
-                backdrop,
+                snap: RefCell::new(None),
                 sheen,
                 sheen_shape: path.cast()?,
                 pad,
+                margin,
                 halo_sigma,
             })
         }
@@ -1678,7 +1858,6 @@ mod tests {
         config.outer[usize::from(case.parent)].submenu = submenu(case.tiles);
         let arc = arc_for_hit(case.hit, &config);
         let layout = Layout::new(96, case.scale_pct, 12, case.sectors);
-        let size = layout.size_px();
         let device = create_d3d_device().expect("D3D device");
         let dxgi: IDXGIDevice = device.cast().unwrap();
         let level = if case.glass { 0.5 } else { 0.0 };
@@ -1692,20 +1871,28 @@ mod tests {
         .expect("painter");
         if let Some(frost) = &painter.frost {
             // A stand-in for the desktop: vertical stripes.
-            let side = (size + 2 * frost.pad) as usize;
+            let _ = frost;
+            let side = painter.snapshot_sides(0).1 as usize;
+            let q = backdrop::SCALE as usize;
             let bgra: Vec<u8> = (0..side * side)
                 .flat_map(|i| {
-                    if (i % side / 24).is_multiple_of(2) {
+                    if (i % side * q / 24).is_multiple_of(2) {
                         [0x30; 4]
                     } else {
                         [0xc0; 4]
                     }
                 })
                 .collect();
-            painter.upload(&bgra, side as u32 * 4).expect("upload");
-            painter.blur().expect("blur");
+            painter.blur_snapshot(&bgra, (0, 0), 0).expect("blur");
+            assert!(painter.place_snapshot(0, 0));
             painter.glass.set(true);
         }
+        paint_to_pixels(&painter, case.hit, arc)
+    }
+
+    /// Paints one frame offscreen and returns the side and BGRA premultiplied pixels.
+    fn paint_to_pixels(painter: &Painter, hit: Hit, arc: Option<SubArc>) -> (u32, Vec<u8>) {
+        let size = painter.size;
         let props = |options| D2D1_BITMAP_PROPERTIES1 {
             pixelFormat: D2D1_PIXEL_FORMAT {
                 format: DXGI_FORMAT_B8G8R8A8_UNORM,
@@ -1726,7 +1913,7 @@ mod tests {
                 .ctx
                 .CreateBitmap(dims, None, 0, &props(D2D1_BITMAP_OPTIONS_TARGET))
                 .unwrap();
-            painter.paint(&target, case.hit, arc).expect("paint");
+            painter.paint(&target, hit, arc).expect("paint");
             let staging = painter
                 .ctx
                 .CreateBitmap(
@@ -1806,6 +1993,145 @@ mod tests {
         }
     }
 
+    /// A snapshot taken at press time with a margin and moved by the pointer's travel must look
+    /// like one taken at the final position (up to the shrinking grid).
+    #[test]
+    #[ignore = "needs a D3D device"]
+    fn shifted_snapshot_matches_direct() {
+        let config = Config::default();
+        let layout = Layout::new(96, 100, 12, 12);
+        let device = create_d3d_device().expect("D3D device");
+        let dxgi: IDXGIDevice = device.cast().unwrap();
+        let painter = Painter::new(
+            &dxgi,
+            layout,
+            theme::palette(ThemeChoice::Dark),
+            Arc::new(config),
+            0.5,
+        )
+        .expect("painter");
+        let q = backdrop::SCALE as i32;
+        // A fake desktop: diagonal stripes, coloured by position.
+        let desktop = |x: i32, y: i32| -> [u8; 4] {
+            if ((x + y).div_euclid(37)).rem_euclid(2) == 0 {
+                [0x30, 0x60, 0xa0, 255]
+            } else {
+                [0xd0, 0xc0, 0x40, 255]
+            }
+        };
+        let blur_at = |left: i32, top: i32, margin: i32| {
+            let (_, side, pad) = painter.snapshot_sides(margin);
+            let (origin_x, origin_y) = (left - margin - pad * q, top - margin - pad * q);
+            let full = (side * q) as usize;
+            let bgra: Vec<u8> = (0..full * full)
+                .flat_map(|i| desktop(origin_x + (i % full) as i32, origin_y + (i / full) as i32))
+                .collect();
+            painter
+                .blur_snapshot(&backdrop::downscale(&bgra, full), (left, top), margin)
+                .unwrap();
+        };
+        let paint = |left: i32, top: i32| {
+            assert!(painter.place_snapshot(left, top));
+            painter.glass.set(true);
+            paint_to_pixels(&painter, Hit::Center, None).1
+        };
+        blur_at(1000, 500, 6);
+        let shifted = paint(1003, 497);
+        blur_at(1003, 497, 0);
+        let direct = paint(1003, 497);
+        let total: u64 = shifted
+            .iter()
+            .zip(&direct)
+            .map(|(a, b)| u64::from(a.abs_diff(*b)))
+            .sum();
+        let mean = total as f64 / shifted.len() as f64;
+        println!("mean abs difference per channel: {mean:.3}");
+        assert!(mean < 2.0, "{mean}");
+    }
+
+    /// `cargo test startup_and_memory -- --ignored --nocapture`: time to build and warm a
+    /// renderer, and the private memory in each state.
+    #[test]
+    #[ignore = "needs a D3D device and a desktop; prints timings and memory"]
+    fn startup_and_memory() {
+        use windows::Win32::System::ProcessStatus::{
+            GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS_EX,
+        };
+        use windows::Win32::System::Threading::GetCurrentProcess;
+        let private_mb = || {
+            let mut c = PROCESS_MEMORY_COUNTERS_EX {
+                cb: size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32,
+                ..Default::default()
+            };
+            // SAFETY: valid out buffer and matching `cb`.
+            unsafe {
+                GetProcessMemoryInfo(
+                    GetCurrentProcess(),
+                    (&mut c as *mut PROCESS_MEMORY_COUNTERS_EX).cast(),
+                    c.cb,
+                )
+                .unwrap();
+            }
+            c.PrivateUsage as f64 / 1048576.0
+        };
+        // SAFETY: plain call; the result is ignored (the thread may already have a model).
+        let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+        let device = create_d3d_device().expect("D3D device");
+        let dxgi: IDXGIDevice = device.cast().unwrap();
+        for view in [ViewMode::Names, ViewMode::Icons] {
+            let mut config = Config::default();
+            config.options.view = view;
+            let layout = Layout::new(96, 100, 12, 12);
+            println!("view {view:?}: start {:.1} MB", private_mb());
+            let t = Instant::now();
+            let painter = Painter::new(
+                &dxgi,
+                layout,
+                theme::palette(ThemeChoice::Dark),
+                Arc::new(config),
+                0.5,
+            )
+            .expect("painter");
+            println!("  new {:.1} ms, {:.1} MB", ms(t), private_mb());
+            let t = Instant::now();
+            painter.warm().expect("warm");
+            println!("  warm {:.1} ms, {:.1} MB", ms(t), private_mb());
+            let halos: Vec<(f32, f32)> = painter
+                .layouts
+                .borrow()
+                .values()
+                .filter_map(|l| l.halo.as_ref().map(|h| h.size))
+                .collect();
+            let bytes: f32 = halos.iter().map(|(w, h)| w * h * 4.0).sum();
+            println!("  {} halos, {:.2} MB", halos.len(), bytes / 1048576.0);
+            let target = new_bitmap(
+                &painter.ctx,
+                painter.size,
+                painter.size,
+                D2D1_BITMAP_OPTIONS_TARGET,
+            )
+            .unwrap();
+            let t = Instant::now();
+            painter.take_snapshot(600, 200, 6).unwrap();
+            println!("  snapshot (press) {:.1} ms, {:.1} MB", ms(t), private_mb());
+            let t = Instant::now();
+            assert!(painter.place_snapshot(602, 199));
+            painter.glass.set(true);
+            painter.paint(&target, Hit::Center, None).unwrap();
+            println!(
+                "  place + first paint {:.2} ms, {:.1} MB",
+                ms(t),
+                private_mb()
+            );
+            painter.release_snapshot();
+            println!("  released {:.1} MB", private_mb());
+        }
+    }
+
+    fn ms(t: Instant) -> f64 {
+        t.elapsed().as_secs_f64() * 1e3
+    }
+
     /// `cargo test blur_timing -- --ignored --nocapture`: upload plus blur of a 676 px snapshot,
     /// with the GPU work waited for.
     #[test]
@@ -1835,13 +2161,12 @@ mod tests {
         )
         .expect("painter");
         let frost = painter.frost.as_ref().expect("frost");
-        let side = (painter.size + 2 * frost.pad) as usize;
+        let side = painter.snapshot_sides(0).1 as usize;
         let bgra = vec![0x80u8; side * side * 4];
         let mut ms = Vec::new();
         for _ in 0..30 {
             let t = std::time::Instant::now();
-            painter.upload(&bgra, side as u32 * 4).unwrap();
-            painter.blur().unwrap();
+            painter.blur_snapshot(&bgra, (0, 0), 0).unwrap();
             // Reading a pixel back waits for the GPU.
             let staging = unsafe {
                 painter
@@ -1868,7 +2193,15 @@ mod tests {
                     .unwrap()
             };
             unsafe {
-                staging.CopyFromBitmap(None, &frost.result, None).unwrap();
+                let result = frost
+                    .snap
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .brush
+                    .GetBitmap()
+                    .unwrap();
+                staging.CopyFromBitmap(None, &result, None).unwrap();
                 let _ = staging.Map(D2D1_MAP_OPTIONS_READ).unwrap();
                 staging.Unmap().unwrap();
             }
