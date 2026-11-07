@@ -14,6 +14,17 @@ pub struct Overrides {
     pub move_px: Option<i32>,
 }
 
+/// Hidden test flag `--test-panic`: where the first panic is raised on purpose.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PanicTest {
+    /// In the hook state code, on the first right-button press the trigger handles.
+    Hook,
+    /// In the wheel window procedure, on the first open (`--demo`: the first poll).
+    Window,
+    /// In the first action thread, before the action runs.
+    Action,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DemoOptions {
     pub overrides: Overrides,
@@ -21,6 +32,8 @@ pub struct DemoOptions {
     pub config: Option<PathBuf>,
     /// `--log`; the default is `%LOCALAPPDATA%\Elemental-Wheel\wheel.log`.
     pub log: Option<PathBuf>,
+    /// Hidden test flag: one deliberate panic to check that it is caught.
+    pub test_panic: Option<PanicTest>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +67,7 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
     let mut log = None;
     let mut accept_injected = false;
     let mut stall_hook_once = false;
+    let mut test_panic = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--version" => return Ok(Command::Version),
@@ -62,6 +76,14 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
             "--quit" => quit = true,
             "--accept-injected" => accept_injected = true,
             "--test-stall-hook" => stall_hook_once = true,
+            "--test-panic" => {
+                test_panic = Some(match value(&mut args, &arg)?.as_str() {
+                    "hook" => PanicTest::Hook,
+                    "window" => PanicTest::Window,
+                    "action" => PanicTest::Action,
+                    other => return Err(format!("Invalid value for --test-panic: {other}")),
+                })
+            }
             "--config" => {
                 let path = value(&mut args, &arg)?;
                 if path.is_empty() {
@@ -112,7 +134,11 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
         overrides: o,
         config,
         log,
+        test_panic,
     };
+    if demo && matches!(test_panic, Some(PanicTest::Hook | PanicTest::Action)) {
+        return Err("--test-panic hook and action need --run".to_string());
+    }
     Ok(if demo {
         Command::Demo(wheel)
     } else if run {
@@ -284,6 +310,30 @@ mod tests {
         assert_eq!(v.move_px, Some(10));
         assert!(o.accept_injected);
         assert!(o.stall_hook_once);
+    }
+
+    #[test]
+    fn test_panic_flag() {
+        assert_eq!(demo(&["--demo"]).test_panic, None);
+        assert_eq!(run(&["--run"]).wheel.test_panic, None);
+        for (text, kind) in [
+            ("hook", PanicTest::Hook),
+            ("window", PanicTest::Window),
+            ("action", PanicTest::Action),
+        ] {
+            assert_eq!(
+                run(&["--run", "--test-panic", text]).wheel.test_panic,
+                Some(kind)
+            );
+        }
+        assert_eq!(
+            demo(&["--test-panic", "window", "--demo"]).test_panic,
+            Some(PanicTest::Window)
+        );
+        assert!(parse_strs(&["--demo", "--test-panic", "hook"]).is_err());
+        assert!(parse_strs(&["--demo", "--test-panic", "action"]).is_err());
+        assert!(parse_strs(&["--run", "--test-panic"]).is_err());
+        assert!(parse_strs(&["--run", "--test-panic", "bogus"]).is_err());
     }
 
     #[test]

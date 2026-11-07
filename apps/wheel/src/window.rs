@@ -23,7 +23,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{Error, PCWSTR, Result, w};
 
-use crate::args::{DemoOptions, RunOptions};
+use crate::args::{DemoOptions, PanicTest, RunOptions};
+use crate::guard;
 use crate::hook::{self, HookOptions};
 use crate::render::Renderer;
 use crate::settings::Settings;
@@ -282,6 +283,18 @@ fn poll(state: &mut State) -> Result<()> {
 }
 
 extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    guard::try_run("window proc", "window closed", || {
+        wnd_proc_inner(hwnd, msg, wparam, lparam)
+    })
+    .unwrap_or_else(|| {
+        // SAFETY: `hwnd` is the live window of this thread; the demo closes by destroying it.
+        let _ = unsafe { DestroyWindow(hwnd) };
+        // SAFETY: passing the arguments on unchanged.
+        unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+    })
+}
+
+fn wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     // SAFETY: all messages are handled on the one UI thread; the state reference is dropped
     // before anything that can re-enter this function (DestroyWindow).
     unsafe {
@@ -296,6 +309,7 @@ extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM
                 return LRESULT(0);
             }
             WM_TIMER if wparam.0 == POLL_TIMER => {
+                guard::fire(PanicTest::Window);
                 let failed = match state(hwnd) {
                     Some(s) => match poll(s) {
                         Ok(()) => false,
@@ -505,6 +519,18 @@ unsafe extern "system" fn run_wnd_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    guard::try_run("window proc", "wheel hidden", || {
+        // SAFETY: same contract as this function.
+        unsafe { run_wnd_proc_inner(hwnd, msg, wparam, lparam) }
+    })
+    .unwrap_or_else(|| {
+        close_wheel(hwnd);
+        // SAFETY: passing the arguments on unchanged.
+        unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+    })
+}
+
+unsafe fn run_wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     // SAFETY: all messages are handled on the one UI thread; the state reference is dropped
     // before anything that can re-enter this function (DestroyWindow).
     unsafe {
@@ -515,6 +541,7 @@ unsafe extern "system" fn run_wnd_proc(
                     x: wparam.0 as i32,
                     y: lparam.0 as i32,
                 };
+                guard::fire(PanicTest::Window);
                 run_state(hwnd).map_or(Ok(()), |s| {
                     reload(s, false);
                     let opened = open_wheel(hwnd, s, center);

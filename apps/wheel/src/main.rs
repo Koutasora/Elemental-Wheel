@@ -1,6 +1,7 @@
 mod actions;
 mod args;
 mod fit;
+mod guard;
 mod hook;
 mod icons;
 mod instance;
@@ -37,6 +38,7 @@ fn main() -> ExitCode {
         }
         Ok(Command::Demo(options)) => {
             start_log(options.log.as_deref());
+            guard::arm(options.test_panic);
             let Some(path) = config_path(options.config.as_deref()) else {
                 return ExitCode::from(1);
             };
@@ -92,6 +94,7 @@ fn start_log(arg: Option<&Path>) {
 
 fn run(options: &RunOptions) -> ExitCode {
     start_log(options.wheel.log.as_deref());
+    guard::arm(options.wheel.test_panic);
     let Some(path) = config_path(options.wheel.config.as_deref()) else {
         return ExitCode::from(1);
     };

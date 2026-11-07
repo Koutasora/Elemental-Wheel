@@ -48,6 +48,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{Error, HRESULT, PWSTR, Result};
 
 use crate::actions;
+use crate::args::PanicTest;
+use crate::guard;
 use crate::watchdog;
 use crate::window::{WM_WHEEL_CLOSE, WM_WHEEL_OPEN, layout_at};
 
@@ -195,6 +197,9 @@ impl HookState {
 
     /// Steps the machine and queues its effects. True if the event is to be swallowed.
     fn feed(&mut self, event: Event) -> bool {
+        if matches!(event.kind, EventKind::RightDown { .. }) && event.origin == Origin::Physical {
+            guard::fire(PanicTest::Hook);
+        }
         let step = self.trigger.step(event);
         if !step.effects.is_empty() {
             self.effects.extend(step.effects);
@@ -393,6 +398,18 @@ impl HookState {
         wheel_core::log_line!("hook reinstalled");
     }
 
+    /// After a panic in hook code: back to a known idle state. The wheel window is asked to
+    /// close in case it was shown.
+    fn recover(&mut self) {
+        self.stop_hold_timer();
+        self.trigger.reset();
+        self.effects.clear();
+        self.notes.clear();
+        self.passthrough_right = false;
+        self.swallow_escape = false;
+        post_to_window(self.window, WM_WHEEL_CLOSE, 0, 0);
+    }
+
     fn check_watchdog(&mut self) {
         let dead = self.mouse_hook.is_none() || self.keyboard_hook.is_none();
         let stale = watchdog::last_input_tick()
@@ -401,6 +418,18 @@ impl HookState {
             self.reinstall();
         }
     }
+}
+
+/// Runs hook-thread code that must not unwind. After a panic the state is reset (see
+/// `HookState::recover`) and false is returned: the event is passed on. A panic during the
+/// recovery is caught too and leaves the state as it is.
+fn guarded(place: &str, f: impl FnOnce() -> bool) -> bool {
+    guard::try_run(place, "event passed on, state reset", f).unwrap_or_else(|| {
+        guard::run("hook recovery", "event passed on", None, || {
+            with_state(HookState::recover)
+        });
+        false
+    })
 }
 
 unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -414,7 +443,9 @@ unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) 
             // SAFETY: passing the arguments on unchanged.
             return unsafe { CallNextHookEx(None, code, wparam, lparam) };
         }
-        if with_state(|s| s.on_mouse(wparam.0 as u32, info)) == Some(true) {
+        if guarded("mouse hook", || {
+            with_state(|s| s.on_mouse(wparam.0 as u32, info)) == Some(true)
+        }) {
             return LRESULT(1);
         }
     }
@@ -426,7 +457,9 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
     if code == HC_ACTION as i32 {
         // SAFETY: for HC_ACTION `lparam` points to a KBDLLHOOKSTRUCT valid during the call.
         let info = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
-        if with_state(|s| s.on_key(wparam.0 as u32, info)) == Some(true) {
+        if guarded("keyboard hook", || {
+            with_state(|s| s.on_key(wparam.0 as u32, info)) == Some(true)
+        }) {
             return LRESULT(1);
         }
     }
@@ -480,8 +513,18 @@ fn thread_main(
             break;
         }
         match msg.message {
-            WM_EFFECTS => run_effects(),
-            WM_TIMER => on_timer(msg.wParam.0),
+            WM_EFFECTS => {
+                guarded("hook effects", || {
+                    run_effects();
+                    false
+                });
+            }
+            WM_TIMER => {
+                guarded("hook timer", || {
+                    on_timer(msg.wParam.0);
+                    false
+                });
+            }
             _ => {}
         }
     }
