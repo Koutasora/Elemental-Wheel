@@ -20,6 +20,9 @@ pub struct Logger {
     /// Bytes in the current file, tracked in memory.
     size: u64,
     limit: u64,
+    /// A rotation failed (e.g. another process holds the file open): the current file keeps
+    /// growing past the limit and rotation is not tried again until the next start.
+    rotation_failed: bool,
 }
 
 impl Logger {
@@ -38,6 +41,7 @@ impl Logger {
             file: None,
             size: 0,
             limit,
+            rotation_failed: false,
         };
         let existing = fs::metadata(path).map_or(0, |m| m.len());
         if existing > limit {
@@ -53,7 +57,9 @@ impl Logger {
     /// would make the file exceed the limit.
     pub fn write_line(&mut self, line: &str) -> std::io::Result<()> {
         let bytes = line.len() as u64 + 1;
-        if self.file.is_none() || (self.size > 0 && self.size + bytes > self.limit) {
+        if !self.rotation_failed
+            && (self.file.is_none() || (self.size > 0 && self.size + bytes > self.limit))
+        {
             self.rotate()?;
         }
         let Some(file) = self.file.as_mut() else {
@@ -68,10 +74,18 @@ impl Logger {
     fn rotate(&mut self) -> std::io::Result<()> {
         // The handle must be closed before the rename on Windows.
         self.file = None;
-        let old = old_path(&self.path);
-        let _ = fs::remove_file(&old);
-        if self.path.exists() {
-            fs::rename(&self.path, &old)?;
+        // The rename replaces an older file; nothing is removed beforehand, so a failure loses
+        // nothing and the current file stays in use.
+        if self.path.exists() && fs::rename(&self.path, old_path(&self.path)).is_err() {
+            self.rotation_failed = true;
+            self.file = Some(
+                OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&self.path)?,
+            );
+            self.size = fs::metadata(&self.path).map_or(0, |m| m.len());
+            return Ok(());
         }
         self.file = Some(File::create(&self.path)?);
         self.size = 0;
@@ -257,6 +271,31 @@ mod tests {
         let mut log = Logger::open(&path).unwrap();
         log.write_line("two").unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "one\ntwo\n");
+    }
+
+    #[test]
+    fn a_failed_rotation_keeps_appending_to_the_current_file() {
+        let dir = TempDir::new("failed-rotation");
+        let path = dir.0.join("w.log");
+        // A directory in the way makes the rename fail.
+        fs::create_dir(dir.0.join("w.old.log")).unwrap();
+        fs::write(&path, "x".repeat(30)).unwrap();
+        let mut log = Logger::open_with_limit(&path, 20).unwrap();
+        for i in 0..5 {
+            log.write_line(&format!("line {i}")).unwrap();
+        }
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.starts_with(&"x".repeat(30)));
+        assert!(
+            text.contains(
+                "line 0
+"
+            ) && text.contains(
+                "line 4
+"
+            )
+        );
+        assert!(dir.0.join("w.old.log").is_dir());
     }
 
     #[test]

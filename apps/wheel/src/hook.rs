@@ -16,7 +16,9 @@ use std::time::Duration;
 use wheel_core::{
     Config as WheelConfig, Effect, Event, EventKind, Hit, Origin, Point, SubArc, Trigger, Verdict,
 };
-use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{
+    CloseHandle, E_FAIL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
+};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
 };
@@ -151,7 +153,10 @@ pub fn start(config: HookOptions, window: HWND, settings: Arc<WheelConfig>) -> R
     let window = window.0 as isize;
     STALL_PENDING.store(config.stall_hook_once, Ordering::Relaxed);
     let (tx, rx) = mpsc::channel();
-    let handle = thread::spawn(move || thread_main(config, window, tx));
+    let handle = thread::Builder::new()
+        .name("hook".into())
+        .spawn(move || thread_main(config, window, tx))
+        .map_err(|_| Error::from_hresult(E_FAIL))?;
     match rx.recv() {
         Ok(Ok(thread_id)) => Ok(HookThread { thread_id, handle }),
         Ok(Err(code)) => Err(Error::from(HRESULT(code))),
@@ -416,7 +421,7 @@ impl HookState {
     /// close in case it was shown.
     fn recover(&mut self) {
         self.stop_hold_timer();
-        self.trigger.reset();
+        self.trigger.recover();
         self.effects.clear();
         self.notes.clear();
         self.passthrough_right = false;

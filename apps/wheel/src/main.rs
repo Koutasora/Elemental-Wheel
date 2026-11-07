@@ -23,7 +23,7 @@ fn main() -> ExitCode {
             println!(
                 "Elemental Wheel (stage 05). Options for --demo and --run: \
                  [--theme system|light|dark] [--scale 60..140] [--sectors 4..12] \
-                 [--config <path>].\n  \
+                 [--config <path>] [--log <path>].\n  \
                  They override config.json (default %APPDATA%\\Elemental-Wheel\\config.json).\n  \
                  --demo   show the wheel under the cursor\n  \
                  --run    run in the background; holding the right mouse button opens the wheel \
