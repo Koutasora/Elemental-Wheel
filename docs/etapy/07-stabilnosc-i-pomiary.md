@@ -24,7 +24,7 @@ i żywy hak.
 - [x] `crates/wheel-core/src/config.rs`, `apps/wheel/src/settings.rs`: przeładowanie zepsutego pliku zostawia bieżącą konfigurację (bez `.bak` i domyślnych); start bez zmian (plik, `.bak`, domyślne); testy
 - [x] `config::save()`: test przerwanego zapisu (pozostały plik tymczasowy)
 - [x] `apps/wheel-editor/src/model.rs`, `main.rs`: czas modyfikacji pliku przy wczytaniu i zapisie, sprawdzanie przy odzyskaniu fokusu i co kilka sekund, pytanie przy konflikcie, pytanie przed nadpisaniem nowszego pliku; testy modelu
-- [ ] Ukryta flaga `--stats`: czas otwarcia każdego otwarcia do logu, co minutę pamięć i uchwyty (`GetProcessMemoryInfo`, `GetGuiResources`)
+- [x] Ukryta flaga `--stats`: czas otwarcia każdego otwarcia do logu, co minutę pamięć i uchwyty (`GetProcessMemoryInfo`, `GetGuiResources`)
 - [ ] `apps/wheel/src/window.rs`, `render.rs`, `icons.rs`: przygotowanie renderera i ikon po wczytaniu konfiguracji, pamięć podręczna układu tekstu glifów
 - [ ] `tools/soak.ps1`: `wheel.exe --run --accept-injected --stats --config <scratchpad>`, cykliczne otwieranie i zamykanie (z łukiem podmenu), zmiany pliku konfiguracji (także na zepsuty), zbieranie CSV
 - [ ] Wyniki pomiarów do pliku etapu i `README.md`; `CHECKLISTA.md`
@@ -42,6 +42,9 @@ i żywy hak.
 - Plik tymczasowy zapisu ma stałą nazwę `config.json.tmp`; pozostałość po przerwanym zapisie jest nadpisywana przy następnym zapisie i ignorowana przy wczytaniu (test, bez zmian w kodzie).
 - Awaria edytora sprawdzona przez zabicie procesu po zmianie pliku z zewnątrz (plik nietknięty, brak `.tmp`); zabicie w samym trakcie zapisu pokrywa zapis atomowy i test pozostałego `.tmp` (trafienie w tę chwilę na żywo niepraktyczne).
 - Zmiana pliku rozpoznawana po czasie modyfikacji i długości; zmiana o tej samej długości w obrębie rozdzielczości czasu pliku tuż po własnym zapisie edytora nie zostanie zauważona (akceptowalne).
+- `--stats` tylko z `--run`. Czas otwarcia liczony od efektu otwarcia w wątku haka (próg spełniony) do powrotu `Commit` i `SetWindowPos` w oknie; w logu także rozbicie: kolejka (do obsługi `WM_WHEEL_OPEN`) i praca okna oraz rodzaj otwarcia (pierwsze, kolejne, po zmianie konfiguracji, inny DPI). Faktyczne pojawienie się klatki na ekranie (DWM) nie jest mierzone: to zależy od kompozytora, nie od koła.
+- Pamięć i uchwyty w logu przy starcie i co 60 s, wiersze `stats ...` w formacie `klucz=wartość`, żeby `soak.ps1` mógł je zamienić na CSV.
+- Kolejność kroków: `soak.ps1` przed zmianą renderera, bo służy też do pomiaru „przed”.
 
 ## Podsumowanie
 (wypełnia /etap-zamknij)
