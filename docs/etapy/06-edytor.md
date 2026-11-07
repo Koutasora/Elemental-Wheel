@@ -46,4 +46,32 @@ Poprawiony `save()`: do `.bak` trafia tylko poprawny plik.
 - Poza zakresem: uruchamianie edytora z zasobnika i z drugiej kopii programu (etap 08), pomiary pamięci (etap 07).
 
 ## Podsumowanie
-(wypełnia /etap-zamknij)
+
+### Decyzje
+- Edytor w egui (eframe 0.37, glow) jako osobny proces; zapis przez `wheel-core::config::save()` (atomowo), koło przeładowuje plik samo przez obserwację folderu.
+- Logika edytora w `model.rs` bez okna, żeby dała się testować; okno tylko rysuje i przekazuje zdarzenia.
+- Komunikaty `wheel-core` po angielsku, tłumaczone w edytorze (`messages.rs`); nieznane bez zmian.
+- Wybór ikony (`wheel_core::icon`) wspólny dla koła i edytora; ładowanie bitmap osobno (Direct2D w kole, tekstury egui w edytorze).
+- `inner_sectors` 4–12 niezależnie od `outer_sectors`; elementy poza zakresem ukryte, nie usuwane; bez przełącznika CLI.
+- Test na LAB ręczny przez użytkownika, bo filtr uprawnień zablokował skrypt ze zrzutami ekranu.
+
+### Zrobione
+- `save()` kopiuje do `.bak` tylko plik, który się poprawnie wczytuje; testy.
+- `wheel-editor.exe` (`--config`, `--version`): podgląd koła (oba pierścienie, łuk podmenu, rozmiar, widok nazw i ikon, zaokrąglone kafelki, podświetlenie pod kursorem, zaznaczenie obramowaniem, nazwa w środku), panel kafelka (nazwa, typ akcji z polami, ikona, opróżnienie, podmenu do 5), panel opcji, przeciąganie plików na kafelki.
+- Walidacja przed zapisem, znacznik niezapisanych zmian w tytule i pasku, pytanie przy zamykaniu i ponownym wczytaniu, Ctrl+S.
+- Polskie komunikaty błędów i ostrzeżeń wczytania, zapisu i skrótów.
+- Ikony w edytorze: wątki ładujące (najwyżej 4), cache z usuwaniem nieużywanych wpisów, fallback na literę.
+- Opcja `inner_sectors` w `wheel-core` (konfiguracja, układ, trafianie), kole, edytorze i README.
+- Testy: wheel-core 101, wheel 38 (+1 ignorowany test renderu D3D), wheel-editor 24; clippy i fmt czyste.
+
+### Otwarte sprawy
+- Uruchamianie edytora z zasobnika i z drugiej kopii programu (etap 08).
+- Pomiary pamięci i czasu otwarcia, odporność na awarie edytora (etap 07).
+- Panele edytora i pasek stanu bez dopracowania wyglądu (wybór użytkownika: tylko podgląd); ewentualnie w etapie 09.
+- Brak automatycznego testu GUI edytora (zrzuty); test renderu koła pokrywa tylko 12 sektorów wewnętrznych.
+
+### Ryzyka
+- Ładowanie ikon przez Win32 (HICON, GetDIBits) w edytorze jest sprawdzone testem na plikach systemowych, ale nie na nietypowych ikonach (monochromatyczne traktowane jako błąd i zastępowane literą).
+- Przy mniejszej liczbie sektorów wewnętrznych domyślne komendy edycji zmieniają kierunki albo są ukryte; użytkownik musi je przestawić sam.
+- Font ikon Segoe jest wczytywany z `C:\Windows\Fonts`; bez niego glify zastępują litery.
+- Edytor i koło zapisują i czytają ten sam plik; edycja ręczna pliku przy otwartym edytorze nie jest wykrywana (nadpisanie przy zapisie).
