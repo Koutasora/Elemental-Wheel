@@ -506,6 +506,16 @@ mod tests {
     }
 
     #[test]
+    fn reset_while_open_makes_the_release_select_nothing() {
+        let mut t = trigger();
+        open(&mut t);
+        t.reset();
+        assert!(!t.is_wheel_open());
+        let s = right_up(&mut t, pt(60, 0), 1500);
+        assert!(s.effects.is_empty(), "{:?}", s.effects);
+    }
+
+    #[test]
     fn settings_default_and_clamp() {
         let d = TriggerSettings::default();
         assert_eq!((d.hold_ms, d.move_px), (180, 6));

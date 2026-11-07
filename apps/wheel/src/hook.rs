@@ -8,7 +8,7 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::io::Write;
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -58,6 +58,11 @@ pub const MARKER: usize = 0x454C_5748;
 
 /// Posted to the hook thread: run the queued effects.
 const WM_EFFECTS: u32 = WM_APP + 1;
+/// Posted to the hook thread by the UI thread after a panic in the window procedure: reset the
+/// trigger, so that the wheel that is no longer shown cannot select anything.
+const WM_RECOVER: u32 = WM_APP + 3;
+/// Id of the hook thread (0 = not running), for `request_recover`.
+static HOOK_THREAD: AtomicU32 = AtomicU32::new(0);
 /// The timer fires `HoldElapsed` with `GetTickCount`, which is coarser than the event times, so
 /// it is started a little late to make sure the hold time really has elapsed.
 const HOLD_TIMER_SLACK_MS: u32 = 16;
@@ -99,6 +104,15 @@ static ARC: AtomicU16 = AtomicU16::new(0);
 pub fn publish_arc(arc: Option<SubArc>) {
     let bits = arc.map_or(0, |a| u16::from(a.parent) << 8 | u16::from(a.count));
     ARC.store(bits, Ordering::Relaxed);
+}
+
+/// Asks the hook thread to reset its state (see `HookState::recover`).
+pub fn request_recover() {
+    let id = HOOK_THREAD.load(Ordering::Relaxed);
+    if id != 0 {
+        // SAFETY: plain call; if the thread is gone, the failure is harmless.
+        let _ = unsafe { PostThreadMessageW(id, WM_RECOVER, WPARAM(0), LPARAM(0)) };
+    }
 }
 
 fn current_arc() -> Option<SubArc> {
@@ -504,6 +518,7 @@ fn thread_main(
     // SAFETY: a thread timer of this thread.
     state.watchdog_timer = unsafe { SetTimer(None, 0, watchdog::INTERVAL_MS, None) };
     STATE.with(|cell| *cell.borrow_mut() = Some(state));
+    HOOK_THREAD.store(thread_id, Ordering::Relaxed);
     let _ = ready.send(Ok(thread_id));
 
     loop {
@@ -519,6 +534,12 @@ fn thread_main(
                     false
                 });
             }
+            WM_RECOVER => {
+                guarded("hook recover request", || {
+                    with_state(HookState::recover);
+                    false
+                });
+            }
             WM_TIMER => {
                 guarded("hook timer", || {
                     on_timer(msg.wParam.0);
@@ -528,6 +549,7 @@ fn thread_main(
             _ => {}
         }
     }
+    HOOK_THREAD.store(0, Ordering::Relaxed);
     with_state(|s| {
         s.uninstall();
         s.stop_hold_timer();

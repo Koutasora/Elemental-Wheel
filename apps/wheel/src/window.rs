@@ -525,6 +525,8 @@ unsafe extern "system" fn run_wnd_proc(
     })
     .unwrap_or_else(|| {
         close_wheel(hwnd);
+        // The hook thread's trigger still believes the wheel is open.
+        hook::request_recover();
         // SAFETY: passing the arguments on unchanged.
         unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
     })
