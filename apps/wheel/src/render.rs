@@ -4,8 +4,9 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::mem::ManuallyDrop;
+use std::sync::Arc;
 
-use wheel_core::{Hit, INNER_LABELS, INNER_SECTORS, Layout, outer_labels};
+use wheel_core::{Config, Hit, INNER_SECTORS, Layout};
 
 use windows::Win32::Foundation::{E_FAIL, HMODULE, HWND};
 use windows::Win32::Graphics::Direct2D::Common::{
@@ -59,6 +60,8 @@ const INNER_HALF_GAP_DEG: f32 = 1.4;
 pub struct Renderer {
     layout: Layout,
     palette: Palette,
+    /// Source of the sector names.
+    config: Arc<Config>,
     /// Window / swap chain side in pixels.
     size: u32,
     d2d_factory: ID2D1Factory1,
@@ -79,7 +82,12 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(hwnd: HWND, layout: Layout, palette: Palette) -> Result<Renderer> {
+    pub fn new(
+        hwnd: HWND,
+        layout: Layout,
+        palette: Palette,
+        config: Arc<Config>,
+    ) -> Result<Renderer> {
         let size = layout.size_px();
         let device = create_d3d_device()?;
         let dxgi_device: IDXGIDevice = device.cast()?;
@@ -126,6 +134,7 @@ impl Renderer {
             Ok(Renderer {
                 layout,
                 palette,
+                config,
                 size,
                 d2d_factory,
                 ctx,
@@ -216,7 +225,7 @@ impl Renderer {
                 let text_ring = (inner_ring.0 + pad, inner_ring.1 - pad);
                 self.label(
                     Kind::Inner(i),
-                    INNER_LABELS[i as usize],
+                    self.config.inner[i as usize].name.as_str(),
                     &self.inner_font,
                     &|h, need| {
                         let (w, at) = fit::sector_slot(
@@ -232,7 +241,7 @@ impl Renderer {
                 )?;
             }
 
-            for (i, name) in (0..n).zip(outer_labels(n)) {
+            for (i, name) in (0..n).zip(self.config.outer_names(n)) {
                 let (a1, a2) = self.layout.outer_span(i);
                 let geometry = self.sector_path(
                     c,
@@ -280,8 +289,13 @@ impl Renderer {
             );
             let text = match hit {
                 Hit::Center => "Anuluj",
-                Hit::Inner(i) => INNER_LABELS[i as usize],
-                Hit::Outer(i) => outer_labels(n).get(i as usize).copied().unwrap_or(""),
+                Hit::Inner(i) => self.config.inner[i as usize].name.as_str(),
+                Hit::Outer(i) => self
+                    .config
+                    .outer_names(n)
+                    .get(i as usize)
+                    .copied()
+                    .unwrap_or(""),
             };
             self.label(
                 Kind::Hub,

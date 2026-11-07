@@ -1,7 +1,10 @@
 //! The wheel window: DPI setup, a non-activating topmost popup, message loop, hover polling.
 //! `--demo` shows it once; `--run` keeps it hidden and the hook thread shows it on demand.
 
-use wheel_core::{Hit, Layout, hit_test};
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use wheel_core::{Config, Hit, Layout, hit_test};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::Graphics::Gdi::{MONITOR_DEFAULTTONEAREST, MonitorFromPoint};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -11,19 +14,21 @@ use windows::Win32::UI::HiDpi::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GWLP_USERDATA, GetCursorPos,
-    GetMessageW, GetWindowLongPtrW, HWND_TOPMOST, IDC_ARROW, KillTimer, LoadCursorW, MA_NOACTIVATE,
-    MSG, PostQuitMessage, RegisterClassExW, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE,
-    SWP_SHOWWINDOW, SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage,
-    WINDOW_EX_STYLE, WM_APP, WM_DESTROY, WM_LBUTTONDOWN, WM_MOUSEACTIVATE, WM_RBUTTONDOWN,
-    WM_TIMER, WNDCLASSEXW, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    GetMessageW, GetWindowLongPtrW, HWND_TOPMOST, IDC_ARROW, IsWindowVisible, KillTimer,
+    LoadCursorW, MA_NOACTIVATE, MSG, PostQuitMessage, RegisterClassExW, SW_HIDE, SW_SHOWNOACTIVATE,
+    SWP_NOACTIVATE, SWP_SHOWWINDOW, SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow,
+    TranslateMessage, WINDOW_EX_STYLE, WM_APP, WM_DESTROY, WM_LBUTTONDOWN, WM_MOUSEACTIVATE,
+    WM_RBUTTONDOWN, WM_TIMER, WNDCLASSEXW, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP,
+    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::{Error, PCWSTR, Result, w};
 
 use crate::args::{DemoOptions, RunOptions};
-use crate::hook;
+use crate::hook::{self, HookOptions};
 use crate::render::Renderer;
+use crate::settings::Settings;
 use crate::theme::{self, Palette};
+use crate::watch::Watcher;
 
 /// Class name of the `--run` window; `--quit` finds the running instance by it.
 pub const RUN_CLASS: PCWSTR = w!("ElementalWheelRun");
@@ -33,10 +38,15 @@ pub const WM_WHEEL_OPEN: u32 = WM_APP + 1;
 pub const WM_WHEEL_CLOSE: u32 = WM_APP + 2;
 /// Posted by `--quit`: end the program.
 pub const WM_WHEEL_QUIT: u32 = WM_APP + 3;
+/// Posted by the config folder watcher: something in the folder changed.
+pub const WM_CONFIG_CHANGED: u32 = WM_APP + 4;
 
 const POLL_TIMER: usize = 1;
 const POLL_MS: u32 = 16;
 const CLOSE_TIMER: usize = 2;
+const CONFIG_TIMER: usize = 3;
+/// Wait after a change so that an editor can finish saving; further changes restart the wait.
+const CONFIG_DEBOUNCE_MS: u32 = 100;
 const CLOSE_AFTER_MS: u32 = 10_000;
 
 struct State {
@@ -49,12 +59,14 @@ struct State {
 }
 
 /// Shows the demo wheel under the cursor until it is clicked or 10 s pass.
-pub fn run_demo(options: &DemoOptions) -> Result<()> {
+pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
     // SAFETY: called once at startup before any window exists.
     unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)? };
 
     let cursor = cursor_pos()?;
-    let layout = Layout::new(monitor_dpi(cursor)?, options.scale_pct, options.sectors);
+    let (_, config) = Settings::load(config_path, options.overrides);
+    let o = &config.options;
+    let layout = Layout::new(monitor_dpi(cursor)?, o.scale_pct, o.outer_sectors);
     let size = layout.size_px() as i32;
     let left = cursor.x - size / 2;
     let top = cursor.y - size / 2;
@@ -73,7 +85,7 @@ pub fn run_demo(options: &DemoOptions) -> Result<()> {
         top as f32 + size as f32 / 2.0,
     );
     let hit = hit_at(&layout, center, cursor);
-    let renderer = match Renderer::new(hwnd, layout, theme::palette(options.theme))
+    let renderer = match Renderer::new(hwnd, layout, theme::palette(o.theme), config.clone())
         .and_then(|r| r.draw(hit).map(|()| r))
     {
         Ok(r) => r,
@@ -271,6 +283,10 @@ struct RunState {
     /// `None` only while it is being re-created for another monitor DPI.
     renderer: Option<Renderer>,
     palette: Palette,
+    config: Arc<Config>,
+    settings: Settings,
+    /// Size of the wheel in use. A reloaded file changes it only after the open that found the
+    /// change, because the hook thread has already laid that one out with the old values.
     scale_pct: u16,
     sectors: u8,
     layout: Layout,
@@ -282,28 +298,36 @@ struct RunState {
 
 /// Background mode: a hidden click-through window plus the hook thread; runs until
 /// `WM_WHEEL_QUIT`. The render resources are created once up front so that opening is fast.
-pub fn run_background(options: &RunOptions) -> Result<()> {
+pub fn run_background(options: &RunOptions, config_path: PathBuf) -> Result<()> {
     // SAFETY: called once at startup before any window exists.
     unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)? };
 
-    let (scale_pct, sectors) = (options.wheel.scale_pct, options.wheel.sectors);
+    let (settings, config) = Settings::load(config_path, options.wheel.overrides);
+    let watch_dir = match settings.path().parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir.to_path_buf(),
+        _ => PathBuf::from("."),
+    };
+    let (scale_pct, sectors) = (config.options.scale_pct, config.options.outer_sectors);
     let layout = layout_at(cursor_pos()?, scale_pct, sectors);
     let size = layout.size_px() as i32;
     let hwnd = create_popup(RUN_CLASS, run_wnd_proc, WS_EX_TRANSPARENT, (0, 0, size))?;
 
-    let palette = theme::palette(options.wheel.theme);
-    let renderer =
-        match Renderer::new(hwnd, layout, palette).and_then(|r| r.draw(Hit::Center).map(|()| r)) {
-            Ok(r) => r,
-            Err(e) => {
-                // SAFETY: `hwnd` was created above and is destroyed only here.
-                let _ = unsafe { DestroyWindow(hwnd) };
-                return Err(e);
-            }
-        };
+    let palette = theme::palette(config.options.theme);
+    let renderer = match Renderer::new(hwnd, layout, palette, config.clone())
+        .and_then(|r| r.draw(Hit::Center).map(|()| r))
+    {
+        Ok(r) => r,
+        Err(e) => {
+            // SAFETY: `hwnd` was created above and is destroyed only here.
+            let _ = unsafe { DestroyWindow(hwnd) };
+            return Err(e);
+        }
+    };
     let state = Box::into_raw(Box::new(RunState {
         renderer: Some(renderer),
         palette,
+        config: config.clone(),
+        settings,
         scale_pct,
         sectors,
         layout,
@@ -314,18 +338,19 @@ pub fn run_background(options: &RunOptions) -> Result<()> {
     // SAFETY: `state` stays valid until it is reclaimed below, after the message loop ended.
     unsafe { SetWindowLongPtrW(hwnd, GWLP_USERDATA, state as isize) };
 
-    let config = hook::Config {
-        trigger: options.trigger,
-        scale_pct,
-        sectors,
+    let hook_options = HookOptions {
         accept_injected: options.accept_injected,
         stall_hook_once: options.stall_hook_once,
     };
-    let loop_result = hook::start(config, hwnd).and_then(|hook| {
+    let watcher = Watcher::start(&watch_dir, hwnd, WM_CONFIG_CHANGED);
+    let loop_result = hook::start(hook_options, hwnd, config).and_then(|hook| {
         let result = message_loop();
         hook.stop();
         result
     });
+    if let Some(watcher) = watcher {
+        watcher.stop();
+    }
     // SAFETY: the window is destroyed (if it still exists) and the pointer cleared before the
     // state is freed, so nothing can reach it afterwards. `state` comes from `Box::into_raw`.
     let state = unsafe {
@@ -345,6 +370,22 @@ unsafe fn run_state<'a>(hwnd: HWND) -> Option<&'a mut RunState> {
     unsafe { (GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut RunState).as_mut() }
 }
 
+/// Picks up a changed config file: the hook thread gets the new configuration, the wheel the
+/// new look (rebuilt in `open_wheel`).
+fn reload(s: &mut RunState, apply_layout: bool) {
+    if let Some(config) = s.settings.refresh() {
+        hook::publish(config.clone());
+        s.palette = theme::palette(config.options.theme);
+        if apply_layout {
+            // The wheel is hidden, so no open is in flight with the old size.
+            s.scale_pct = config.options.scale_pct;
+            s.sectors = config.options.outer_sectors;
+        }
+        s.config = config;
+        s.renderer = None;
+    }
+}
+
 /// Shows the wheel centred at `center` without activating the window.
 fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<()> {
     let layout = layout_at(center, s.scale_pct, s.sectors);
@@ -352,7 +393,7 @@ fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<()> {
         // The monitor DPI differs: size and fonts change, so the render resources are rebuilt.
         // The old ones go first, a window can have only one composition target.
         s.renderer = None;
-        s.renderer = Some(Renderer::new(hwnd, layout, s.palette)?);
+        s.renderer = Some(Renderer::new(hwnd, layout, s.palette, s.config.clone())?);
         s.layout = layout;
     }
     let size = layout.size_px() as i32;
@@ -418,13 +459,38 @@ unsafe extern "system" fn run_wnd_proc(
                     x: wparam.0 as i32,
                     y: lparam.0 as i32,
                 };
-                run_state(hwnd).map_or(Ok(()), |s| open_wheel(hwnd, s, center))
+                run_state(hwnd).map_or(Ok(()), |s| {
+                    reload(s, false);
+                    let opened = open_wheel(hwnd, s, center);
+                    s.scale_pct = s.config.options.scale_pct;
+                    s.sectors = s.config.options.outer_sectors;
+                    opened
+                })
             }
             WM_WHEEL_CLOSE => {
                 close_wheel(hwnd);
                 return LRESULT(0);
             }
             WM_TIMER if wparam.0 == POLL_TIMER => run_state(hwnd).map_or(Ok(()), poll_run),
+            WM_CONFIG_CHANGED => {
+                // One reload for a burst of changes.
+                if SetTimer(Some(hwnd), CONFIG_TIMER, CONFIG_DEBOUNCE_MS, None) == 0 {
+                    Err(Error::from_thread())
+                } else {
+                    Ok(())
+                }
+            }
+            WM_TIMER if wparam.0 == CONFIG_TIMER => {
+                if IsWindowVisible(hwnd).as_bool() {
+                    // Not while the wheel is shown; try again shortly.
+                    return LRESULT(0);
+                }
+                let _ = KillTimer(Some(hwnd), CONFIG_TIMER);
+                if let Some(s) = run_state(hwnd) {
+                    reload(s, true);
+                }
+                return LRESULT(0);
+            }
             WM_WHEEL_QUIT => {
                 let _ = DestroyWindow(hwnd);
                 return LRESULT(0);
