@@ -203,9 +203,12 @@ enum State {
     },
     /// Movement started a normal drag; everything passes until the right button is released.
     Dragging,
-    /// Wheel open, right button still held.
+    /// Wheel open, right button still held. `left_center` is set once the pointer has been
+    /// outside the center: a release back in the center then cancels instead of entering the
+    /// click mode.
     Open {
         center: Point,
+        left_center: bool,
     },
     /// Wheel open after a release in the center; driven by the left button.
     ClickMode {
@@ -309,7 +312,10 @@ impl Trigger {
                 down_pos,
                 down_time,
             } => self.step_pending(down_pos, down_time, event.kind),
-            State::Open { center } => self.step_open(center, event.kind),
+            State::Open {
+                center,
+                left_center,
+            } => self.step_open(center, left_center, event.kind),
             State::ClickMode { center } => self.step_click_mode(center, event.kind),
         }
     }
@@ -353,7 +359,10 @@ impl Trigger {
             EventKind::HoldElapsed { time } => {
                 let elapsed = time.wrapping_sub(down_time);
                 if elapsed >= self.settings.hold_ms {
-                    self.state = State::Open { center: down_pos };
+                    self.state = State::Open {
+                        center: down_pos,
+                        left_center: false,
+                    };
                     Step::pass().with(Effect::OpenWheel { center: down_pos })
                 } else {
                     // Too early (coarse timer or a timer from an earlier press): wait the rest.
@@ -364,9 +373,23 @@ impl Trigger {
         }
     }
 
-    fn step_open(&mut self, center: Point, kind: EventKind) -> Step {
+    fn step_open(&mut self, center: Point, left_center: bool, kind: EventKind) -> Step {
         match kind {
+            EventKind::Move { pos, .. } => {
+                if !left_center && self.hit_at(center, pos) != Hit::Center {
+                    self.state = State::Open {
+                        center,
+                        left_center: true,
+                    };
+                }
+                Step::pass()
+            }
             EventKind::RightUp { pos, .. } => match self.hit_at(center, pos) {
+                // Back in the center after visiting the tiles: "Anuluj" closes the wheel.
+                Hit::Center if left_center => {
+                    self.state = State::Idle;
+                    Step::swallow().with(Effect::Cancel)
+                }
                 Hit::Center => {
                     self.state = State::ClickMode { center };
                     Step::swallow().with(Effect::EnterClickMode)
@@ -635,6 +658,36 @@ mod tests {
         assert_eq!(s, Step::pass().with(Effect::StartHoldTimer(1)));
         let s = hold_elapsed(&mut t, start.wrapping_add(180));
         assert_eq!(s.effects, vec![open_wheel()]);
+    }
+
+    #[test]
+    fn release_in_center_after_visiting_tiles_cancels() {
+        let mut t = trigger();
+        open(&mut t);
+        // Small moves inside the center do not count.
+        assert_eq!(mv(&mut t, pt(10, 10), 1300), Step::pass());
+        assert_eq!(mv(&mut t, pt(150, 0), 1350), Step::pass());
+        assert_eq!(mv(&mut t, pt(5, 0), 1380), Step::pass());
+        let s = right_up(&mut t, pt(5, 0), 1400);
+        assert_eq!(s.verdict, Verdict::Swallow);
+        assert_eq!(s.effects, vec![Effect::Cancel]);
+        assert!(!t.is_wheel_open());
+        // The release was the last event of the press: the next one starts afresh.
+        right_down(&mut t, 2000);
+        let s = hold_elapsed(&mut t, 2180);
+        assert_eq!(s.effects, vec![open_wheel()]);
+        let s = right_up(&mut t, pt(5, 5), 2200);
+        assert_eq!(s.effects, vec![Effect::EnterClickMode]);
+    }
+
+    #[test]
+    fn release_in_center_without_leaving_it_enters_click_mode() {
+        let mut t = trigger();
+        open(&mut t);
+        assert_eq!(mv(&mut t, pt(20, -20), 1300), Step::pass());
+        let s = right_up(&mut t, pt(20, -20), 1400);
+        assert_eq!(s.effects, vec![Effect::EnterClickMode]);
+        assert!(t.is_wheel_open());
     }
 
     #[test]

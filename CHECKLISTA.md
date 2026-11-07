@@ -42,7 +42,8 @@
 - [x] Widok kafelków: nazwy albo ikony (ikona z .exe, glify dla komend i akcji, litera gdy brak)
 - [x] Przykładowe podmenu „Ustawienia” w domyślnej konfiguracji
 - [x] Test automatyczny na LAB (wejście wstrzykiwane): łuk, tryb klikania, krawędź ekranu, widok ikon
-- [ ] Sprawdzenie fizyczną myszą
+- [x] Puszczenie prawego na środku po przejściu po kafelkach zamyka koło; puszczenie od razu na środku zostawia tryb klikania
+- [x] Sprawdzenie fizyczną myszą
 
 ## 06 edytor
 - [ ] Edytor jako osobny proces z podglądem
