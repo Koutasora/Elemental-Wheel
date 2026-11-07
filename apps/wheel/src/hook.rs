@@ -612,6 +612,7 @@ fn run_effect(effect: Effect) {
             let o = &config.options;
             let layout = layout_at(at, o.scale_pct, o.inner_sectors, o.outer_sectors);
             with_state(|s| s.trigger.set_layout(layout));
+            crate::stats::mark_open_request();
             post_to_window(
                 window,
                 WM_WHEEL_OPEN,

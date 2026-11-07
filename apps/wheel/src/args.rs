@@ -44,6 +44,8 @@ pub struct RunOptions {
     pub accept_injected: bool,
     /// Hidden test flag: stall the mouse hook once so the watchdog has to reinstall it.
     pub stall_hook_once: bool,
+    /// Hidden test flag: log open timings and process memory (see `stats`).
+    pub stats: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,6 +69,7 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
     let mut log = None;
     let mut accept_injected = false;
     let mut stall_hook_once = false;
+    let mut stats = false;
     let mut test_panic = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -76,6 +79,7 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
             "--quit" => quit = true,
             "--accept-injected" => accept_injected = true,
             "--test-stall-hook" => stall_hook_once = true,
+            "--stats" => stats = true,
             "--test-panic" => {
                 test_panic = Some(match value(&mut args, &arg)?.as_str() {
                     "hook" => PanicTest::Hook,
@@ -139,6 +143,9 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
     if demo && matches!(test_panic, Some(PanicTest::Hook | PanicTest::Action)) {
         return Err("--test-panic hook and action need --run".to_string());
     }
+    if demo && stats {
+        return Err("--stats needs --run".to_string());
+    }
     Ok(if demo {
         Command::Demo(wheel)
     } else if run {
@@ -146,6 +153,7 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
             wheel,
             accept_injected,
             stall_hook_once,
+            stats,
         })
     } else if quit {
         Command::Quit
@@ -205,6 +213,7 @@ mod tests {
         let o = run(&["--run"]);
         assert_eq!(o.wheel.overrides, Overrides::default());
         assert!(!o.accept_injected);
+        assert!(!o.stats);
     }
 
     #[test]
@@ -334,6 +343,13 @@ mod tests {
         assert!(parse_strs(&["--demo", "--test-panic", "action"]).is_err());
         assert!(parse_strs(&["--run", "--test-panic"]).is_err());
         assert!(parse_strs(&["--run", "--test-panic", "bogus"]).is_err());
+    }
+
+    #[test]
+    fn stats_flag() {
+        assert!(run(&["--run", "--stats"]).stats);
+        assert!(run(&["--stats", "--run"]).stats);
+        assert!(parse_strs(&["--demo", "--stats"]).is_err());
     }
 
     #[test]

@@ -7,6 +7,7 @@ mod icons;
 mod instance;
 mod render;
 mod settings;
+mod stats;
 mod theme;
 mod watch;
 mod watchdog;
