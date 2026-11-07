@@ -2,7 +2,7 @@
 //! this module loads file icons through the shell (on a worker thread, so a slow path never
 //! blocks the window) into egui textures, cached by (path, index, size).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::ffi::c_void;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
@@ -37,6 +37,9 @@ pub enum Drawn {
 
 type Key = (String, i32, u32);
 
+/// Loader threads running at the same time; further loads wait in a queue.
+const MAX_LOADERS: usize = 4;
+
 enum Entry {
     /// Being loaded on a worker thread.
     Pending,
@@ -44,10 +47,21 @@ enum Entry {
     Ready(TextureHandle),
 }
 
+struct Slot {
+    entry: Entry,
+    /// Frame in which the icon was last asked for.
+    used: u64,
+}
+
 /// Loaded file icons and whether the icon font is available.
 pub struct Icons {
     glyph_font: bool,
-    entries: HashMap<Key, Entry>,
+    entries: HashMap<Key, Slot>,
+    /// Keys waiting for a loader thread.
+    queue: VecDeque<Key>,
+    in_flight: usize,
+    /// Frame counter, advanced by `poll`.
+    frame: u64,
     tx: Sender<(Key, Option<ColorImage>)>,
     rx: Receiver<(Key, Option<ColorImage>)>,
 }
@@ -58,14 +72,20 @@ impl Icons {
         Icons {
             glyph_font,
             entries: HashMap::new(),
+            queue: VecDeque::new(),
+            in_flight: 0,
+            frame: 0,
             tx,
             rx,
         }
     }
 
-    /// Turns finished loads into textures; call once per frame.
+    /// Call once per frame, before drawing: turns finished loads into textures, drops icons not
+    /// asked for in the previous frame (and their textures) and starts queued loads.
     pub fn poll(&mut self, ctx: &Context) {
+        self.frame += 1;
         while let Ok((key, image)) = self.rx.try_recv() {
+            self.in_flight = self.in_flight.saturating_sub(1);
             let entry = match image {
                 Some(image) => Entry::Ready(ctx.load_texture(
                     format!("icon {} {}", key.0, key.1),
@@ -74,8 +94,31 @@ impl Icons {
                 )),
                 None => Entry::Failed,
             };
-            self.entries.insert(key, entry);
+            // The slot may be gone only if it was never created; a loaded icon nobody asks for
+            // any more is dropped by `evict` below.
+            let used = self.entries.get(&key).map_or(self.frame, |s| s.used);
+            self.entries.insert(key, Slot { entry, used });
         }
+        self.evict();
+        while self.in_flight < MAX_LOADERS {
+            let Some(key) = self.queue.pop_front() else {
+                break;
+            };
+            self.in_flight += 1;
+            let (tx, ctx) = (self.tx.clone(), ctx.clone());
+            std::thread::spawn(move || {
+                let image = load_image(&key.0, key.1, key.2);
+                let _ = tx.send((key, image));
+                ctx.request_repaint();
+            });
+        }
+    }
+
+    /// Removes entries not used in the previous frame; loads in progress stay.
+    fn evict(&mut self) {
+        let frame = self.frame;
+        self.entries
+            .retain(|_, s| matches!(s.entry, Entry::Pending) || s.used + 1 >= frame);
     }
 
     /// What `item` shows at `px` physical pixels. A file icon that is still loading is blank,
@@ -84,21 +127,26 @@ impl Icons {
         match spec_for(item) {
             IconSpec::File { path, index } => {
                 let key = (path, index, px);
-                match self.entries.get(&key) {
-                    Some(Entry::Ready(texture)) => Drawn::Texture(texture.id()),
-                    Some(Entry::Pending) => Drawn::Blank,
-                    Some(Entry::Failed) => letter(&item.name),
-                    None => {
-                        self.entries.insert(key.clone(), Entry::Pending);
-                        let (tx, ctx) = (self.tx.clone(), ctx.clone());
-                        std::thread::spawn(move || {
-                            let image = load_image(&key.0, key.1, key.2);
-                            let _ = tx.send((key, image));
-                            ctx.request_repaint();
-                        });
-                        Drawn::Blank
-                    }
+                let frame = self.frame;
+                if let Some(slot) = self.entries.get_mut(&key) {
+                    slot.used = frame;
+                    return match &slot.entry {
+                        Entry::Ready(texture) => Drawn::Texture(texture.id()),
+                        Entry::Pending => Drawn::Blank,
+                        Entry::Failed => letter(&item.name),
+                    };
                 }
+                self.queue.push_back(key.clone());
+                self.entries.insert(
+                    key,
+                    Slot {
+                        entry: Entry::Pending,
+                        used: frame,
+                    },
+                );
+                // Started by the next `poll`.
+                ctx.request_repaint();
+                Drawn::Blank
             }
             IconSpec::Glyph(c) => glyph_or_letter(c, self.glyph_font, &item.name),
             IconSpec::Letter(c) => Drawn::Letter(c),
@@ -408,6 +456,25 @@ mod tests {
             glyph_or_letter('\u{E774}', false, ""),
             Drawn::Blank
         ));
+    }
+
+    #[test]
+    fn unused_icons_are_evicted_but_loading_ones_stay() {
+        let mut icons = Icons::new(false);
+        let key = |n: &str| (n.to_string(), 0, 16);
+        for (name, entry, used) in [
+            ("recent", Entry::Failed, 9),
+            ("previous", Entry::Failed, 8),
+            ("old", Entry::Failed, 7),
+            ("loading", Entry::Pending, 1),
+        ] {
+            icons.entries.insert(key(name), Slot { entry, used });
+        }
+        icons.frame = 9;
+        icons.evict();
+        let mut left: Vec<_> = icons.entries.keys().map(|k| k.0.as_str()).collect();
+        left.sort();
+        assert_eq!(left, ["loading", "previous", "recent"]);
     }
 
     #[test]

@@ -312,7 +312,7 @@ pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
                 &painter,
                 polar(center, mid_r, (a0 + a1) / 2.0),
                 &item.name,
-                (11.0 * fit).clamp(8.0, 15.0),
+                (11.0 * u * fit).clamp(8.0, 22.0),
                 (r.1 - r.0) * 0.8,
                 st.text,
             );
@@ -340,14 +340,14 @@ pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
                 &painter,
                 at,
                 &item.name,
-                (13.0 * fit).clamp(9.0, 17.0),
+                (13.0 * u * fit).clamp(9.0, 24.0),
                 (r.1 - r.0) * 0.85,
                 st.text,
             );
         }
         if !item.submenu.is_empty() {
             // A short line at the outer edge marks a tile with a submenu.
-            let mark_r = r.1 - 7.0 * fit;
+            let mark_r = r.1 - 7.0 * u * fit;
             painter.line_segment(
                 [
                     polar(center, mark_r, mid - 6.0),
@@ -392,7 +392,7 @@ pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
                     &painter,
                     at,
                     &item.name,
-                    (12.0 * fit).clamp(9.0, 16.0),
+                    (12.0 * u * fit).clamp(9.0, 22.0),
                     (r.1 - r.0) * 0.9,
                     st.text,
                 );
@@ -410,7 +410,7 @@ pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
             &painter,
             center,
             &item.name,
-            (14.0 * fit).clamp(9.0, 18.0),
+            (14.0 * u * fit).clamp(9.0, 26.0),
             r * 1.5,
             text_color,
         );
