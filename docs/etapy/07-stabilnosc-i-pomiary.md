@@ -26,7 +26,7 @@ i żywy hak.
 - [x] `apps/wheel-editor/src/model.rs`, `main.rs`: czas modyfikacji pliku przy wczytaniu i zapisie, sprawdzanie przy odzyskaniu fokusu i co kilka sekund, pytanie przy konflikcie, pytanie przed nadpisaniem nowszego pliku; testy modelu
 - [x] Ukryta flaga `--stats`: czas otwarcia każdego otwarcia do logu, co minutę pamięć i uchwyty (`GetProcessMemoryInfo`, `GetGuiResources`)
 - [ ] `apps/wheel/src/window.rs`, `render.rs`, `icons.rs`: przygotowanie renderera i ikon po wczytaniu konfiguracji, pamięć podręczna układu tekstu glifów
-- [ ] `tools/soak.ps1`: `wheel.exe --run --accept-injected --stats --config <scratchpad>`, cykliczne otwieranie i zamykanie (z łukiem podmenu), zmiany pliku konfiguracji (także na zepsuty), zbieranie CSV
+- [x] `tools/soak.ps1`: `wheel.exe --run --accept-injected --stats --config <scratchpad>`, cykliczne otwieranie i zamykanie (z łukiem podmenu), zmiany pliku konfiguracji (także na zepsuty), zbieranie CSV
 - [ ] Wyniki pomiarów do pliku etapu i `README.md`; `CHECKLISTA.md`
 - Sprawdzenie: tester: build, testy, clippy, fmt; krótki przebieg `soak.ps1` (10 min), potem pełny (co najmniej 4 h) z CSV; pomiary przed i po zmianach renderera; `%APPDATA%` nietknięty
 
@@ -45,6 +45,23 @@ i żywy hak.
 - `--stats` tylko z `--run`. Czas otwarcia liczony od efektu otwarcia w wątku haka (próg spełniony) do powrotu `Commit` i `SetWindowPos` w oknie; w logu także rozbicie: kolejka (do obsługi `WM_WHEEL_OPEN`) i praca okna oraz rodzaj otwarcia (pierwsze, kolejne, po zmianie konfiguracji, inny DPI). Faktyczne pojawienie się klatki na ekranie (DWM) nie jest mierzone: to zależy od kompozytora, nie od koła.
 - Pamięć i uchwyty w logu przy starcie i co 60 s, wiersze `stats ...` w formacie `klucz=wartość`, żeby `soak.ps1` mógł je zamienić na CSV.
 - Kolejność kroków: `soak.ps1` przed zmianą renderera, bo służy też do pomiaru „przed”.
+- `soak.ps1` mierzy osobno widok `names` i `icons` (w konfiguracji nie ma widoku z oboma naraz); pomiar czasu otwarcia bez zmian konfiguracji (`-NoConfigChanges`), czas po zmianie konfiguracji w osobnym przebiegu.
+- Błąd znaleziony w `soak.ps1`: przytrzymanie tuż po anulowaniu Escape czasem nie otwiera koła (5 z 6 błędów cykli); diagnoza i poprawka przed zmianą renderera, bo test wielogodzinny wymaga zera błędów cykli.
+
+## Pomiary
+LAB: AMD Radeon Vega 11, 1920x1080, 96 DPI, wersja release, wejście wstrzykiwane, 6 min na przebieg, konfiguracja 8 sektorów zewnętrznych (jeden z podmenu 3 pozycji) i 8 wewnętrznych.
+
+Przed zmianą renderera (2026-11-07):
+
+| | ikony | nazwy | ikony, zmiana konfiguracji co 1 min |
+|---|---|---|---|
+| prywatna na starcie | 15584 KB | 12496 KB | 15800 KB |
+| prywatna po rozgrzewce: pierwsza / ostatnia / max | 17004 / 17044 / 17044 KB | 13544 / 13908 / 13908 KB | 17436 / 17084 / 17644 KB |
+| working set max | 35884 KB | 31632 KB | 39380 KB |
+| uchwyty / GDI / USER (ostatnie) | 305 / 8 / 15 | 275 / 0 / 13 | 294 / 8 / 14 |
+| pierwsze otwarcie | 3,96 ms | 3,68 ms | 6,07 ms |
+| kolejne: mediana / max | 3,18 / 4,86 ms (139) | 3,26 / 5,16 ms (137) | 3,68 / 6,07 ms (129) |
+| po zmianie konfiguracji: mediana / max | – | – | 89,2 / 96,6 ms (5) |
 
 ## Podsumowanie
 (wypełnia /etap-zamknij)
