@@ -17,7 +17,7 @@ Poprawiony `save()`: do `.bak` trafia tylko poprawny plik.
 - [x] Testy: `save()` i `.bak` w `wheel-core`; logika modelu edytora bez okna (zmiana typu akcji, podmenu, zmiana liczby sektorów)
 - [x] `cargo build --release`, `cargo test`, clippy `-D warnings` i `cargo fmt --check` czyste
 - [ ] Test na LAB z konfiguracją w scratchpadzie (`%APPDATA%` nietknięty): zrzuty edytora, zapis, przeładowanie w działającym kole
-- [ ] Układ okna zatwierdzony przez użytkownika na zrzucie przed dopracowaniem
+- [x] Układ okna zatwierdzony przez użytkownika na zrzucie przed dopracowaniem
 - [x] `README.md` i `CHECKLISTA.md` zaktualizowane
 
 ## Plan
@@ -27,13 +27,18 @@ Poprawiony `save()`: do `.bak` trafia tylko poprawny plik.
 - [x] `apps/wheel-editor/src/preview.rs`: rysowanie koła w egui z geometrii `wheel-core` (`layout`, `geometry`), trafianie kliknięciem i przeciąganiem pliku
 - [x] `apps/wheel-editor/src/panel.rs`, `options.rs`: panel kafelka i panel opcji
 - [x] `apps/wheel-editor/src/main.rs`: argumenty (`--version`, `--config`), okno, wczytanie, zapis, pytanie przy zamykaniu
-- [ ] Zrzut pierwszej wersji układu do akceptacji użytkownika
+- [x] Zrzut pierwszej wersji układu do akceptacji użytkownika (układ zatwierdzony na żywym oknie)
+- [ ] Podgląd: rozmiar koła z opcji (140% wypełnia pole podglądu), widok ikon (wybór ikony przeniesiony z `apps/wheel/src/icons.rs` do `wheel-core`, w edytorze ikony plików, glify Segoe, litery)
+- [ ] Podgląd zgodny z kołem: zaokrąglone rogi kafelków, podświetlenie kafelka pod kursorem, zaznaczenie obramowaniem w akcencie, nazwa zaznaczonego kafelka w środku
 - [x] `README.md`, `CHECKLISTA.md`
 - Sprawdzenie: tester: build, testy, clippy, fmt; skrypt PowerShell: edytor z `--config` w scratchpadzie, zrzuty, sprawdzenie zapisu, `.bak` i przeładowania w `wheel.exe` (`--accept-injected`); na końcu krótki test ręczny użytkownika
 
 ## Decyzje
 - Opcje programu i przeciąganie plików na sloty w tym etapie (są w makiecie; decyzja użytkownika).
 - Komunikaty z `wheel-core` zostają po angielsku (log, testy); edytor tłumaczy znane na polski w `messages.rs`, nieznane pokazuje bez zmian.
+- Podgląd pokazuje rozmiar względnie: 140% wypełnia pole, mniejsze proporcjonalnie (okno edytora nie ma skali ekranu koła).
+- Wybór ikony kafelka (`spec_for`, glify) we wspólnym `wheel-core`, żeby koło i podgląd pokazywały to samo; wczytywanie bitmap zostaje osobno w każdej aplikacji (Direct2D w kole, tekstury egui w edytorze).
+- Dopracowanie wyglądu edytora tylko w podglądzie koła (wybór użytkownika); panele i pasek stanu bez zmian.
 - Poza zakresem: uruchamianie edytora z zasobnika i z drugiej kopii programu (etap 08), pomiary pamięci (etap 07).
 
 ## Podsumowanie
