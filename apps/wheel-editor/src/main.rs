@@ -1,6 +1,7 @@
 // In release builds there is no console window; `--version` attaches to the parent console.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod messages;
 mod model;
 mod options;
 mod panel;
@@ -183,13 +184,13 @@ impl Status {
 fn load_status(model: &Model) -> Option<Status> {
     let mut lines = Vec::new();
     if let Some(e) = &model.load_error {
-        lines.push(format!("Nie wczytano pliku: {e}"));
+        lines.push(format!("Nie wczytano pliku: {}", messages::pl(e)));
     }
     lines.extend(
         model
             .load_warnings
             .iter()
-            .map(|w| format!("Ostrzeżenie: {w}")),
+            .map(|w| format!("Ostrzeżenie: {}", messages::pl(w))),
     );
     (!lines.is_empty()).then_some(Status {
         error: model.load_error.is_some(),
@@ -232,7 +233,11 @@ impl App {
         match self.model.save() {
             Ok(warnings) => {
                 let mut lines = vec!["Zapisano.".to_string()];
-                lines.extend(warnings.into_iter().map(|w| format!("Ostrzeżenie: {w}")));
+                lines.extend(
+                    warnings
+                        .iter()
+                        .map(|w| format!("Ostrzeżenie: {}", messages::pl(w))),
+                );
                 self.status = Some(Status {
                     error: false,
                     lines,
@@ -240,7 +245,7 @@ impl App {
                 true
             }
             Err(e) => {
-                self.status = Some(Status::error(format!("Nie zapisano: {e}")));
+                self.status = Some(Status::error(format!("Nie zapisano: {}", messages::pl(&e))));
                 false
             }
         }

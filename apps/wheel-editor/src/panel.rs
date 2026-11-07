@@ -190,7 +190,7 @@ pub fn show(ui: &mut Ui, model: &mut Model) {
             text(ui, keys, "np. Ctrl+Shift+T");
             if let Err(e) = parse_shortcut(keys) {
                 let color = ui.visuals().error_fg_color;
-                ui.label(RichText::new(e).color(color));
+                ui.label(RichText::new(crate::messages::pl(&e)).color(color));
             }
         }
         Action::Edit { command } => {

@@ -21,18 +21,19 @@ Poprawiony `save()`: do `.bak` trafia tylko poprawny plik.
 - [ ] `README.md` i `CHECKLISTA.md` zaktualizowane
 
 ## Plan
-- [ ] `crates/wheel-core/src/config.rs`: `save()` kopiuje do `.bak` tylko plik, który się wczytuje bez błędu; testy
-- [ ] `apps/wheel-editor/Cargo.toml`: `eframe`/`egui`, `rfd` (okno wyboru pliku)
-- [ ] `apps/wheel-editor/src/model.rs`: stan edytora (konfiguracja, zaznaczenie, znacznik zmian, operacje na kafelkach i podmenu) jako czysta logika; testy
-- [ ] `apps/wheel-editor/src/preview.rs`: rysowanie koła w egui z geometrii `wheel-core` (`layout`, `geometry`), trafianie kliknięciem i przeciąganiem pliku
-- [ ] `apps/wheel-editor/src/panel.rs`, `options.rs`: panel kafelka i panel opcji
-- [ ] `apps/wheel-editor/src/main.rs`: argumenty (`--version`, `--config`), okno, wczytanie, zapis, pytanie przy zamykaniu
+- [x] `crates/wheel-core/src/config.rs`: `save()` kopiuje do `.bak` tylko plik, który się wczytuje bez błędu; testy
+- [x] `apps/wheel-editor/Cargo.toml`: `eframe`/`egui`, `rfd` (okno wyboru pliku)
+- [x] `apps/wheel-editor/src/model.rs`: stan edytora (konfiguracja, zaznaczenie, znacznik zmian, operacje na kafelkach i podmenu) jako czysta logika; testy
+- [x] `apps/wheel-editor/src/preview.rs`: rysowanie koła w egui z geometrii `wheel-core` (`layout`, `geometry`), trafianie kliknięciem i przeciąganiem pliku
+- [x] `apps/wheel-editor/src/panel.rs`, `options.rs`: panel kafelka i panel opcji
+- [x] `apps/wheel-editor/src/main.rs`: argumenty (`--version`, `--config`), okno, wczytanie, zapis, pytanie przy zamykaniu
 - [ ] Zrzut pierwszej wersji układu do akceptacji użytkownika
 - [ ] `README.md`, `CHECKLISTA.md`
 - Sprawdzenie: tester: build, testy, clippy, fmt; skrypt PowerShell: edytor z `--config` w scratchpadzie, zrzuty, sprawdzenie zapisu, `.bak` i przeładowania w `wheel.exe` (`--accept-injected`); na końcu krótki test ręczny użytkownika
 
 ## Decyzje
 - Opcje programu i przeciąganie plików na sloty w tym etapie (są w makiecie; decyzja użytkownika).
+- Komunikaty z `wheel-core` zostają po angielsku (log, testy); edytor tłumaczy znane na polski w `messages.rs`, nieznane pokazuje bez zmian.
 - Poza zakresem: uruchamianie edytora z zasobnika i z drugiej kopii programu (etap 08), pomiary pamięci (etap 07).
 
 ## Podsumowanie
