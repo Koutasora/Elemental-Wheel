@@ -52,11 +52,11 @@ pub fn run(action: &Action, target: isize, wheel: isize) {
     let spawned = thread::Builder::new().name("action".into()).spawn(move || {
         wait_hidden(HWND(wheel as *mut _));
         if let Err(e) = execute(&action, HWND(target as *mut _), HWND(wheel as *mut _)) {
-            eprintln!("action failed: {e}");
+            wheel_core::log_line!("action failed: {e}");
         }
     });
     if let Err(e) = spawned {
-        eprintln!("action failed: cannot start the thread: {e}");
+        wheel_core::log_line!("action failed: cannot start the thread: {e}");
     }
 }
 

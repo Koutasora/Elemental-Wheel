@@ -40,7 +40,7 @@ impl Watcher {
         } {
             Ok(handle) => handle,
             Err(e) => {
-                eprintln!(
+                wheel_core::log_line!(
                     "config: cannot watch {} ({e}); changes are picked up when the wheel opens",
                     dir.display()
                 );
@@ -51,7 +51,7 @@ impl Watcher {
         let stop = match unsafe { CreateEventW(None, true, false, None) } {
             Ok(handle) => handle,
             Err(e) => {
-                eprintln!("config: cannot create the stop event ({e}); not watching");
+                wheel_core::log_line!("config: cannot create the stop event ({e}); not watching");
                 // SAFETY: the handle was just created.
                 let _ = unsafe { FindCloseChangeNotification(change) };
                 return None;

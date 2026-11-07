@@ -384,13 +384,13 @@ impl HookState {
         self.passthrough_right = false;
         self.swallow_escape = false;
         if let Err(e) = self.install() {
-            eprintln!("wheel: cannot reinstall the hooks: {e}");
+            wheel_core::log_line!("wheel: cannot reinstall the hooks: {e}");
             return;
         }
         if was_open {
             post_to_window(self.window, WM_WHEEL_CLOSE, 0, 0);
         }
-        eprintln!("hook reinstalled");
+        wheel_core::log_line!("hook reinstalled");
     }
 
     fn check_watchdog(&mut self) {
@@ -408,7 +408,7 @@ unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) 
         // SAFETY: for HC_ACTION `lparam` points to an MSLLHOOKSTRUCT valid during the call.
         let info = unsafe { &*(lparam.0 as *const MSLLHOOKSTRUCT) };
         if wparam.0 as u32 == WM_RBUTTONDOWN && STALL_PENDING.swap(false, Ordering::Relaxed) {
-            eprintln!("test: stalling the mouse hook for {STALL_MS} ms");
+            wheel_core::log_line!("test: stalling the mouse hook for {STALL_MS} ms");
             thread::sleep(Duration::from_millis(STALL_MS));
             // The event is not fed to the trigger: Windows has already passed it on.
             // SAFETY: passing the arguments on unchanged.
@@ -511,7 +511,7 @@ fn run_effects() {
         run_effect(effect);
     }
     while let Some(note) = with_state(|s| s.notes.pop_front()).flatten() {
-        eprintln!("{note}");
+        wheel_core::log_line!("{note}");
     }
 }
 
@@ -646,7 +646,7 @@ fn send_mouse(inputs: &[INPUT]) {
     // SAFETY: `inputs` is a valid slice of fully initialised INPUT structures.
     let sent = unsafe { SendInput(inputs, size_of::<INPUT>() as i32) };
     if sent as usize != inputs.len() {
-        eprintln!(
+        wheel_core::log_line!(
             "wheel: SendInput injected {sent} of {} events",
             inputs.len()
         );

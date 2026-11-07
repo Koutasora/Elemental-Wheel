@@ -180,7 +180,7 @@ fn load_image(path: &str, index: i32, size: u32) -> Option<ColorImage> {
     match image {
         Ok(image) => Some(image),
         Err(e) => {
-            eprintln!("wheel-editor: no icon for \"{path}\": {e}");
+            wheel_core::log_line!("wheel-editor: no icon for \"{path}\": {e}");
             None
         }
     }

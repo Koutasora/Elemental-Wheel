@@ -59,6 +59,10 @@ target\release\wheel-editor.exe --version
 - Dropping a file or folder on a tile of the preview makes it a `program` item (`.exe`, `.lnk`, `.bat`, `.cmd`) or an `open` item, named after the file; the tile keeps its submenu.
 - Save with "Zapisz" or Ctrl+S. The configuration is validated first; on an error the file is left as it was and the reason is shown. Unsaved changes are marked in the title bar and the bottom bar; closing or reloading asks first. A running `wheel.exe` picks up the saved file by itself.
 
+## Log
+
+`wheel.exe` (`--run`, `--demo`) i `wheel-editor.exe` zapisują log do `%LOCALAPPDATA%\Elemental-Wheel\wheel.log` i `editor.log` (UTC, jedna linia na zdarzenie, z numerem procesu). Te same linie idą na stderr. Plik ma do 1 MB; po przekroczeniu poprzedni trafia do `wheel.old.log` (`editor.old.log`), a log zaczyna się od nowa. Panika też jest zapisywana. `--log <path>` wskazuje inny plik. Gdy pliku nie da się otworzyć, program działa dalej bez niego.
+
 ## Configuration
 
 `%APPDATA%\Elemental-Wheel\config.json`, created with the defaults on first start. UTF-8 (a UTF-16 file with BOM, as PowerShell 5.1 writes it, is read too). Every valid file that is loaded is copied to `config.json.bak` (the last good version); saving is atomic (temporary file, then replace) and copies the previous file to `.bak` only if it loads without error.

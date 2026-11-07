@@ -35,11 +35,13 @@ pub const ICON_FAMILY: &str = "icons";
 
 enum Command {
     Version,
-    Run(Option<PathBuf>),
+    /// Config path and log path from the command line.
+    Run(Option<PathBuf>, Option<PathBuf>),
 }
 
 fn parse_args(args: impl Iterator<Item = String>) -> Result<Command, String> {
     let mut config = None;
+    let mut log = None;
     let mut args = args;
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -48,10 +50,14 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Command, String> {
                 let value = args.next().ok_or("--config needs a path")?;
                 config = Some(PathBuf::from(value));
             }
+            "--log" => {
+                let value = args.next().ok_or("--log needs a path")?;
+                log = Some(PathBuf::from(value));
+            }
             other => return Err(format!("Unknown argument: {other}")),
         }
     }
-    Ok(Command::Run(config))
+    Ok(Command::Run(config, log))
 }
 
 /// Writes to the console of the parent process: a program built for the `windows` subsystem has
@@ -90,6 +96,18 @@ fn config_path(arg: Option<PathBuf>) -> Result<PathBuf, String> {
         .ok_or_else(|| "The APPDATA variable is not set; use --config <path>".to_string())
 }
 
+/// Opens the log file and routes panics to it. A log that cannot be opened is not fatal.
+fn start_log(arg: Option<PathBuf>) {
+    wheel_core::log::install_panic_hook();
+    let Some(path) = arg.or_else(|| wheel_core::log::default_path("editor.log")) else {
+        wheel_core::log_line!("wheel-editor: LOCALAPPDATA is not set; no log file");
+        return;
+    };
+    if let Err(e) = wheel_core::log::init(&path) {
+        wheel_core::log_line!("wheel-editor: cannot open the log {}: {e}", path.display());
+    }
+}
+
 fn main() -> ExitCode {
     let path = match parse_args(std::env::args().skip(1)) {
         Ok(Command::Version) => {
@@ -99,18 +117,22 @@ fn main() -> ExitCode {
             );
             return ExitCode::SUCCESS;
         }
-        Ok(Command::Run(arg)) => match config_path(arg) {
-            Ok(path) => path,
-            Err(e) => {
-                console_print(&format!("wheel-editor: {e}"), true);
-                return ExitCode::from(1);
+        Ok(Command::Run(arg, log)) => {
+            start_log(log);
+            match config_path(arg) {
+                Ok(path) => path,
+                Err(e) => {
+                    console_print(&format!("wheel-editor: {e}"), true);
+                    return ExitCode::from(1);
+                }
             }
-        },
+        }
         Err(e) => {
             console_print(&e, true);
             return ExitCode::from(2);
         }
     };
+    wheel_core::log_line!("editor {} started", env!("CARGO_PKG_VERSION"));
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(TITLE)

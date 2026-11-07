@@ -19,6 +19,8 @@ pub struct DemoOptions {
     pub overrides: Overrides,
     /// `--config`; the default is `%APPDATA%\Elemental-Wheel\config.json`.
     pub config: Option<PathBuf>,
+    /// `--log`; the default is `%LOCALAPPDATA%\Elemental-Wheel\wheel.log`.
+    pub log: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,6 +51,7 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
     let (mut demo, mut run, mut quit) = (false, false, false);
     let mut o = Overrides::default();
     let mut config = None;
+    let mut log = None;
     let mut accept_injected = false;
     let mut stall_hook_once = false;
     while let Some(arg) = args.next() {
@@ -65,6 +68,13 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
                     return Err("Invalid value for --config: empty path".to_string());
                 }
                 config = Some(PathBuf::from(path));
+            }
+            "--log" => {
+                let path = value(&mut args, &arg)?;
+                if path.is_empty() {
+                    return Err("Invalid value for --log: empty path".to_string());
+                }
+                log = Some(PathBuf::from(path));
             }
             "--hold-ms" => {
                 let n = number(&value(&mut args, &arg)?, &arg)?;
@@ -101,6 +111,7 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
     let wheel = DemoOptions {
         overrides: o,
         config,
+        log,
     };
     Ok(if demo {
         Command::Demo(wheel)
@@ -164,6 +175,7 @@ mod tests {
         let o = demo(&["--demo"]);
         assert_eq!(o.overrides, Overrides::default());
         assert_eq!(o.config, None);
+        assert_eq!(o.log, None);
         let o = run(&["--run"]);
         assert_eq!(o.wheel.overrides, Overrides::default());
         assert!(!o.accept_injected);
@@ -213,6 +225,20 @@ mod tests {
         );
         assert!(parse_strs(&["--run", "--config"]).is_err());
         assert!(parse_strs(&["--run", "--config", ""]).is_err());
+    }
+
+    #[test]
+    fn log_path() {
+        assert_eq!(
+            demo(&["--demo", "--log", "dir/w.log"]).log,
+            Some(PathBuf::from("dir/w.log"))
+        );
+        assert_eq!(
+            run(&["--log", "w.log", "--run"]).wheel.log,
+            Some(PathBuf::from("w.log"))
+        );
+        assert!(parse_strs(&["--run", "--log"]).is_err());
+        assert!(parse_strs(&["--run", "--log", ""]).is_err());
     }
 
     #[test]

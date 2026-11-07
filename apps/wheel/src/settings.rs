@@ -50,16 +50,16 @@ fn source_name(source: Source) -> &'static str {
 }
 
 fn report(path: &Path, loaded: &Loaded) {
-    eprintln!(
+    wheel_core::log_line!(
         "config: {} ({})",
         path.display(),
         source_name(loaded.source)
     );
     for warning in &loaded.warnings {
-        eprintln!("config warning: {warning}");
+        wheel_core::log_line!("config warning: {warning}");
     }
     if let Some(error) = &loaded.error {
-        eprintln!("config error: {error}");
+        wheel_core::log_line!("config error: {error}");
     }
 }
 
