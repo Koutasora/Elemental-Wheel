@@ -36,6 +36,8 @@ i żywy hak.
 - Log we wspólnym `wheel_core::log` (tylko std, bez zależności), bo używają go koło i edytor; czas w UTC (bez biblioteki dat), limit 1 MB, jeden starszy plik `*.old.log`.
 - Do logu trafia to, co dziś idzie przez `eprintln!` (błędy, ostrzeżenia, raport konfiguracji, strażnik); ślady wyboru na stdout zostają tylko na stdout (szum przy każdym otwarciu).
 - Przełącznik `--log <ścieżka>` w kole i edytorze, żeby testy i `soak.ps1` nie pisały do `%LOCALAPPDATA%`.
+- Przechwytywanie paniki także w procedurach okna koła (nie tylko hak i akcje): panika w `extern "system"` kończy proces; po panice koło się chowa, stan wyzwalacza wraca do spoczynku, zdarzenie idzie dalej.
+- Ukryta flaga `--test-panic hook|window|action` (jak `--test-stall-hook`), żeby sprawdzić odzyskiwanie na żywo wejściem wstrzykiwanym.
 
 ## Podsumowanie
 (wypełnia /etap-zamknij)
