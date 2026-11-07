@@ -37,6 +37,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{PCWSTR, PWSTR, w};
 
+use crate::args::PanicTest;
+use crate::guard;
 use crate::hook::{MARKER, is_shell_class, window_class};
 
 /// How long the clipboard keeps the pasted text before the previous text comes back.
@@ -50,13 +52,34 @@ pub fn run(action: &Action, target: isize, wheel: isize) {
     }
     let action = action.clone();
     let spawned = thread::Builder::new().name("action".into()).spawn(move || {
-        wait_hidden(HWND(wheel as *mut _));
-        if let Err(e) = execute(&action, HWND(target as *mut _), HWND(wheel as *mut _)) {
-            eprintln!("action failed: {e}");
+        let done = guard::try_run("action thread", "thread ended", || {
+            guard::fire(PanicTest::Action);
+            wait_hidden(HWND(wheel as *mut _));
+            if let Err(e) = execute(&action, HWND(target as *mut _), HWND(wheel as *mut _)) {
+                wheel_core::log_line!("action failed: {e}");
+            }
+        });
+        if done.is_none() {
+            wheel_core::log_line!("action panicked: {}", kind(&action));
         }
     });
     if let Err(e) = spawned {
-        eprintln!("action failed: cannot start the thread: {e}");
+        wheel_core::log_line!("action failed: cannot start the thread: {e}");
+    }
+}
+
+/// Name of the action type for the log (no payload: it may hold text the user typed).
+fn kind(action: &Action) -> &'static str {
+    match action {
+        Action::None => "none",
+        Action::Program { .. } => "program",
+        Action::Open { .. } => "open",
+        Action::Url { .. } => "url",
+        Action::Shortcut { .. } => "shortcut",
+        Action::Edit { .. } => "edit",
+        Action::PasteText { .. } => "paste_text",
+        Action::Command { .. } => "command",
+        Action::System { .. } => "system",
     }
 }
 

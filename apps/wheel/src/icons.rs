@@ -166,7 +166,7 @@ impl Loader<'_> {
                 match loaded {
                     Ok(bitmap) => Some(bitmap),
                     Err(e) => {
-                        eprintln!("wheel: no icon for \"{path}\": {e}");
+                        wheel_core::log_line!("wheel: no icon for \"{path}\": {e}");
                         None
                     }
                 }

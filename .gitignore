@@ -1,3 +1,4 @@
 /target
 .vscode/
 *.log
+.claude/settings.local.json

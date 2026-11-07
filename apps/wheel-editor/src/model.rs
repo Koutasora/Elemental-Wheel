@@ -1,6 +1,8 @@
 //! Editor state and operations: pure logic, no GUI.
 
+use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use wheel_core::config;
 use wheel_core::{
@@ -178,6 +180,35 @@ fn new_item(name: &str) -> Item {
     }
 }
 
+/// Modified time and length of the config file: enough to notice an edit made elsewhere.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Stamp {
+    modified: Option<SystemTime>,
+    len: u64,
+}
+
+/// The current stamp of `path`; `None` when the file does not exist (or cannot be read).
+pub fn read_stamp(path: &Path) -> Option<Stamp> {
+    let meta = fs::metadata(path).ok()?;
+    Some(Stamp {
+        modified: meta.modified().ok(),
+        len: meta.len(),
+    })
+}
+
+/// The result of `Model::check_external`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExternalChange {
+    None,
+    /// The file changed and there were no unsaved changes: it was loaded again.
+    ReloadedSilently,
+    /// The file changed while there are unsaved changes: the user has to choose
+    /// (`reload` or `keep_mine`).
+    NeedsDecision,
+    /// The file was deleted.
+    Vanished,
+}
+
 /// The edited configuration, its last saved copy and the selection.
 pub struct Model {
     pub config: Config,
@@ -187,6 +218,8 @@ pub struct Model {
     pub source: Source,
     pub load_error: Option<String>,
     pub load_warnings: Vec<String>,
+    /// The stamp of the file as the editor knows it (loaded or saved by the editor).
+    stamp: Option<Stamp>,
 }
 
 impl Model {
@@ -198,6 +231,7 @@ impl Model {
             None => (Config::default(), Source::Defaults, None, Vec::new()),
         };
         Model {
+            stamp: read_stamp(&path),
             saved: config.clone(),
             config,
             selection: Selection::None,
@@ -217,6 +251,34 @@ impl Model {
         self.config != self.saved
     }
 
+    /// Whether the file on disk (`now`) differs from the stamp the editor knows.
+    pub fn disk_changed(&self, now: Option<Stamp>) -> bool {
+        now != self.stamp
+    }
+
+    /// Compares the file stamp `now` with the known one. Without unsaved changes a changed
+    /// file is loaded again; a deleted file is reported once.
+    pub fn check_external(&mut self, now: Option<Stamp>) -> ExternalChange {
+        if !self.disk_changed(now) {
+            return ExternalChange::None;
+        }
+        if now.is_none() {
+            self.stamp = None;
+            return ExternalChange::Vanished;
+        }
+        if self.is_dirty() {
+            ExternalChange::NeedsDecision
+        } else {
+            self.reload();
+            ExternalChange::ReloadedSilently
+        }
+    }
+
+    /// "Keep my changes": accepts the file as it is now, so it is not reported again.
+    pub fn keep_mine(&mut self, now: Option<Stamp>) {
+        self.stamp = now;
+    }
+
     /// Validates a copy and writes it. On an error nothing is written and the message is
     /// returned; on success the warnings (such as clamped values) are returned.
     pub fn save(&mut self) -> Result<Vec<String>, String> {
@@ -225,6 +287,7 @@ impl Model {
         config::save(&self.path, &copy).map_err(|e| format!("{}: {e}", self.path.display()))?;
         self.config = copy.clone();
         self.saved = copy;
+        self.stamp = read_stamp(&self.path);
         self.source = Source::File;
         self.load_error = None;
         self.load_warnings.clear();
@@ -711,6 +774,117 @@ mod tests {
         m.reload();
         assert!(!m.is_dirty());
         assert_eq!(m.config.outer[0].name, "Terminal");
+    }
+
+    /// Writes `config` to `path`, padded with `pad` spaces, so that the stamp differs from any earlier one (the length
+    /// differs, as the modified time may be too coarse).
+    fn write_external(path: &Path, config: &Config, pad: usize) {
+        config::save(path, config).unwrap();
+        let mut text = fs::read_to_string(path).unwrap();
+        text.push_str(&" ".repeat(pad));
+        fs::write(path, text).unwrap();
+    }
+
+    #[test]
+    fn own_save_is_not_an_external_change() {
+        let path = dir("ext-own").join("config.json");
+        let mut m = Model::open(path.clone());
+        m.set_selection(Selection::Outer(0));
+        m.set_name("Moje");
+        m.save().unwrap();
+        assert!(!m.disk_changed(read_stamp(&path)));
+        assert_eq!(m.check_external(read_stamp(&path)), ExternalChange::None);
+    }
+
+    #[test]
+    fn external_change_without_unsaved_changes_reloads() {
+        let path = dir("ext-clean").join("config.json");
+        let mut m = Model::open(path.clone());
+        m.save().unwrap();
+        let mut other = m.config.clone();
+        other.outer[0].name = "Obce".into();
+        write_external(&path, &other, 3);
+        assert_eq!(
+            m.check_external(read_stamp(&path)),
+            ExternalChange::ReloadedSilently
+        );
+        assert_eq!(m.config.outer[0].name, "Obce");
+        assert!(!m.is_dirty());
+        assert_eq!(m.check_external(read_stamp(&path)), ExternalChange::None);
+    }
+
+    #[test]
+    fn external_change_with_unsaved_changes_needs_a_decision() {
+        let path = dir("ext-dirty").join("config.json");
+        let mut m = Model::open(path.clone());
+        m.save().unwrap();
+        m.set_selection(Selection::Outer(0));
+        m.set_name("Moje");
+        let mut other = m.config.clone();
+        other.outer[0].name = "Obce".into();
+        write_external(&path, &other, 3);
+        assert_eq!(
+            m.check_external(read_stamp(&path)),
+            ExternalChange::NeedsDecision
+        );
+        assert_eq!(m.config.outer[0].name, "Moje");
+        // "Wczytaj plik".
+        m.reload();
+        assert_eq!(m.config.outer[0].name, "Obce");
+        assert_eq!(m.check_external(read_stamp(&path)), ExternalChange::None);
+    }
+
+    #[test]
+    fn keep_mine_acknowledges_the_change() {
+        let path = dir("ext-keep").join("config.json");
+        let mut m = Model::open(path.clone());
+        m.save().unwrap();
+        m.set_selection(Selection::Outer(0));
+        m.set_name("Moje");
+        write_external(&path, &Config::default(), 5);
+        assert_eq!(
+            m.check_external(read_stamp(&path)),
+            ExternalChange::NeedsDecision
+        );
+        m.keep_mine(read_stamp(&path));
+        assert_eq!(m.check_external(read_stamp(&path)), ExternalChange::None);
+        assert!(m.is_dirty());
+        // A further change is reported again.
+        write_external(&path, &Config::default(), 9);
+        assert_eq!(
+            m.check_external(read_stamp(&path)),
+            ExternalChange::NeedsDecision
+        );
+    }
+
+    #[test]
+    fn vanished_file_is_reported_once_and_save_recreates_it() {
+        let path = dir("ext-gone").join("config.json");
+        let mut m = Model::open(path.clone());
+        m.save().unwrap();
+        fs::remove_file(&path).unwrap();
+        assert_eq!(
+            m.check_external(read_stamp(&path)),
+            ExternalChange::Vanished
+        );
+        assert_eq!(m.check_external(read_stamp(&path)), ExternalChange::None);
+        assert!(!m.disk_changed(read_stamp(&path)));
+        m.save().unwrap();
+        assert!(path.exists());
+        assert_eq!(m.check_external(read_stamp(&path)), ExternalChange::None);
+    }
+
+    #[test]
+    fn save_over_a_newer_file_is_detected() {
+        let path = dir("ext-over").join("config.json");
+        let mut m = Model::open(path.clone());
+        m.save().unwrap();
+        assert!(!m.disk_changed(read_stamp(&path)));
+        write_external(&path, &Config::default(), 7);
+        assert!(m.disk_changed(read_stamp(&path)));
+        // Saving anyway updates the stamp.
+        m.save().unwrap();
+        assert!(!m.disk_changed(read_stamp(&path)));
     }
 
     impl Model {

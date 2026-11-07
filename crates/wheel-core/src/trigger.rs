@@ -262,6 +262,22 @@ impl Trigger {
         self.arc = None;
     }
 
+    /// Goes idle after a failure in the program (not a lost hook). Unlike [`reset`](Self::reset)
+    /// it keeps swallowing the release of a button whose press was swallowed, so the program
+    /// under the cursor never gets a release without its press.
+    pub fn recover(&mut self) {
+        self.state = match self.state {
+            State::Pending { .. } | State::Open { .. } | State::SwallowRightUp => {
+                State::SwallowRightUp
+            }
+            State::SwallowLeftUp => State::SwallowLeftUp,
+            // Dragging: the press went to the program, so its release must too. Click mode:
+            // the right button is already released.
+            _ => State::Idle,
+        };
+        self.arc = None;
+    }
+
     /// True while the wheel is shown (button held or click mode).
     pub fn is_wheel_open(&self) -> bool {
         matches!(self.state, State::Open { .. } | State::ClickMode { .. })
@@ -503,6 +519,47 @@ mod tests {
         assert_eq!(s.effects, vec![open_wheel()]);
         t.set_layout(Layout::new(96, 100, 12, 12));
         assert!(t.is_wheel_open());
+    }
+
+    #[test]
+    fn recover_swallows_the_release_of_a_swallowed_press() {
+        for hold in [false, true] {
+            let mut t = trigger();
+            if hold {
+                open(&mut t);
+            } else {
+                right_down(&mut t, 1000);
+            }
+            t.recover();
+            assert!(!t.is_wheel_open());
+            let s = right_up(&mut t, pt(60, 0), 1500);
+            assert!(s.effects.is_empty(), "{:?}", s.effects);
+            assert_eq!(s.verdict, Verdict::Swallow);
+            // Only that one release.
+            assert_eq!(right_up(&mut t, pt(60, 0), 1600).verdict, Verdict::Pass);
+        }
+    }
+
+    #[test]
+    fn recover_passes_the_release_of_a_passed_press() {
+        let mut t = trigger();
+        t.recover();
+        assert_eq!(right_up(&mut t, P, 1500).verdict, Verdict::Pass);
+        right_down(&mut t, 1000);
+        let s = mv(&mut t, pt(30, 0), 1010);
+        assert!(!s.effects.is_empty()); // a normal drag: the press is replayed
+        t.recover();
+        assert_eq!(right_up(&mut t, pt(30, 0), 1500).verdict, Verdict::Pass);
+    }
+
+    #[test]
+    fn reset_while_open_makes_the_release_select_nothing() {
+        let mut t = trigger();
+        open(&mut t);
+        t.reset();
+        assert!(!t.is_wheel_open());
+        let s = right_up(&mut t, pt(60, 0), 1500);
+        assert!(s.effects.is_empty(), "{:?}", s.effects);
     }
 
     #[test]

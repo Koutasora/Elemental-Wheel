@@ -1,11 +1,13 @@
 mod actions;
 mod args;
 mod fit;
+mod guard;
 mod hook;
 mod icons;
 mod instance;
 mod render;
 mod settings;
+mod stats;
 mod theme;
 mod watch;
 mod watchdog;
@@ -22,7 +24,7 @@ fn main() -> ExitCode {
             println!(
                 "Elemental Wheel (stage 05). Options for --demo and --run: \
                  [--theme system|light|dark] [--scale 60..140] [--sectors 4..12] \
-                 [--config <path>].\n  \
+                 [--config <path>] [--log <path>].\n  \
                  They override config.json (default %APPDATA%\\Elemental-Wheel\\config.json).\n  \
                  --demo   show the wheel under the cursor\n  \
                  --run    run in the background; holding the right mouse button opens the wheel \
@@ -36,13 +38,15 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Ok(Command::Demo(options)) => {
+            start_log(options.log.as_deref());
+            guard::arm(options.test_panic);
             let Some(path) = config_path(options.config.as_deref()) else {
                 return ExitCode::from(1);
             };
             match window::run_demo(&options, path) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(e) => {
-                    eprintln!("wheel: {e}");
+                    wheel_core::log_line!("wheel: {e}");
                     ExitCode::from(1)
                 }
             }
@@ -58,7 +62,7 @@ fn main() -> ExitCode {
             }
         }
         Err(message) => {
-            eprintln!("{message}");
+            wheel_core::log_line!("{message}");
             ExitCode::from(2)
         }
     }
@@ -68,13 +72,30 @@ fn config_path(arg: Option<&Path>) -> Option<PathBuf> {
     match settings::resolve_path(arg) {
         Ok(path) => Some(path),
         Err(e) => {
-            eprintln!("wheel: {e}");
+            wheel_core::log_line!("wheel: {e}");
             None
         }
     }
 }
 
+/// Opens the log file and routes panics to it. A log that cannot be opened is not fatal.
+fn start_log(arg: Option<&Path>) {
+    wheel_core::log::install_panic_hook();
+    let Some(path) = arg
+        .map(Path::to_path_buf)
+        .or_else(|| wheel_core::log::default_path("wheel.log"))
+    else {
+        wheel_core::log_line!("wheel: LOCALAPPDATA is not set; no log file");
+        return;
+    };
+    if let Err(e) = wheel_core::log::init(&path) {
+        wheel_core::log_line!("wheel: cannot open the log {}: {e}", path.display());
+    }
+}
+
 fn run(options: &RunOptions) -> ExitCode {
+    start_log(options.wheel.log.as_deref());
+    guard::arm(options.wheel.test_panic);
     let Some(path) = config_path(options.wheel.config.as_deref()) else {
         return ExitCode::from(1);
     };
@@ -85,14 +106,23 @@ fn run(options: &RunOptions) -> ExitCode {
             return ExitCode::from(1);
         }
         Err(e) => {
-            eprintln!("wheel: {e}");
+            wheel_core::log_line!("wheel: {e}");
             return ExitCode::from(1);
         }
     }
+    wheel_core::log_line!(
+        "wheel {} started (pid {}, config {})",
+        env!("CARGO_PKG_VERSION"),
+        std::process::id(),
+        path.display()
+    );
     match window::run_background(options, path) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => {
+            wheel_core::log_line!("wheel stopped");
+            ExitCode::SUCCESS
+        }
         Err(e) => {
-            eprintln!("wheel: {e}");
+            wheel_core::log_line!("wheel: {e}");
             ExitCode::from(1)
         }
     }

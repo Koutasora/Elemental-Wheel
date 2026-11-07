@@ -14,11 +14,26 @@ pub struct Overrides {
     pub move_px: Option<i32>,
 }
 
+/// Hidden test flag `--test-panic`: where the first panic is raised on purpose.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PanicTest {
+    /// In the hook state code, on the first right-button press the trigger handles.
+    Hook,
+    /// In the wheel window procedure, on the first open (`--demo`: the first poll).
+    Window,
+    /// In the first action thread, before the action runs.
+    Action,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DemoOptions {
     pub overrides: Overrides,
     /// `--config`; the default is `%APPDATA%\Elemental-Wheel\config.json`.
     pub config: Option<PathBuf>,
+    /// `--log`; the default is `%LOCALAPPDATA%\Elemental-Wheel\wheel.log`.
+    pub log: Option<PathBuf>,
+    /// Hidden test flag: one deliberate panic to check that it is caught.
+    pub test_panic: Option<PanicTest>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,6 +44,8 @@ pub struct RunOptions {
     pub accept_injected: bool,
     /// Hidden test flag: stall the mouse hook once so the watchdog has to reinstall it.
     pub stall_hook_once: bool,
+    /// Hidden test flag: log open timings and process memory (see `stats`).
+    pub stats: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,8 +66,11 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
     let (mut demo, mut run, mut quit) = (false, false, false);
     let mut o = Overrides::default();
     let mut config = None;
+    let mut log = None;
     let mut accept_injected = false;
     let mut stall_hook_once = false;
+    let mut stats = false;
+    let mut test_panic = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--version" => return Ok(Command::Version),
@@ -59,12 +79,28 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
             "--quit" => quit = true,
             "--accept-injected" => accept_injected = true,
             "--test-stall-hook" => stall_hook_once = true,
+            "--stats" => stats = true,
+            "--test-panic" => {
+                test_panic = Some(match value(&mut args, &arg)?.as_str() {
+                    "hook" => PanicTest::Hook,
+                    "window" => PanicTest::Window,
+                    "action" => PanicTest::Action,
+                    other => return Err(format!("Invalid value for --test-panic: {other}")),
+                })
+            }
             "--config" => {
                 let path = value(&mut args, &arg)?;
                 if path.is_empty() {
                     return Err("Invalid value for --config: empty path".to_string());
                 }
                 config = Some(PathBuf::from(path));
+            }
+            "--log" => {
+                let path = value(&mut args, &arg)?;
+                if path.is_empty() {
+                    return Err("Invalid value for --log: empty path".to_string());
+                }
+                log = Some(PathBuf::from(path));
             }
             "--hold-ms" => {
                 let n = number(&value(&mut args, &arg)?, &arg)?;
@@ -101,7 +137,15 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
     let wheel = DemoOptions {
         overrides: o,
         config,
+        log,
+        test_panic,
     };
+    if demo && matches!(test_panic, Some(PanicTest::Hook | PanicTest::Action)) {
+        return Err("--test-panic hook and action need --run".to_string());
+    }
+    if demo && stats {
+        return Err("--stats needs --run".to_string());
+    }
     Ok(if demo {
         Command::Demo(wheel)
     } else if run {
@@ -109,6 +153,7 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
             wheel,
             accept_injected,
             stall_hook_once,
+            stats,
         })
     } else if quit {
         Command::Quit
@@ -164,9 +209,11 @@ mod tests {
         let o = demo(&["--demo"]);
         assert_eq!(o.overrides, Overrides::default());
         assert_eq!(o.config, None);
+        assert_eq!(o.log, None);
         let o = run(&["--run"]);
         assert_eq!(o.wheel.overrides, Overrides::default());
         assert!(!o.accept_injected);
+        assert!(!o.stats);
     }
 
     #[test]
@@ -216,6 +263,20 @@ mod tests {
     }
 
     #[test]
+    fn log_path() {
+        assert_eq!(
+            demo(&["--demo", "--log", "dir/w.log"]).log,
+            Some(PathBuf::from("dir/w.log"))
+        );
+        assert_eq!(
+            run(&["--log", "w.log", "--run"]).wheel.log,
+            Some(PathBuf::from("w.log"))
+        );
+        assert!(parse_strs(&["--run", "--log"]).is_err());
+        assert!(parse_strs(&["--run", "--log", ""]).is_err());
+    }
+
+    #[test]
     fn clamps_out_of_range() {
         let scale = |v: &str| demo(&["--demo", "--scale", v]).overrides.scale_pct;
         let sectors = |v: &str| demo(&["--demo", "--sectors", v]).overrides.sectors;
@@ -258,6 +319,37 @@ mod tests {
         assert_eq!(v.move_px, Some(10));
         assert!(o.accept_injected);
         assert!(o.stall_hook_once);
+    }
+
+    #[test]
+    fn test_panic_flag() {
+        assert_eq!(demo(&["--demo"]).test_panic, None);
+        assert_eq!(run(&["--run"]).wheel.test_panic, None);
+        for (text, kind) in [
+            ("hook", PanicTest::Hook),
+            ("window", PanicTest::Window),
+            ("action", PanicTest::Action),
+        ] {
+            assert_eq!(
+                run(&["--run", "--test-panic", text]).wheel.test_panic,
+                Some(kind)
+            );
+        }
+        assert_eq!(
+            demo(&["--test-panic", "window", "--demo"]).test_panic,
+            Some(PanicTest::Window)
+        );
+        assert!(parse_strs(&["--demo", "--test-panic", "hook"]).is_err());
+        assert!(parse_strs(&["--demo", "--test-panic", "action"]).is_err());
+        assert!(parse_strs(&["--run", "--test-panic"]).is_err());
+        assert!(parse_strs(&["--run", "--test-panic", "bogus"]).is_err());
+    }
+
+    #[test]
+    fn stats_flag() {
+        assert!(run(&["--run", "--stats"]).stats);
+        assert!(run(&["--stats", "--run"]).stats);
+        assert!(parse_strs(&["--demo", "--stats"]).is_err());
     }
 
     #[test]

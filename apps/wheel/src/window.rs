@@ -23,10 +23,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{Error, PCWSTR, Result, w};
 
-use crate::args::{DemoOptions, RunOptions};
+use crate::args::{DemoOptions, PanicTest, RunOptions};
+use crate::guard;
 use crate::hook::{self, HookOptions};
 use crate::render::Renderer;
 use crate::settings::Settings;
+use crate::stats::{self, OpenKind};
 use crate::theme::{self, Palette};
 use crate::watch::Watcher;
 
@@ -45,6 +47,8 @@ const POLL_TIMER: usize = 1;
 const POLL_MS: u32 = 16;
 const CLOSE_TIMER: usize = 2;
 const CONFIG_TIMER: usize = 3;
+const STATS_TIMER: usize = 4;
+const STATS_MS: u32 = 60_000;
 /// Wait after a change so that an editor can finish saving; further changes restart the wait.
 const CONFIG_DEBOUNCE_MS: u32 = 100;
 const CLOSE_AFTER_MS: u32 = 10_000;
@@ -282,6 +286,18 @@ fn poll(state: &mut State) -> Result<()> {
 }
 
 extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    guard::try_run("window proc", "window closed", || {
+        wnd_proc_inner(hwnd, msg, wparam, lparam)
+    })
+    .unwrap_or_else(|| {
+        // SAFETY: `hwnd` is the live window of this thread; the demo closes by destroying it.
+        let _ = unsafe { DestroyWindow(hwnd) };
+        // SAFETY: passing the arguments on unchanged.
+        unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+    })
+}
+
+fn wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     // SAFETY: all messages are handled on the one UI thread; the state reference is dropped
     // before anything that can re-enter this function (DestroyWindow).
     unsafe {
@@ -296,6 +312,7 @@ extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM
                 return LRESULT(0);
             }
             WM_TIMER if wparam.0 == POLL_TIMER => {
+                guard::fire(PanicTest::Window);
                 let failed = match state(hwnd) {
                     Some(s) => match poll(s) {
                         Ok(()) => false,
@@ -386,6 +403,18 @@ pub fn run_background(options: &RunOptions, config_path: PathBuf) -> Result<()> 
     // SAFETY: `state` stays valid until it is reclaimed below, after the message loop ended.
     unsafe { SetWindowLongPtrW(hwnd, GWLP_USERDATA, state as isize) };
 
+    if options.stats {
+        stats::enable();
+        stats::log_memory();
+        // SAFETY: `hwnd` is a live window of this thread.
+        if unsafe { SetTimer(Some(hwnd), STATS_TIMER, STATS_MS, None) } == 0 {
+            wheel_core::log_line!(
+                "stats: cannot start the memory timer: {}",
+                Error::from_thread()
+            );
+        }
+    }
+
     let hook_options = HookOptions {
         accept_injected: options.accept_injected,
         stall_hook_once: options.stall_hook_once,
@@ -436,9 +465,15 @@ fn reload(s: &mut RunState, apply_layout: bool) {
 }
 
 /// Shows the wheel centred at `center` without activating the window.
-fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<()> {
+fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<OpenKind> {
     let layout = layout_at(center, s.scale_pct, s.inner_sectors, s.sectors);
+    let mut kind = OpenKind::Same;
     if layout != s.layout || s.renderer.is_none() {
+        kind = if s.renderer.is_none() {
+            OpenKind::Reload
+        } else {
+            OpenKind::Dpi
+        };
         // The monitor DPI differs: size and fonts change, so the render resources are rebuilt.
         // The old ones go first, a window can have only one composition target.
         s.renderer = None;
@@ -472,7 +507,7 @@ fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<()> {
             return Err(Error::from_thread());
         }
     }
-    Ok(())
+    Ok(kind)
 }
 
 fn close_wheel(hwnd: HWND) {
@@ -505,6 +540,20 @@ unsafe extern "system" fn run_wnd_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    guard::try_run("window proc", "wheel hidden", || {
+        // SAFETY: same contract as this function.
+        unsafe { run_wnd_proc_inner(hwnd, msg, wparam, lparam) }
+    })
+    .unwrap_or_else(|| {
+        close_wheel(hwnd);
+        // The hook thread's trigger still believes the wheel is open.
+        hook::request_recover();
+        // SAFETY: passing the arguments on unchanged.
+        unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+    })
+}
+
+unsafe fn run_wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     // SAFETY: all messages are handled on the one UI thread; the state reference is dropped
     // before anything that can re-enter this function (DestroyWindow).
     unsafe {
@@ -515,13 +564,18 @@ unsafe extern "system" fn run_wnd_proc(
                     x: wparam.0 as i32,
                     y: lparam.0 as i32,
                 };
+                let started = stats::open_started();
+                guard::fire(PanicTest::Window);
                 run_state(hwnd).map_or(Ok(()), |s| {
                     reload(s, false);
                     let opened = open_wheel(hwnd, s, center);
+                    if let (Some(started), Ok(kind)) = (started, &opened) {
+                        stats::open_finished(started, *kind);
+                    }
                     s.scale_pct = s.config.options.scale_pct;
                     s.inner_sectors = s.config.options.inner_sectors;
                     s.sectors = s.config.options.outer_sectors;
-                    opened
+                    opened.map(|_| ())
                 })
             }
             WM_WHEEL_CLOSE => {
@@ -536,6 +590,10 @@ unsafe extern "system" fn run_wnd_proc(
                 } else {
                     Ok(())
                 }
+            }
+            WM_TIMER if wparam.0 == STATS_TIMER => {
+                stats::log_memory();
+                return LRESULT(0);
             }
             WM_TIMER if wparam.0 == CONFIG_TIMER => {
                 if IsWindowVisible(hwnd).as_bool() {

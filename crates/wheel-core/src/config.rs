@@ -647,23 +647,42 @@ fn create_default(path: &Path, config: &Config) -> io::Result<()> {
     file.sync_all()
 }
 
-/// Like [`load`], but never creates the file: `None` if it does not exist. A valid file is
-/// copied to `<path>.bak` as the last good version; an invalid one leaves the backup alone.
-pub fn load_existing(path: &Path) -> Option<Loaded> {
-    let error = match read_config(path) {
+/// Why [`load_valid`] gave no configuration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoadError {
+    /// The file does not exist.
+    Missing,
+    /// The file exists but cannot be used; the text says why (including the path).
+    Invalid(String),
+}
+
+/// Reads only the file itself: no creating, no fallback to `.bak` or the defaults. A valid file
+/// is copied to `<path>.bak` as the last good version; an invalid one leaves the backup alone.
+pub fn load_valid(path: &Path) -> Result<Loaded, LoadError> {
+    match read_config(path) {
         Ok((bytes, config, mut warnings)) => {
             if let Err(e) = update_backup(path, &bytes) {
                 warnings.push(format!("cannot update the backup: {e}"));
             }
-            return Some(Loaded {
+            Ok(Loaded {
                 config,
                 source: Source::File,
                 warnings,
                 error: None,
-            });
+            })
         }
-        Err(ReadError::Missing) => return None,
-        Err(ReadError::Invalid(e)) => e,
+        Err(ReadError::Missing) => Err(LoadError::Missing),
+        Err(ReadError::Invalid(e)) => Err(LoadError::Invalid(e)),
+    }
+}
+
+/// Like [`load`], but never creates the file: `None` if it does not exist. An invalid file falls
+/// back to `<path>.bak`, then to the defaults.
+pub fn load_existing(path: &Path) -> Option<Loaded> {
+    let error = match load_valid(path) {
+        Ok(loaded) => return Some(loaded),
+        Err(LoadError::Missing) => return None,
+        Err(LoadError::Invalid(e)) => e,
     };
     Some(match read_config(&with_suffix(path, ".bak")) {
         Ok((_, config, warnings)) => Loaded {
@@ -851,6 +870,50 @@ mod tests {
         assert!(load_existing(&path).is_none());
         assert!(!path.exists());
         assert!(!with_suffix(&path, ".bak").exists());
+    }
+
+    #[test]
+    fn load_valid_does_not_fall_back() {
+        let path = dir("load_valid_no_fallback").join("config.json");
+        assert_eq!(load_valid(&path).unwrap_err(), LoadError::Missing);
+        assert!(!path.exists());
+        let good = br#"{"options":{"scale_pct":90}}"#;
+        fs::write(&path, good).unwrap();
+        let loaded = load_valid(&path).unwrap();
+        assert_eq!(loaded.source, Source::File);
+        assert_eq!(loaded.config.options.scale_pct, 90);
+        let bak = with_suffix(&path, ".bak");
+        assert_eq!(fs::read(&bak).unwrap(), good);
+        fs::write(&path, b"{ not json").unwrap();
+        match load_valid(&path) {
+            Err(LoadError::Invalid(e)) => assert!(e.contains("config.json"), "{e}"),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(fs::read(&bak).unwrap(), good);
+    }
+
+    #[test]
+    fn stale_temp_file_does_not_break_save_or_load() {
+        let path = dir("stale_temp_file").join("config.json");
+        let first = Config::default();
+        save(&path, &first).unwrap();
+        // What an interrupted save leaves behind.
+        let tmp = with_suffix(&path, ".tmp");
+        fs::write(&tmp, b"{ garbage").unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.source, Source::File);
+        assert_eq!(loaded.config, first);
+        let mut second = Config::default();
+        second.options.scale_pct = 80;
+        save(&path, &second).unwrap();
+        assert!(!tmp.exists());
+        let bak = read_config(&with_suffix(&path, ".bak")).ok().unwrap();
+        assert_eq!(bak.1, first);
+        assert_eq!(load(&path).config, second);
+        // A stale temporary file with no config yet is not taken for the config either.
+        let path = dir("stale_temp_file_only").join("config.json");
+        fs::write(with_suffix(&path, ".tmp"), b"{ garbage").unwrap();
+        assert_eq!(load(&path).source, Source::Created);
     }
 
     #[test]

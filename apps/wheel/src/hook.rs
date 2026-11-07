@@ -8,7 +8,7 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::io::Write;
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -16,7 +16,9 @@ use std::time::Duration;
 use wheel_core::{
     Config as WheelConfig, Effect, Event, EventKind, Hit, Origin, Point, SubArc, Trigger, Verdict,
 };
-use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{
+    CloseHandle, E_FAIL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
+};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
 };
@@ -48,6 +50,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{Error, HRESULT, PWSTR, Result};
 
 use crate::actions;
+use crate::args::PanicTest;
+use crate::guard;
 use crate::watchdog;
 use crate::window::{WM_WHEEL_CLOSE, WM_WHEEL_OPEN, layout_at};
 
@@ -56,6 +60,11 @@ pub const MARKER: usize = 0x454C_5748;
 
 /// Posted to the hook thread: run the queued effects.
 const WM_EFFECTS: u32 = WM_APP + 1;
+/// Posted to the hook thread by the UI thread after a panic in the window procedure: reset the
+/// trigger, so that the wheel that is no longer shown cannot select anything.
+const WM_RECOVER: u32 = WM_APP + 3;
+/// Id of the hook thread (0 = not running), for `request_recover`.
+static HOOK_THREAD: AtomicU32 = AtomicU32::new(0);
 /// The timer fires `HoldElapsed` with `GetTickCount`, which is coarser than the event times, so
 /// it is started a little late to make sure the hold time really has elapsed.
 const HOLD_TIMER_SLACK_MS: u32 = 16;
@@ -99,6 +108,15 @@ pub fn publish_arc(arc: Option<SubArc>) {
     ARC.store(bits, Ordering::Relaxed);
 }
 
+/// Asks the hook thread to reset its state (see `HookState::recover`).
+pub fn request_recover() {
+    let id = HOOK_THREAD.load(Ordering::Relaxed);
+    if id != 0 {
+        // SAFETY: plain call; if the thread is gone, the failure is harmless.
+        let _ = unsafe { PostThreadMessageW(id, WM_RECOVER, WPARAM(0), LPARAM(0)) };
+    }
+}
+
 fn current_arc() -> Option<SubArc> {
     let bits = ARC.load(Ordering::Relaxed);
     (bits != 0).then_some(SubArc {
@@ -135,7 +153,10 @@ pub fn start(config: HookOptions, window: HWND, settings: Arc<WheelConfig>) -> R
     let window = window.0 as isize;
     STALL_PENDING.store(config.stall_hook_once, Ordering::Relaxed);
     let (tx, rx) = mpsc::channel();
-    let handle = thread::spawn(move || thread_main(config, window, tx));
+    let handle = thread::Builder::new()
+        .name("hook".into())
+        .spawn(move || thread_main(config, window, tx))
+        .map_err(|_| Error::from_hresult(E_FAIL))?;
     match rx.recv() {
         Ok(Ok(thread_id)) => Ok(HookThread { thread_id, handle }),
         Ok(Err(code)) => Err(Error::from(HRESULT(code))),
@@ -195,6 +216,9 @@ impl HookState {
 
     /// Steps the machine and queues its effects. True if the event is to be swallowed.
     fn feed(&mut self, event: Event) -> bool {
+        if matches!(event.kind, EventKind::RightDown { .. }) && event.origin == Origin::Physical {
+            guard::fire(PanicTest::Hook);
+        }
         let step = self.trigger.step(event);
         if !step.effects.is_empty() {
             self.effects.extend(step.effects);
@@ -384,13 +408,25 @@ impl HookState {
         self.passthrough_right = false;
         self.swallow_escape = false;
         if let Err(e) = self.install() {
-            eprintln!("wheel: cannot reinstall the hooks: {e}");
+            wheel_core::log_line!("wheel: cannot reinstall the hooks: {e}");
             return;
         }
         if was_open {
             post_to_window(self.window, WM_WHEEL_CLOSE, 0, 0);
         }
-        eprintln!("hook reinstalled");
+        wheel_core::log_line!("hook reinstalled");
+    }
+
+    /// After a panic in hook code: back to a known idle state. The wheel window is asked to
+    /// close in case it was shown.
+    fn recover(&mut self) {
+        self.stop_hold_timer();
+        self.trigger.recover();
+        self.effects.clear();
+        self.notes.clear();
+        self.passthrough_right = false;
+        self.swallow_escape = false;
+        post_to_window(self.window, WM_WHEEL_CLOSE, 0, 0);
     }
 
     fn check_watchdog(&mut self) {
@@ -403,18 +439,32 @@ impl HookState {
     }
 }
 
+/// Runs hook-thread code that must not unwind. After a panic the state is reset (see
+/// `HookState::recover`) and false is returned: the event is passed on. A panic during the
+/// recovery is caught too and leaves the state as it is.
+fn guarded(place: &str, f: impl FnOnce() -> bool) -> bool {
+    guard::try_run(place, "event passed on, state reset", f).unwrap_or_else(|| {
+        guard::run("hook recovery", "event passed on", None, || {
+            with_state(HookState::recover)
+        });
+        false
+    })
+}
+
 unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code == HC_ACTION as i32 {
         // SAFETY: for HC_ACTION `lparam` points to an MSLLHOOKSTRUCT valid during the call.
         let info = unsafe { &*(lparam.0 as *const MSLLHOOKSTRUCT) };
         if wparam.0 as u32 == WM_RBUTTONDOWN && STALL_PENDING.swap(false, Ordering::Relaxed) {
-            eprintln!("test: stalling the mouse hook for {STALL_MS} ms");
+            wheel_core::log_line!("test: stalling the mouse hook for {STALL_MS} ms");
             thread::sleep(Duration::from_millis(STALL_MS));
             // The event is not fed to the trigger: Windows has already passed it on.
             // SAFETY: passing the arguments on unchanged.
             return unsafe { CallNextHookEx(None, code, wparam, lparam) };
         }
-        if with_state(|s| s.on_mouse(wparam.0 as u32, info)) == Some(true) {
+        if guarded("mouse hook", || {
+            with_state(|s| s.on_mouse(wparam.0 as u32, info)) == Some(true)
+        }) {
             return LRESULT(1);
         }
     }
@@ -426,7 +476,9 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
     if code == HC_ACTION as i32 {
         // SAFETY: for HC_ACTION `lparam` points to a KBDLLHOOKSTRUCT valid during the call.
         let info = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
-        if with_state(|s| s.on_key(wparam.0 as u32, info)) == Some(true) {
+        if guarded("keyboard hook", || {
+            with_state(|s| s.on_key(wparam.0 as u32, info)) == Some(true)
+        }) {
             return LRESULT(1);
         }
     }
@@ -471,6 +523,7 @@ fn thread_main(
     // SAFETY: a thread timer of this thread.
     state.watchdog_timer = unsafe { SetTimer(None, 0, watchdog::INTERVAL_MS, None) };
     STATE.with(|cell| *cell.borrow_mut() = Some(state));
+    HOOK_THREAD.store(thread_id, Ordering::Relaxed);
     let _ = ready.send(Ok(thread_id));
 
     loop {
@@ -480,11 +533,28 @@ fn thread_main(
             break;
         }
         match msg.message {
-            WM_EFFECTS => run_effects(),
-            WM_TIMER => on_timer(msg.wParam.0),
+            WM_EFFECTS => {
+                guarded("hook effects", || {
+                    run_effects();
+                    false
+                });
+            }
+            WM_RECOVER => {
+                guarded("hook recover request", || {
+                    with_state(HookState::recover);
+                    false
+                });
+            }
+            WM_TIMER => {
+                guarded("hook timer", || {
+                    on_timer(msg.wParam.0);
+                    false
+                });
+            }
             _ => {}
         }
     }
+    HOOK_THREAD.store(0, Ordering::Relaxed);
     with_state(|s| {
         s.uninstall();
         s.stop_hold_timer();
@@ -511,7 +581,7 @@ fn run_effects() {
         run_effect(effect);
     }
     while let Some(note) = with_state(|s| s.notes.pop_front()).flatten() {
-        eprintln!("{note}");
+        wheel_core::log_line!("{note}");
     }
 }
 
@@ -542,6 +612,7 @@ fn run_effect(effect: Effect) {
             let o = &config.options;
             let layout = layout_at(at, o.scale_pct, o.inner_sectors, o.outer_sectors);
             with_state(|s| s.trigger.set_layout(layout));
+            crate::stats::mark_open_request();
             post_to_window(
                 window,
                 WM_WHEEL_OPEN,
@@ -646,7 +717,7 @@ fn send_mouse(inputs: &[INPUT]) {
     // SAFETY: `inputs` is a valid slice of fully initialised INPUT structures.
     let sent = unsafe { SendInput(inputs, size_of::<INPUT>() as i32) };
     if sent as usize != inputs.len() {
-        eprintln!(
+        wheel_core::log_line!(
             "wheel: SendInput injected {sent} of {} events",
             inputs.len()
         );

@@ -59,6 +59,10 @@ target\release\wheel-editor.exe --version
 - Dropping a file or folder on a tile of the preview makes it a `program` item (`.exe`, `.lnk`, `.bat`, `.cmd`) or an `open` item, named after the file; the tile keeps its submenu.
 - Save with "Zapisz" or Ctrl+S. The configuration is validated first; on an error the file is left as it was and the reason is shown. Unsaved changes are marked in the title bar and the bottom bar; closing or reloading asks first. A running `wheel.exe` picks up the saved file by itself.
 
+## Log
+
+`wheel.exe` (`--run`, `--demo`) and `wheel-editor.exe` write a log to `%LOCALAPPDATA%\Elemental-Wheel\wheel.log` and `editor.log` (UTC, one line per event, with the process id); the same lines go to stderr. Up to 1 MB per file; when full, it is moved to `wheel.old.log` (`editor.old.log`) and a new log starts. Panics are logged too. `--log <path>` selects another file. If the file cannot be opened, the program runs without it.
+
 ## Configuration
 
 `%APPDATA%\Elemental-Wheel\config.json`, created with the defaults on first start. UTF-8 (a UTF-16 file with BOM, as PowerShell 5.1 writes it, is read too). Every valid file that is loaded is copied to `config.json.bak` (the last good version); saving is atomic (temporary file, then replace) and copies the previous file to `.bak` only if it loads without error.
@@ -102,14 +106,31 @@ target\release\wheel-editor.exe --version
 - `system` actions: `lock`, `close_window`, `minimize_window`, `show_desktop`, `volume_mute`, `volume_up`, `volume_down`, `screenshot`.
 - `program` and `open` paths and arguments expand `%VARIABLES%`.
 - `excluded` lists program file names (case does not matter).
-- Numbers outside the allowed range are clamped with a warning on stderr. An invalid file (bad JSON or encoding, unknown type, invalid shortcut, too many items) is not used and never overwritten: the program falls back to `config.json.bak`, then to the defaults, and says why on stderr.
+- Numbers outside the allowed range are clamped with a warning (in the log and on stderr). An invalid file (bad JSON or encoding, unknown type, invalid shortcut, too many items) is never overwritten. At start the program falls back to `config.json.bak`, then to the defaults. While running, an invalid file is ignored and the current configuration stays; either way the reason goes to the log (and stderr).
 - The config folder is watched: a changed file is reloaded within a moment, no restart needed. Exclusions, actions, names and trigger thresholds apply from the next press, wheel size and sector count from the next opening. If the folder is missing at start, the file is checked when the wheel opens instead.
+
+## Measurements
+
+Release build, 1920x1080 at 96 DPI, 8 outer and 8 inner sectors, one submenu; measured with `tools/soak.ps1` (development tool, injected input).
+
+| | names view | icons view |
+|---|---|---|
+| private memory in the background | 13.9 MB | 17.0 MB |
+| opening, median / max | 3.3 / 5.2 ms | 3.2 / 4.9 ms |
+| first opening after a config change | | 89 ms |
+
+Over 6-minute runs: private memory within 0.4 MB, handle count stable.
+
+## Known issues
+
+- Holding the right button right after the wheel was closed with Escape sometimes does not open it; the next hold does.
 
 ## Layout
 
 - `crates/wheel-core` - wheel geometry, configuration and shortcut parsing
 - `apps/wheel` - background program
 - `apps/wheel-editor` - editor
+- `tools/soak.ps1` - soak test and measurements
 
 Concept mockup: [docs/koncept.html](docs/koncept.html) (open locally in a browser).
 

@@ -5,6 +5,7 @@ pub mod geometry;
 pub mod icon;
 pub mod keys;
 pub mod layout;
+pub mod log;
 pub mod submenu;
 pub mod trigger;
 
