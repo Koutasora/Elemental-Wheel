@@ -59,13 +59,14 @@
 - [x] Liczba sektorów pierścienia wewnętrznego 4–12
 
 ## 07 stabilnosc-i-pomiary
-- [ ] Pomiar zużycia pamięci w tle
-- [ ] Pomiar czasu otwarcia koła
+- [x] Pomiar zużycia pamięci w tle (nazwy 13,9 MB, ikony 17 MB)
+- [x] Pomiar czasu otwarcia koła (mediana ok. 3 ms; po zmianie konfiguracji 89 ms)
 - [x] Odporność na awarie edytora i błędną konfigurację (zepsuty plik w trakcie pracy, zabity edytor, przerwany zapis)
 - [x] Edytor wykrywa zmianę pliku konfiguracji z zewnątrz
 - [x] Log w `%LOCALAPPDATA%\Elemental-Wheel` (koło i edytor), limit 1 MB, `--log`
 - [x] Panika w haku, oknie koła i akcji przechwycona i zapisana w logu; koło działa dalej
-- [ ] Test wielogodzinny
+- [x] Narzędzie `tools/soak.ps1` (test i pomiary); test wielogodzinny pominięty (decyzja)
+- [ ] Znany błąd: przytrzymanie tuż po zamknięciu koła Escape czasem nie otwiera koła
 
 ## 08 instalator-i-wydanie
 - [ ] Instalator, który wypisuje zainstalowaną wersję
@@ -76,3 +77,5 @@
 ## 09 wyglad-i-animacje
 - [ ] Dopracowany wygląd koła i efekty
 - [ ] Animacje otwierania, zamykania i podświetlenia
+- [ ] Renderer i ikony przygotowane po wczytaniu konfiguracji (otwarcie po zmianie konfiguracji 89 ms)
+- [ ] Pamięć w widoku ikon do 15 MB (dziś 17 MB)

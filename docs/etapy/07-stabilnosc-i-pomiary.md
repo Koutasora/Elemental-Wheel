@@ -16,7 +16,7 @@ i żywy hak.
 - ~~Renderer i ikony przygotowane od razu po wczytaniu konfiguracji, nie przy pierwszym otwarciu; układ tekstu glifów nie tworzony przy każdym odrysowaniu; pomiar przed i po~~ (przeniesione do etapu 09)
 - ~~Przebieg `soak.ps1` 10 min na LAB (wejście wstrzykiwane, konfiguracja w scratchpadzie, zmiany konfiguracji): bez awarii i błędów cykli, hak żywy~~ (rezygnacja, patrz Decyzje)
 - [ ] `cargo build --release`, `cargo test`, clippy `-D warnings`, `cargo fmt --check` czyste
-- [ ] `README.md` (log, wyniki pomiarów) i `CHECKLISTA.md` zaktualizowane
+- [x] `README.md` (log, wyniki pomiarów) i `CHECKLISTA.md` zaktualizowane
 
 ## Plan
 - [x] `crates/wheel-core/src/log.rs` (nowy, zamiast `apps/wheel/src/log.rs`): plik logu z limitem rozmiaru, panic hook, zapis zamiast samego `eprintln!` (konsola zostaje); to samo w edytorze
@@ -27,8 +27,8 @@ i żywy hak.
 - [x] Ukryta flaga `--stats`: czas otwarcia każdego otwarcia do logu, co minutę pamięć i uchwyty (`GetProcessMemoryInfo`, `GetGuiResources`)
 - ~~`apps/wheel/src/window.rs`, `render.rs`, `icons.rs`: przygotowanie renderera i ikon po wczytaniu konfiguracji, pamięć podręczna układu tekstu glifów~~ (przeniesione do etapu 09)
 - [x] `tools/soak.ps1`: `wheel.exe --run --accept-injected --stats --config <scratchpad>`, cykliczne otwieranie i zamykanie (z łukiem podmenu), zmiany pliku konfiguracji (także na zepsuty), zbieranie CSV
-- [ ] Wyniki pomiarów do pliku etapu i `README.md`; `CHECKLISTA.md`
-- [ ] Poprawka: przytrzymanie tuż po anulowaniu Escape nie otwiera koła (test jednostkowy, sprawdzenie skryptem reprodukcji)
+- [x] Wyniki pomiarów do pliku etapu i `README.md`; `CHECKLISTA.md`
+- ~~Poprawka: przytrzymanie tuż po anulowaniu Escape nie otwiera koła~~ (znany błąd, patrz Decyzje)
 - Sprawdzenie: tester: build, testy, clippy, fmt; `%APPDATA%` nietknięty
 
 ## Decyzje
@@ -50,6 +50,7 @@ i żywy hak.
 - Błąd znaleziony w `soak.ps1`: przytrzymanie tuż po anulowaniu Escape czasem nie otwiera koła (5 z 6 błędów cykli); diagnoza i poprawka przed zmianą renderera, bo przebieg `soak.ps1` wymaga zera błędów cykli.
 - Bez testu wielogodzinnego i bez przebiegu `soak.ps1` przy zamknięciu (decyzja użytkownika): komputer jest regularnie restartowany, a koło można w każdej chwili uruchomić ponownie; odłączony hak naprawia strażnik (etap 03); pomiary 6 min nie pokazały wzrostu pamięci ani uchwytów. `soak.ps1` zostaje jako narzędzie.
 - Skrócony zakres (decyzja użytkownika): przygotowanie renderera po wczytaniu konfiguracji (otwarcie po zmianie konfiguracji 89 ms zamiast ok. 3 ms) i pamięć widoku ikon (17 MB przy celu 15 MB) przeniesione do etapu 09; poprawka błędu po Escape zostaje w etapie 07.
+- Błąd po Escape zostaje jako znany (decyzja użytkownika: koło używane rzadko): opisany w README i CHECKLISTA; reprodukcja: ok. 2 błędy na 48 par „otwórz, Escape, otwórz”, ślad diagnostyczny cofnięty bez ustalenia przyczyny.
 
 ## Pomiary
 LAB: AMD Radeon Vega 11, 1920x1080, 96 DPI, wersja release, wejście wstrzykiwane, 6 min na przebieg, konfiguracja 8 sektorów zewnętrznych (jeden z podmenu 3 pozycji) i 8 wewnętrznych.

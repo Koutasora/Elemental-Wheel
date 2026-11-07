@@ -109,11 +109,28 @@ target\release\wheel-editor.exe --version
 - Numbers outside the allowed range are clamped with a warning (in the log and on stderr). An invalid file (bad JSON or encoding, unknown type, invalid shortcut, too many items) is never overwritten. At start the program falls back to `config.json.bak`, then to the defaults. While running, an invalid file is ignored and the current configuration stays; either way the reason goes to the log (and stderr).
 - The config folder is watched: a changed file is reloaded within a moment, no restart needed. Exclusions, actions, names and trigger thresholds apply from the next press, wheel size and sector count from the next opening. If the folder is missing at start, the file is checked when the wheel opens instead.
 
+## Measurements
+
+Release build, 1920x1080 at 96 DPI, 8 outer and 8 inner sectors, one submenu; measured with `tools/soak.ps1` (development tool, injected input).
+
+| | names view | icons view |
+|---|---|---|
+| private memory in the background | 13.9 MB | 17.0 MB |
+| opening, median / max | 3.3 / 5.2 ms | 3.2 / 4.9 ms |
+| first opening after a config change | | 89 ms |
+
+No growth of memory or handles over the measured runs.
+
+## Known issues
+
+- Holding the right button right after the wheel was closed with Escape sometimes does not open it; the next hold does.
+
 ## Layout
 
 - `crates/wheel-core` - wheel geometry, configuration and shortcut parsing
 - `apps/wheel` - background program
 - `apps/wheel-editor` - editor
+- `tools/soak.ps1` - soak test and measurements
 
 Concept mockup: [docs/koncept.html](docs/koncept.html) (open locally in a browser).
 
