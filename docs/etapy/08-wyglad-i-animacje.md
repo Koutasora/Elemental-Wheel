@@ -18,7 +18,7 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - [x] Akcja systemowa `context_menu` („Menu kontekstowe”) w konfiguracji i edytorze
 - [x] Podgląd w edytorze zgodny z nowym wyglądem koła (szkło nad tłem próbnym, suwak działa od razu)
 - [x] Wygląd zatwierdzony przez użytkownika na zrzutach (szkło runda 3: „wygląda bardzo dobrze”)
-- [x] `cargo build --release`, `cargo test`, clippy `-D warnings`, `cargo fmt --check` czyste (tester i manager: 66 + 130 + 30 testów); README i CHECKLISTA zaktualizowane
+- [x] `cargo build --release`, `cargo test`, clippy `-D warnings`, `cargo fmt --check` czyste (68 + 130 + 30 testów); README i CHECKLISTA zaktualizowane
 
 ## Plan
 - [x] `apps/wheel/src/render.rs`, `theme.rs`: nieprzezroczyste wypełnienia, cień, akcent, minimalna czcionka; zrzuty do akceptacji przed animacjami
@@ -46,7 +46,7 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - Naprawa „Właściwości” w tym etapie (decyzja użytkownika): Alt+Enter z koła nie działa w Eksploratorze (błąd od etapu 04); w Eksploratorze okno właściwości zaznaczonych elementów przez powłokę, gdzie indziej Alt+Enter.
 - Cel pamięci zmieniony (decyzja użytkownika): ze szkłem do 25 MB (zmierzone: nazwy 21,6, ikony 24,3 MB), bez szkła 15 MB nazwy / 17 MB ikony (zmierzone 13,8 / 17,0); liczy się szybkość otwarcia.
 - Nowa opcja `replace_right_click` (prośba użytkownika): koło zamiast systemowego prawego przycisku, otwarcie od razu po wciśnięciu.
-- `--run` nie startował, gdy GetCursorPos odmawia dostępu (np. zminimalizowane RDP): naprawione w tym etapie, start na głównym monitorze.
+- `--run` nie startował, gdy GetCursorPos odmawia dostępu (np. zminimalizowane RDP): w tym etapie start na głównym monitorze; sprawdzone testem jednostkowym czystej funkcji, bez próby na żywo.
 - Akcja `context_menu` (prośba użytkownika): wstrzyknięte prawe kliknięcie z MARKER w punkcie wciśnięcia, żeby w trybie `replace_right_click` dało się otworzyć zwykłe menu.
 - Pamięć w tle zbadana jednak w tym etapie (prośba użytkownika): 30,9 MB to stan po przeładowaniu konfiguracji — rozgrzewka renderera kolejkowała rysunki bez czekania na GPU, sterownik AMD zostawiał po każdej przebudowie 8–13 MB; czekanie na GPU po każdym rysunku rozgrzewki usuwa wzrost. Po akcji „Właściwości” pamięć rośnie o ok. 4 MB (arkusz właściwości w procesie koła).
 - Ryzyko: przeładowanie ze szkła na brak szkła zostawia potoki efektów szkła (ok. 19 zamiast 13 MB; niesprawdzone po poprawce).

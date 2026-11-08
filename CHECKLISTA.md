@@ -76,6 +76,7 @@
 - [x] Otwarcie na żywo: mediana 6,3 ms
 - [x] Opcja „Koło zamiast prawego przycisku”
 - [x] „Właściwości” z koła w Eksploratorze i na pulpicie
+- [x] Start w tle bez dostępu do kursora (główny monitor; test jednostkowy)
 - [x] Akcja „Menu kontekstowe”
 - [x] Podgląd w edytorze z nowym wyglądem
 - [x] Pamięć w tle: szkło 21,6 MB (nazwy) / 24,6 MB (ikony), bez szkła 13,5 / 16,2 MB
