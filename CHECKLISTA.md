@@ -91,5 +91,5 @@
 - [x] Przywróć domyślne (cała konfiguracja) w edytorze
 - [x] Koło zaznacza plik pod kursorem w Eksploratorze i na pulpicie
 - [x] Test instalacji, aktualizacji i odinstalowania na LAB
-- [ ] Test fizyczną myszą zainstalowanej wersji
-- [ ] Wydanie 1.0.0 z opisem zgodnym z README
+- [x] Test fizyczną myszą zainstalowanej wersji
+- [x] Wydanie 1.0.0 z opisem zgodnym z README (szkic na GitHubie, publikacja po scaleniu PR)
