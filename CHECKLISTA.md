@@ -78,7 +78,7 @@
 - [x] „Właściwości” z koła w Eksploratorze i na pulpicie
 - [ ] Akcja „Menu kontekstowe”
 - [x] Podgląd w edytorze z nowym wyglądem
-- [ ] Pamięć w tle ze szkłem do 25 MB (dziś ok. 31 MB w `--run`; przeniesione do etapu 09)
+- ~~Pamięć w tle ze szkłem do 25 MB~~ (przeniesione do etapu 09; dziś ok. 31 MB w `--run`)
 
 ## 09 instalator-i-wydanie
 - [ ] Instalator (Inno Setup, jeden użytkownik), który wypisuje zainstalowaną wersję

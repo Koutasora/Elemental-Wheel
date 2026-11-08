@@ -18,7 +18,7 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - [ ] Akcja systemowa `context_menu` („Menu kontekstowe”) w konfiguracji i edytorze
 - [x] Podgląd w edytorze zgodny z nowym wyglądem koła (szkło nad tłem próbnym, suwak działa od razu)
 - [x] Wygląd zatwierdzony przez użytkownika na zrzutach (szkło runda 3: „wygląda bardzo dobrze”)
-- [ ] `cargo build --release`, `cargo test`, clippy `-D warnings`, `cargo fmt --check` czyste; README i CHECKLISTA zaktualizowane
+- [x] `cargo build --release`, `cargo test`, clippy `-D warnings`, `cargo fmt --check` czyste (tester i manager: 66 + 130 + 30 testów); README i CHECKLISTA zaktualizowane
 
 ## Plan
 - [x] `apps/wheel/src/render.rs`, `theme.rs`: nieprzezroczyste wypełnienia, cień, akcent, minimalna czcionka; zrzuty do akceptacji przed animacjami
@@ -30,7 +30,7 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - [x] `apps/wheel/src/properties.rs`, `actions.rs`: „Właściwości” przez powłokę, kody skanowania w skrótach
 - [ ] `actions.rs`, `config.rs`: akcja `context_menu`
 - [x] ~~Pomiary `tools/soak.ps1`~~ test na żywo fizyczną myszą z `--stats` (decyzja użytkownika)
-- [ ] README, CHECKLISTA
+- [x] README, CHECKLISTA
 - Sprawdzenie: tester: build, testy, clippy, fmt; zrzuty offscreen i `--demo` z konfiguracją w scratchpadzie (`%APPDATA%` nietknięty); test na żywo `--run --stats` z konfiguracją w scratchpadzie
 
 ## Decyzje
@@ -49,6 +49,8 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - Do etapu 09: `--run` nie startuje, gdy GetCursorPos odmawia dostępu (np. zminimalizowane RDP) — przyjąć główny monitor.
 - Akcja `context_menu` (prośba użytkownika): wstrzyknięte prawe kliknięcie z MARKER w punkcie wciśnięcia, żeby w trybie `replace_right_click` dało się otworzyć zwykłe menu.
 - Pamięć w tle przeniesiona do etapu 09 (decyzja użytkownika przy zamknięciu): `--run` 30,9 MB od startu przed pierwszym otwarciem przy 21,6 MB w demo z tym samym startem; po akcji „Właściwości” ok. 35 MB (arkusz właściwości w procesie koła).
+- Znane ograniczenie: w trybie `replace_right_click` migawka tła (BitBlt, 20–50 ms przez RDP) jest robiona przed otwarciem, więc otwarcie ze szkłem trwa o tyle dłużej; bez pomiaru na żywo.
+- Niestabilny test edytora (wspólny katalog tymczasowy przy testach równoległych) poprawiony: osobny katalog na każde wywołanie.
 - Podglądy wyglądu tylko lokalnie (plik HTML na LAB), nie na claude.ai (zasada użytkownika).
 - Poza zakresem: znany błąd po Escape (decyzja z etapu 07), zasobnik i tryb bez konsoli (etap 09).
 
