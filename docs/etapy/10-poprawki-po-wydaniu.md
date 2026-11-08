@@ -10,8 +10,8 @@ Poprawić znane błędy i braki z wydania 1.0.0 i wydać wersję 1.0.1 z nowym i
 - [x] Błąd po Escape: przyczyna znaleziona i poprawiona (48 par „otwórz, Escape, otwórz” bez błędu) albo opisana w Decyzjach jako znana, z wynikiem diagnozy
 - [x] Wyłączenie szkła w działającym kole zwalnia pamięć bez restartu (bez szkła do 15/17 MB) albo decyzja o pozostawieniu
 - [x] Usunięte wzmianki „claude.ai”, „scratchpad”, „dodany przez Claude” z plików etapów 01–08
-- [ ] Wersja 1.0.1 w obu exe, instalator zbudowany, aktualizacja z 1.0.0 sprawdzona na LAB, szkic wydania v1.0.1
-- [ ] Testy, clippy i fmt przechodzą; README i CHECKLISTA zgodne ze zmianami
+- [x] Wersja 1.0.1 w obu exe, instalator zbudowany, aktualizacja z 1.0.0 sprawdzona na LAB, szkic wydania v1.0.1
+- [x] Testy, clippy i fmt przechodzą; README i CHECKLISTA zgodne ze zmianami
 
 ## Plan
 - [x] Autostart w edytorze: `apps/wheel-editor/src/options.rs`, `main.rs` (odczyt i zapis HKCU Run, ta sama nazwa wpisu co w `installer/elemental-wheel.iss`)
@@ -20,7 +20,7 @@ Poprawić znane błędy i braki z wydania 1.0.0 i wydać wersję 1.0.1 z nowym i
 - [x] Błąd po Escape: diagnoza `tools/soak.ps1` i ślad w `apps/wheel/src/hook.rs`, `window.rs`; jedna runda, potem decyzja
 - [x] Pamięć szkła: zwalnianie zasobów szkła po `glass_pct = 0` w `apps/wheel/src/window.rs` lub rendererze
 - [x] Usunięcie wzmianek z `docs/etapy/01..08`
-- [ ] Wersja 1.0.1: `Cargo.toml`, `tools/build-installer.ps1`, test aktualizacji, README, CHECKLISTA, szkic wydania
+- [x] Wersja 1.0.1: `Cargo.toml`, `tools/build-installer.ps1`, test aktualizacji, README, CHECKLISTA, szkic wydania
 - Sprawdzenie: `cargo test`, clippy, fmt; `soak.ps1` dla Escape (po zgodzie, przejmuje pulpit); pomiar pamięci `--stats`; zrzut podglądu z długimi nazwami do akceptacji; instalacja 1.0.1 na 1.0.0 przy działającym kole
 
 ## Decyzje
@@ -32,6 +32,7 @@ Poprawić znane błędy i braki z wydania 1.0.0 i wydać wersję 1.0.1 z nowym i
 - `soak.ps1` daje werdykt FAIL tylko przez limit pamięci 15 MB sprzed szkła (cel ze szkłem 25 MB, etap 08); skryptu nie zmieniam w tym etapie.
 - Pamięć szkła: przy przełączeniu szkła z włączonego na wyłączone w działającym kole wspólne urządzenia D3D i D2D są tworzone od nowa (efekty rozmycia zostawały w nich); zwykłe przeładowanie zatrzymuje urządzenia jak dotąd (nowe urządzenie przy każdym przeładowaniu zostawiało pamięć w sterowniku). Pomiar `--run --stats`, 10+10 otwarć, po ok. 70 s: nazwy 18,6 → 13,2 MB, ikony 18,1 → 12,7 MB (uruchomione bez szkła: 12,5 / 11,7 MB); ponowne włączenie szkła działa. Konfiguracja pomiaru: 8+8 sektorów bez podmenu (inna niż w etapie 08, 12+12 z podmenu), więc liczby nie są porównywalne z tabelą w README.
 - Pojedyncze nieotwarcie koła zaraz po starcie ze szkłem (2 przytrzymania w jednym z 9 przebiegów pomiaru pamięci) nie powtórzyło się: 10 uruchomień × 4 przytrzymania, 40/40; przyczyna nieznana, zapisane jako ryzyko.
+- Wydanie 1.0.1: instalator 4,14 MB, aktualizacja z 1.0.0 przy działającym kole na LAB (cicha instalacja ok. 4 s, obie exe 1.0.1, wpis Run i `config.json` bez zmian, koło uruchomione ponownie, jedna kopia); szkic wydania v1.0.1 z celem `main` i SHA-256, publikuje użytkownik po scaleniu PR; szkic v1.0.0 zostaje do decyzji użytkownika.
 - Wzmianki w etapach 01–08: „claude.ai” → „w sieci”, „scratchpad” → „folder tymczasowy”, bez „przez Claude”; treść decyzji bez zmian.
 
 ## Podsumowanie
