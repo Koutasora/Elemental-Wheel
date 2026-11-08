@@ -20,25 +20,26 @@ use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_FIGURE_BEGIN_FILLED, D2D1_FIGURE_END_CLOSED, D2D1_GRADIENT_STOP, D2D1_PIXEL_FORMAT,
 };
 use windows::Win32::Graphics::Direct2D::{
-    CLSID_D2D1ColorMatrix, CLSID_D2D1GaussianBlur, CLSID_D2D1Shadow, D2D1_ARC_SEGMENT,
-    D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL, D2D1_BITMAP_OPTIONS, D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
-    D2D1_BITMAP_OPTIONS_NONE, D2D1_BITMAP_OPTIONS_TARGET, D2D1_BITMAP_PROPERTIES1,
-    D2D1_BUFFER_PRECISION_8BPC_UNORM, D2D1_CAP_STYLE_FLAT,
-    D2D1_COLOR_INTERPOLATION_MODE_PREMULTIPLIED, D2D1_COLOR_SPACE_SRGB,
+    CLSID_D2D1ColorMatrix, CLSID_D2D1GaussianBlur, CLSID_D2D1Shadow,
+    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL,
+    D2D1_BITMAP_OPTIONS, D2D1_BITMAP_OPTIONS_CANNOT_DRAW, D2D1_BITMAP_OPTIONS_NONE,
+    D2D1_BITMAP_OPTIONS_TARGET, D2D1_BITMAP_PROPERTIES1, D2D1_BUFFER_PRECISION_8BPC_UNORM,
+    D2D1_CAP_STYLE_FLAT, D2D1_COLOR_INTERPOLATION_MODE_PREMULTIPLIED, D2D1_COLOR_SPACE_SRGB,
     D2D1_COLORMATRIX_PROP_COLOR_MATRIX, D2D1_COMBINE_MODE_INTERSECT, D2D1_COMBINE_MODE_UNION,
     D2D1_DASH_STYLE_SOLID, D2D1_DEVICE_CONTEXT_OPTIONS_NONE, D2D1_DRAW_TEXT_OPTIONS_CLIP,
     D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ELLIPSE, D2D1_EXTEND_MODE_CLAMP,
     D2D1_FACTORY_TYPE_MULTI_THREADED, D2D1_GAUSSIANBLUR_PROP_BORDER_MODE,
     D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC,
-    D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LINE_JOIN_ROUND, D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES,
-    D2D1_PRIMITIVE_BLEND_COPY, D2D1_PRIMITIVE_BLEND_SOURCE_OVER, D2D1_PROPERTY_TYPE,
-    D2D1_PROPERTY_TYPE_ENUM, D2D1_PROPERTY_TYPE_FLOAT, D2D1_PROPERTY_TYPE_MATRIX_5X4,
-    D2D1_PROPERTY_TYPE_VECTOR4, D2D1_ROUNDED_RECT, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION,
-    D2D1_SHADOW_PROP_COLOR, D2D1_STROKE_STYLE_PROPERTIES1, D2D1_STROKE_TRANSFORM_TYPE_NORMAL,
+    D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LAYER_OPTIONS1_NONE, D2D1_LAYER_PARAMETERS1,
+    D2D1_LINE_JOIN_ROUND, D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES, D2D1_PRIMITIVE_BLEND_COPY,
+    D2D1_PRIMITIVE_BLEND_SOURCE_OVER, D2D1_PROPERTY_TYPE, D2D1_PROPERTY_TYPE_ENUM,
+    D2D1_PROPERTY_TYPE_FLOAT, D2D1_PROPERTY_TYPE_MATRIX_5X4, D2D1_PROPERTY_TYPE_VECTOR4,
+    D2D1_ROUNDED_RECT, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, D2D1_SHADOW_PROP_COLOR,
+    D2D1_STROKE_STYLE_PROPERTIES1, D2D1_STROKE_TRANSFORM_TYPE_NORMAL,
     D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE,
     D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory, ID2D1Bitmap1, ID2D1BitmapBrush1,
     ID2D1Brush, ID2D1Device, ID2D1DeviceContext, ID2D1Effect, ID2D1Factory1, ID2D1Geometry,
-    ID2D1Image, ID2D1LinearGradientBrush, ID2D1PathGeometry, ID2D1SolidColorBrush,
+    ID2D1Image, ID2D1Layer, ID2D1LinearGradientBrush, ID2D1PathGeometry, ID2D1SolidColorBrush,
     ID2D1StrokeStyle,
 };
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP};
@@ -46,7 +47,9 @@ use windows::Win32::Graphics::Direct3D11::{
     D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11CreateDevice, ID3D11Device,
 };
 use windows::Win32::Graphics::DirectComposition::{
-    DCompositionCreateDevice, IDCompositionDevice, IDCompositionTarget, IDCompositionVisual,
+    DCompositionCreateDevice, IDCompositionAnimation, IDCompositionDevice,
+    IDCompositionEffectGroup, IDCompositionScaleTransform, IDCompositionTarget,
+    IDCompositionVisual,
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
@@ -67,6 +70,7 @@ use windows::Win32::Graphics::Dxgi::{
 use windows::core::{Error, Interface, Result, w};
 use windows_numerics::{Matrix3x2, Vector2};
 
+use crate::anim::{self, Anim};
 use crate::backdrop;
 use crate::fit;
 use crate::icons::{Icons, TileIcon};
@@ -117,6 +121,12 @@ pub struct Renderer {
     // Kept alive for as long as the window shows the wheel.
     _target: IDCompositionTarget,
     _visual: IDCompositionVisual,
+    /// Opacity and scale of the visual; the fades and the scale-up are animations of these.
+    effect: IDCompositionEffectGroup,
+    scale: IDCompositionScaleTransform,
+    /// Created once, reset for every fade.
+    fade: IDCompositionAnimation,
+    grow: IDCompositionAnimation,
 }
 
 /// Everything needed to paint the wheel on a Direct2D device context. The window-bound part
@@ -250,6 +260,14 @@ impl Renderer {
             let target = dcomp.CreateTargetForHwnd(hwnd, true)?;
             let visual = dcomp.CreateVisual()?;
             visual.SetContent(&swap_chain)?;
+            let effect = dcomp.CreateEffectGroup()?;
+            let scale = dcomp.CreateScaleTransform()?;
+            scale.SetCenterX2(size as f32 / 2.0)?;
+            scale.SetCenterY2(size as f32 / 2.0)?;
+            visual.SetEffect(&effect)?;
+            visual.SetTransform(&scale)?;
+            let fade = dcomp.CreateAnimation()?;
+            let grow = dcomp.CreateAnimation()?;
             target.SetRoot(&visual)?;
             dcomp.Commit()?;
 
@@ -259,6 +277,10 @@ impl Renderer {
                 dcomp,
                 _target: target,
                 _visual: visual,
+                effect,
+                scale,
+                fade,
+                grow,
             })
         }
     }
@@ -310,9 +332,77 @@ impl Renderer {
         }
     }
 
+    /// Sets what the compositor shows of the window before the next `draw`: invisible when the
+    /// open will fade in (`animate`), plain otherwise. Call it while the window is hidden.
+    pub fn prepare_open(&self, animate: bool) -> Result<()> {
+        let (opacity, scale) = if animate {
+            (0.0, anim::OPEN_SCALE_FROM)
+        } else {
+            (1.0, 1.0)
+        };
+        // SAFETY: plain COM calls on objects owned by `self`; the next Commit applies them.
+        unsafe {
+            self.effect.SetOpacity2(opacity)?;
+            self.scale.SetScaleX2(scale)?;
+            self.scale.SetScaleY2(scale)
+        }
+    }
+
+    /// Starts the opening animation (fade in, scale up around the centre) in the compositor; call
+    /// it right after the window is shown. Without `animate` the wheel just stays as drawn.
+    pub fn start_open(&self, animate: bool) -> Result<()> {
+        if animate {
+            // SAFETY: plain COM calls on objects owned by `self`.
+            unsafe {
+                self.run(&self.fade, 0.0, 1.0, anim::OPEN_MS)?;
+                self.run(&self.grow, anim::OPEN_SCALE_FROM, 1.0, anim::OPEN_MS)?;
+                self.effect.SetOpacity(&self.fade)?;
+                self.scale.SetScaleX(&self.grow)?;
+                self.scale.SetScaleY(&self.grow)?;
+            }
+        }
+        // SAFETY: plain COM call.
+        unsafe { self.dcomp.Commit() }
+    }
+
+    /// Starts the closing fade in the compositor; the caller hides the window after
+    /// `anim::CLOSE_MS`.
+    pub fn start_close(&self) -> Result<()> {
+        // SAFETY: plain COM calls on objects owned by `self`.
+        unsafe {
+            self.run(&self.fade, 1.0, 0.0, anim::CLOSE_MS)?;
+            self.effect.SetOpacity(&self.fade)?;
+            self.scale.SetScaleX2(1.0)?;
+            self.scale.SetScaleY2(1.0)?;
+            self.dcomp.Commit()
+        }
+    }
+
+    /// Makes `animation` go from `from` to `to` in `ms` along an ease-out curve, starting at the
+    /// next Commit.
+    ///
+    /// # Safety
+    /// Plain COM calls; `animation` must come from `self.dcomp`.
+    unsafe fn run(
+        &self,
+        animation: &IDCompositionAnimation,
+        from: f32,
+        to: f32,
+        ms: u32,
+    ) -> Result<()> {
+        let seconds = ms as f32 / 1000.0;
+        let [c0, c1, c2, c3] = anim::ease_out_cubic(from, to, seconds);
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            animation.Reset()?;
+            animation.AddCubic(0.0, c0, c1, c2, c3)?;
+            animation.End(f64::from(seconds), to)
+        }
+    }
+
     /// Draws the whole wheel with `hit` highlighted and the submenu `arc` open (if any), and
-    /// presents it.
-    pub fn draw(&self, hit: Hit, arc: Option<SubArc>) -> Result<()> {
+    /// presents it. `anim` says how far the highlight and the arc have got.
+    pub fn draw(&self, hit: Hit, arc: Option<SubArc>, anim: &Anim) -> Result<()> {
         // SAFETY: the swap chain and device context are owned by `self` and valid.
         unsafe {
             // With the flip model the back buffer changes after every Present, so the Direct2D
@@ -332,7 +422,7 @@ impl Renderer {
                 .painter
                 .ctx
                 .CreateBitmapFromDxgiSurface(&surface, Some(&props))?;
-            self.painter.paint(&bitmap, hit, arc)?;
+            self.painter.paint(&bitmap, hit, arc, anim)?;
             self.swap_chain.Present(1, DXGI_PRESENT(0)).ok()?;
             self.dcomp.Commit()
         }
@@ -639,7 +729,7 @@ impl Painter {
             .chain((0..self.layout.inner_sectors()).map(Hit::Inner))
             .chain((0..n).map(Hit::Outer));
         for hit in hits {
-            self.paint(&target, hit, None)?;
+            self.paint(&target, hit, None, &Anim::settled(hit))?;
         }
         let mut first_arc = None;
         for parent in 0..n {
@@ -649,7 +739,8 @@ impl Painter {
             first_arc.get_or_insert(arc);
             // The hub shows the name of the highlighted submenu tile.
             for j in 0..arc.count {
-                self.paint(&target, Hit::Sub(parent, j), Some(arc))?;
+                let hit = Hit::Sub(parent, j);
+                self.paint(&target, hit, Some(arc), &Anim::settled(hit))?;
             }
         }
         if self.frost.is_some() {
@@ -657,7 +748,9 @@ impl Painter {
             self.take_snapshot(0, 0, 0)?;
             if self.place_snapshot(0, 0) {
                 self.glass.set(true);
-                let drawn = self.paint(&target, Hit::Center, first_arc);
+                // The arc is drawn as when it starts to slide out, which also warms the layers.
+                let sliding = Anim::new(true, Hit::Center, Some(0.0), Instant::now());
+                let drawn = self.paint(&target, Hit::Center, first_arc, &sliding);
                 self.release_snapshot();
                 drawn?;
             }
@@ -720,12 +813,18 @@ impl Painter {
     }
 
     /// Draws the wheel into `target`, a Direct2D target bitmap of `size` x `size` pixels.
-    fn paint(&self, target: &ID2D1Bitmap1, hit: Hit, arc: Option<SubArc>) -> Result<()> {
+    fn paint(
+        &self,
+        target: &ID2D1Bitmap1,
+        hit: Hit,
+        arc: Option<SubArc>,
+        anim: &Anim,
+    ) -> Result<()> {
         // SAFETY: the device context is owned by `self`; EndDraw closes the BeginDraw below.
         unsafe {
             self.ctx.SetTarget(target);
             self.ctx.BeginDraw();
-            let drawn = self.draw_wheel(hit, arc);
+            let drawn = self.draw_wheel(hit, arc, anim);
             // EndDraw must be called even if drawing failed.
             let ended = self.ctx.EndDraw(None, None);
             self.ctx.SetTarget(None::<&ID2D1Image>);
@@ -736,7 +835,7 @@ impl Painter {
 
     /// # Safety
     /// Must be called between `BeginDraw` and `EndDraw` of `self.ctx`.
-    unsafe fn draw_wheel(&self, hit: Hit, arc: Option<SubArc>) -> Result<()> {
+    unsafe fn draw_wheel(&self, hit: Hit, arc: Option<SubArc>, anim: &Anim) -> Result<()> {
         let p = self.pal();
         let glass = self.glass.get();
         let k = scale_factor(&self.layout);
@@ -773,36 +872,79 @@ impl Painter {
             // it; the gaps between tiles show them as grooves. Shadows first, so neither plate is
             // darkened by the other's shadow.
             let arc_plate = arc_shapes.as_ref().map(|shapes| &shapes.plate);
+            // While the arc slides out, its band and tiles come from the wheel and fade in.
+            let arc_t = if arc.is_some() { anim.arc() } else { 1.0 };
+            let plate_shift = arc.map_or((0.0, 0.0), |a| {
+                let mid =
+                    (self.layout.sub_span(a, 0).0 + self.layout.sub_span(a, a.count - 1).1) / 2.0;
+                arc_shift(mid, k, arc_t)
+            });
             self.shadow(&self.wheel_plate, k);
             if let Some(plate) = arc_plate {
-                self.shadow(plate, k);
+                self.faded(arc_t, plate_shift, || self.shadow(plate, k));
             }
             let plates = [&self.wheel_plate]
                 .into_iter()
                 .chain(arc_plate)
                 .collect::<Vec<_>>();
+            // Runs `paint` (given the shift applied) on the wheel disc and on the arc band.
+            let each_plate = |paint: &dyn Fn(&ID2D1Geometry, (f32, f32))| {
+                paint(&self.wheel_plate, (0.0, 0.0));
+                if let Some(plate) = arc_plate {
+                    self.faded(arc_t, plate_shift, || paint(plate, plate_shift));
+                }
+            };
             let frost = self.frost.as_ref().filter(|_| glass);
             let backdrop = frost.and_then(|f| f.snap.borrow().as_ref().map(|s| s.brush.clone()));
             if let (Some(frost), Some(backdrop)) = (frost, &backdrop) {
                 let outline = arc_shapes
                     .as_ref()
                     .map_or(&self.wheel_plate, |shapes| &shapes.outline);
+                // Strokes the edge of the disc and band together; while the arc slides out, the
+                // disc's own edge fades into that.
+                let stroke_outline = |color: &D2D1_COLOR_F, width: f32| {
+                    self.brush.SetColor(color);
+                    if arc_t < 1.0 && arc_shapes.is_some() {
+                        self.faded(1.0 - arc_t, (0.0, 0.0), || {
+                            self.ctx.DrawGeometry(
+                                &self.wheel_plate,
+                                &self.brush,
+                                width,
+                                None::<&ID2D1StrokeStyle>,
+                            )
+                        });
+                    }
+                    self.faded(arc_t, (0.0, 0.0), || {
+                        self.ctx.DrawGeometry(
+                            outline,
+                            &self.brush,
+                            width,
+                            None::<&ID2D1StrokeStyle>,
+                        )
+                    });
+                };
                 // The glass is translucent: the shadow must not show through it. The dark line
                 // outside its edge is half hidden by the glass drawn over it.
                 self.cut(&plates);
-                self.brush.SetColor(&frost.style.edge);
-                self.ctx
-                    .DrawGeometry(outline, &self.brush, 2.0, None::<&ID2D1StrokeStyle>);
-                // The blurred desktop, a tint over it, and the faint darkening of the grooves.
-                for plate in &plates {
-                    self.ctx.FillGeometry(*plate, backdrop, None::<&ID2D1Brush>);
-                }
+                stroke_outline(&frost.style.edge, 2.0);
+                // The blurred desktop (kept in place when the band shifts), a tint over it, and
+                // the faint darkening of the grooves.
+                let mut home = Matrix3x2::default();
+                backdrop.GetTransform(&mut home);
+                each_plate(&|plate, shift| {
+                    let mut at = home;
+                    at.M31 -= shift.0;
+                    at.M32 -= shift.1;
+                    backdrop.SetTransform(&at);
+                    self.ctx.FillGeometry(plate, backdrop, None::<&ID2D1Brush>);
+                });
+                backdrop.SetTransform(&home);
                 for color in [&frost.style.tint, &p.plate] {
                     self.brush.SetColor(color);
-                    for plate in &plates {
+                    each_plate(&|plate, _| {
                         self.ctx
-                            .FillGeometry(*plate, &self.brush, None::<&ID2D1Brush>);
-                    }
+                            .FillGeometry(plate, &self.brush, None::<&ID2D1Brush>)
+                    });
                 }
                 // Sheen on the upper part of the disc, and the light edge of the glass.
                 let r = self.layout.outer_radius();
@@ -814,21 +956,19 @@ impl Painter {
                 frost.sheen.SetOpacity(frost.style.sheen);
                 self.ctx
                     .FillGeometry(&frost.sheen_shape, &frost.sheen, None::<&ID2D1Brush>);
-                self.brush.SetColor(&frost.style.rim);
-                self.ctx
-                    .DrawGeometry(outline, &self.brush, 1.0, None::<&ID2D1StrokeStyle>);
+                stroke_outline(&frost.style.rim, 1.0);
             } else {
                 self.brush.SetColor(&p.plate);
-                for plate in &plates {
+                each_plate(&|plate, _| {
                     self.ctx
-                        .FillGeometry(*plate, &self.brush, None::<&ID2D1Brush>);
-                }
+                        .FillGeometry(plate, &self.brush, None::<&ID2D1Brush>)
+                });
             }
 
             for i in 0..self.layout.inner_sectors() {
                 let (a1, a2) = self.layout.inner_span(i);
                 let geometry = &self.inner_tiles[usize::from(i)];
-                let on = hit == Hit::Inner(i);
+                let on = anim.level(Hit::Inner(i));
                 self.fill_tile(geometry, p.tile, on, stroke);
                 if self.icons.is_some() {
                     // The mockup puts inner icons 2 px outwards of the ring's middle.
@@ -852,15 +992,15 @@ impl Painter {
                         );
                         (w - pad, (c + at.0, c + at.1))
                     },
-                    if on { p.accent_fg } else { p.fg },
-                    !on,
+                    theme::blend(p.fg, p.accent_fg, on),
+                    1.0 - on,
                 )?;
             }
 
             for (i, name) in (0..n).zip(self.config.outer_names(n)) {
                 let (a1, a2) = self.layout.outer_span(i);
                 let geometry = &self.outer_tiles[usize::from(i)];
-                let on = hit == Hit::Outer(i);
+                let on = anim.level(Hit::Outer(i));
                 let has_submenu = self
                     .config
                     .outer_item(usize::from(i))
@@ -907,22 +1047,20 @@ impl Painter {
                             );
                             (w - pad, (c + at.0, c + at.1))
                         },
-                        if on { p.accent_fg } else { p.fg },
-                        !on,
+                        theme::blend(p.fg, p.accent_fg, on),
+                        1.0 - on,
                     )?;
                 }
                 // Notch at the outer edge of a tile with a submenu.
                 if let Some(notch) = &self.notches[usize::from(i)] {
                     // While only its arc is open the tile itself is not highlighted, so the notch
                     // takes the accent colour instead of the text colour on accent.
-                    let color = if on {
-                        &p.accent_fg
-                    } else if arc.is_some_and(|a| a.parent == i) {
-                        &p.accent
+                    let base = if arc.is_some_and(|a| a.parent == i) {
+                        p.accent
                     } else {
-                        &p.muted
+                        p.muted
                     };
-                    self.brush.SetColor(color);
+                    self.brush.SetColor(&theme::blend(base, p.accent_fg, on));
                     self.ctx
                         .FillGeometry(notch, &self.brush, None::<&ID2D1Brush>);
                 }
@@ -933,38 +1071,46 @@ impl Painter {
                     .config
                     .outer_item(usize::from(arc.parent))
                     .map_or(&[][..], |item| item.submenu.as_slice());
-                for (j, item) in subs.iter().take(usize::from(arc.count)).enumerate() {
-                    // `count` is at most MAX_SUB_TILES (5), so `j` fits in u8.
-                    let j = j as u8;
-                    let (a1, a2) = self.layout.sub_span(arc, j);
-                    let geometry = &shapes.tiles[usize::from(j)];
-                    let tile = Hit::Sub(arc.parent, j);
-                    let on = hit == tile;
-                    self.fill_tile(geometry, p.surface, on, stroke);
-                    if self.icons.is_some() {
-                        let at = polar(c, (sub_ring.0 + sub_ring.1) / 2.0, (a1 + a2) / 2.0);
-                        self.icon(tile, at, self.icon_sizes.sub, on, k)?;
-                        continue;
+                self.faded(arc_t, (0.0, 0.0), || -> Result<()> {
+                    for (j, item) in subs.iter().take(usize::from(arc.count)).enumerate() {
+                        // `count` is at most MAX_SUB_TILES (5), so `j` fits in u8.
+                        let j = j as u8;
+                        let (a1, a2) = self.layout.sub_span(arc, j);
+                        // Each tile slides out along its own radius.
+                        let shift = arc_shift((a1 + a2) / 2.0, k, arc_t);
+                        self.ctx
+                            .SetTransform(&Matrix3x2::translation(shift.0, shift.1));
+                        let geometry = &shapes.tiles[usize::from(j)];
+                        let tile = Hit::Sub(arc.parent, j);
+                        let on = anim.level(tile);
+                        self.fill_tile(geometry, p.surface, on, stroke);
+                        if self.icons.is_some() {
+                            let at = polar(c, (sub_ring.0 + sub_ring.1) / 2.0, (a1 + a2) / 2.0);
+                            self.icon(tile, at, self.icon_sizes.sub, on, k)?;
+                            continue;
+                        }
+                        let text_ring = (sub_ring.0 + pad, sub_ring.1 - pad);
+                        self.label(
+                            Kind::Sub(arc.parent, j),
+                            item.name.as_str(),
+                            &self.sub_font,
+                            &|h, need| {
+                                let (w, at) = fit::sector_slot(
+                                    text_ring,
+                                    a1 + OUTER_HALF_GAP_DEG,
+                                    a2 - OUTER_HALF_GAP_DEG,
+                                    h,
+                                    need + pad,
+                                );
+                                (w - pad, (c + at.0, c + at.1))
+                            },
+                            theme::blend(p.fg, p.accent_fg, on),
+                            1.0 - on,
+                        )?;
                     }
-                    let text_ring = (sub_ring.0 + pad, sub_ring.1 - pad);
-                    self.label(
-                        Kind::Sub(arc.parent, j),
-                        item.name.as_str(),
-                        &self.sub_font,
-                        &|h, need| {
-                            let (w, at) = fit::sector_slot(
-                                text_ring,
-                                a1 + OUTER_HALF_GAP_DEG,
-                                a2 - OUTER_HALF_GAP_DEG,
-                                h,
-                                need + pad,
-                            );
-                            (w - pad, (c + at.0, c + at.1))
-                        },
-                        if on { p.accent_fg } else { p.fg },
-                        !on,
-                    )?;
-                }
+                    self.ctx.SetTransform(&Matrix3x2::identity());
+                    Ok(())
+                })?;
             }
 
             // Center: cancel; while a sector is highlighted it shows that sector's name.
@@ -1002,7 +1148,7 @@ impl Painter {
                 &self.hub_font,
                 &|h, _| (fit::circle_width(radii.center - pad, h) - pad, (c, c)),
                 p.fg,
-                true,
+                1.0,
             )?;
         }
         Ok(())
@@ -1031,6 +1177,42 @@ impl Painter {
         }
     }
 
+    /// Runs `f`, whose drawing is shifted by `shift` and faded to `opacity` as one group; just
+    /// `f` when there is nothing to apply.
+    ///
+    /// # Safety
+    /// Must be called between `BeginDraw` and `EndDraw` of `self.ctx`.
+    unsafe fn faded<R>(&self, opacity: f32, shift: (f32, f32), f: impl FnOnce() -> R) -> R {
+        if opacity >= 1.0 && shift == (0.0, 0.0) {
+            return f();
+        }
+        let everywhere = D2D_RECT_F {
+            left: f32::MIN,
+            top: f32::MIN,
+            right: f32::MAX,
+            bottom: f32::MAX,
+        };
+        let params = D2D1_LAYER_PARAMETERS1 {
+            contentBounds: everywhere,
+            geometricMask: ManuallyDrop::new(None),
+            maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+            maskTransform: Matrix3x2::identity(),
+            opacity,
+            opacityBrush: ManuallyDrop::new(None),
+            layerOptions: D2D1_LAYER_OPTIONS1_NONE,
+        };
+        // SAFETY: guaranteed by the caller; the layer is popped before returning.
+        unsafe {
+            self.ctx.PushLayer(&params, None::<&ID2D1Layer>);
+            self.ctx
+                .SetTransform(&Matrix3x2::translation(shift.0, shift.1));
+            let result = f();
+            self.ctx.SetTransform(&Matrix3x2::identity());
+            self.ctx.PopLayer();
+            result
+        }
+    }
+
     /// Makes the area of `shapes` fully transparent.
     ///
     /// # Safety
@@ -1055,21 +1237,15 @@ impl Painter {
 
     /// # Safety
     /// Must be called between `BeginDraw` and `EndDraw` of `self.ctx`.
-    unsafe fn fill_tile(
-        &self,
-        geometry: &ID2D1Geometry,
-        fill: D2D1_COLOR_F,
-        on: bool,
-        stroke: f32,
-    ) {
+    unsafe fn fill_tile(&self, geometry: &ID2D1Geometry, fill: D2D1_COLOR_F, on: f32, stroke: f32) {
         let p = self.pal();
         // SAFETY: guaranteed by the caller.
         unsafe {
-            self.brush.SetColor(if on { &p.accent } else { &fill });
+            self.brush.SetColor(&theme::blend(fill, p.accent, on));
             self.ctx
                 .FillGeometry(geometry, &self.brush, None::<&ID2D1Brush>);
             let frost = self.frost.as_ref().filter(|_| self.glass.get());
-            if let (true, Some(frost), Ok(bounds)) = (on, frost, geometry.GetBounds(None)) {
+            if let (true, Some(frost), Ok(bounds)) = (on > 0.0, frost, geometry.GetBounds(None)) {
                 // Sheen on the upper part of the highlighted tile.
                 let mid = (bounds.left + bounds.right) / 2.0;
                 let height = bounds.bottom - bounds.top;
@@ -1081,12 +1257,12 @@ impl Painter {
                     X: mid,
                     Y: bounds.top + 0.7 * height,
                 });
-                frost.sheen.SetOpacity(TILE_SHEEN);
+                frost.sheen.SetOpacity(TILE_SHEEN * on);
                 self.ctx
                     .FillGeometry(geometry, &frost.sheen, None::<&ID2D1Brush>);
             }
             self.brush
-                .SetColor(if on { &p.accent } else { &p.tile_line });
+                .SetColor(&theme::blend(p.tile_line, p.accent, on));
             self.ctx
                 .DrawGeometry(geometry, &self.brush, stroke, None::<&ID2D1StrokeStyle>);
         }
@@ -1097,15 +1273,11 @@ impl Painter {
     ///
     /// # Safety
     /// Must be called between `BeginDraw` and `EndDraw` of `self.ctx`.
-    unsafe fn icon(&self, hit: Hit, at: (f32, f32), size: u32, on: bool, k: f32) -> Result<()> {
+    unsafe fn icon(&self, hit: Hit, at: (f32, f32), size: u32, on: f32, k: f32) -> Result<()> {
         let Some(icons) = &self.icons else {
             return Ok(());
         };
-        let color = if on {
-            self.pal().accent_fg
-        } else {
-            self.pal().fg
-        };
+        let color = theme::blend(self.pal().fg, self.pal().accent_fg, on);
         let s = size as f32;
         let half = s / 2.0;
         // Text layouts are the size of the icon box and centred in it.
@@ -1204,7 +1376,7 @@ impl Painter {
         font: &IDWriteTextFormat,
         slot: &dyn Fn(f32, f32) -> (f32, (f32, f32)),
         color: D2D1_COLOR_F,
-        halo: bool,
+        halo_alpha: f32,
     ) -> Result<()> {
         let mut layouts = self.layouts.borrow_mut();
         let key = (kind, text.to_string());
@@ -1214,7 +1386,11 @@ impl Painter {
         let fitted = &layouts[&key];
         // SAFETY: guaranteed by the caller.
         unsafe {
-            if let Some(halo) = fitted.halo.as_ref().filter(|_| halo && self.glass.get()) {
+            if let Some(halo) = fitted
+                .halo
+                .as_ref()
+                .filter(|_| halo_alpha > 0.0 && self.glass.get())
+            {
                 let left = fitted.at.0 - fitted.width / 2.0 - halo.margin;
                 let top = fitted.at.1 - fitted.height / 2.0 - halo.margin;
                 let rect = D2D_RECT_F {
@@ -1226,7 +1402,7 @@ impl Painter {
                 self.ctx.DrawBitmap(
                     &halo.bitmap,
                     Some(&rect),
-                    1.0,
+                    halo_alpha,
                     D2D1_INTERPOLATION_MODE_LINEAR,
                     None,
                     None,
@@ -1619,6 +1795,14 @@ fn polar(c: f32, r: f32, deg: f32) -> (f32, f32) {
 }
 
 /// Point at distance `r` and angle `deg` from the point `p`.
+/// Offset of an arc part whose middle lies at `deg`: it starts `ARC_SLIDE_PX` closer to the wheel's
+/// centre and moves out to 0 as `t` (0..=1) goes up.
+fn arc_shift(deg: f32, k: f32, t: f32) -> (f32, f32) {
+    let dir = polar(0.0, 1.0, deg);
+    let back = -anim::ARC_SLIDE_PX * k * (1.0 - t);
+    (dir.0 * back, dir.1 * back)
+}
+
 fn around(p: (f32, f32), r: f32, deg: f32) -> Vector2 {
     let a = deg.to_radians();
     Vector2 {
@@ -1913,7 +2097,9 @@ mod tests {
                 .ctx
                 .CreateBitmap(dims, None, 0, &props(D2D1_BITMAP_OPTIONS_TARGET))
                 .unwrap();
-            painter.paint(&target, hit, arc).expect("paint");
+            painter
+                .paint(&target, hit, arc, &Anim::settled(hit))
+                .expect("paint");
             let staging = painter
                 .ctx
                 .CreateBitmap(
@@ -2117,7 +2303,9 @@ mod tests {
             let t = Instant::now();
             assert!(painter.place_snapshot(602, 199));
             painter.glass.set(true);
-            painter.paint(&target, Hit::Center, None).unwrap();
+            painter
+                .paint(&target, Hit::Center, None, &Anim::settled(Hit::Center))
+                .unwrap();
             println!(
                 "  place + first paint {:.2} ms, {:.1} MB",
                 ms(t),
@@ -2223,7 +2411,14 @@ mod tests {
         let mut ms = Vec::new();
         for i in 0..30 {
             let t = std::time::Instant::now();
-            painter.paint(&target, Hit::Outer(i % 12), None).unwrap();
+            painter
+                .paint(
+                    &target,
+                    Hit::Outer(i % 12),
+                    None,
+                    &Anim::settled(Hit::Outer(i % 12)),
+                )
+                .unwrap();
             ms.push(t.elapsed().as_secs_f64() * 1e3);
         }
         println!("frame first {:.2} ms", ms[0]);

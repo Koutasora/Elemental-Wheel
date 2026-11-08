@@ -121,6 +121,14 @@ pub fn mix(a: D2D1_COLOR_F, b: D2D1_COLOR_F, t: f32) -> D2D1_COLOR_F {
     }
 }
 
+/// `a` blended with `b` by `t` (0..=1), alpha included.
+pub fn blend(a: D2D1_COLOR_F, b: D2D1_COLOR_F, t: f32) -> D2D1_COLOR_F {
+    D2D1_COLOR_F {
+        a: a.a + (b.a - a.a) * t,
+        ..mix(a, b, t)
+    }
+}
+
 /// Palette for the requested theme; `System` reads the Windows app theme.
 pub fn palette(theme: Theme) -> Palette {
     let dark = match theme {

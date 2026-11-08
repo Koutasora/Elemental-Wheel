@@ -3,9 +3,11 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 
 use wheel_core::{Config, Hit, Layout, SubArc, arc_for_hit, hit_test_arc};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows::Win32::Graphics::Dwm::DwmFlush;
 use windows::Win32::Graphics::Gdi::{MONITOR_DEFAULTTONEAREST, MonitorFromPoint};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::{
@@ -23,6 +25,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{Error, PCWSTR, Result, w};
 
+use crate::anim::{self, Anim};
 use crate::args::{DemoOptions, PanicTest, RunOptions};
 use crate::guard;
 use crate::hook::{self, HookOptions};
@@ -53,10 +56,14 @@ const POLL_MS: u32 = 16;
 const CLOSE_TIMER: usize = 2;
 const CONFIG_TIMER: usize = 3;
 const STATS_TIMER: usize = 4;
+/// Hides the window when the closing fade is over.
+const CLOSE_FADE_TIMER: usize = 5;
 const STATS_MS: u32 = 60_000;
 /// Wait after a change so that an editor can finish saving; further changes restart the wait.
 const CONFIG_DEBOUNCE_MS: u32 = 100;
 const CLOSE_AFTER_MS: u32 = 10_000;
+/// Wait beyond the closing fade, so that its last frame is shown before the window goes.
+const FADE_MARGIN_MS: u32 = 15;
 
 struct State {
     renderer: Renderer,
@@ -69,6 +76,9 @@ struct State {
     /// Hidden `--demo-hit`: the highlight stays on this tile whatever the cursor does.
     forced: bool,
     config: Arc<Config>,
+    /// Highlight and arc transitions; animations also fade the demo out.
+    anim: Anim,
+    animate: bool,
     error: Option<Error>,
 }
 
@@ -110,6 +120,17 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
         Some(hit) => (hit, arc_for_hit(hit, &config)),
         None => track(&layout, &config, center, cursor, None),
     };
+    let animate = anim::should_animate(
+        o.animations && !options.no_anim,
+        options.force_anim || anim::windows_animations(),
+    );
+    // An arc already open slides out once the wheel has faded in.
+    let anim = Anim::new(
+        animate,
+        hit,
+        arc.map(|_| anim::OPEN_MS as f32),
+        Instant::now(),
+    );
     let renderer = match Renderer::new(
         hwnd,
         layout,
@@ -120,7 +141,8 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
     .and_then(|r| {
         // The window is still hidden, so the snapshot shows the desktop without it.
         log_glass("demo", r.prepare(left, top));
-        r.draw(hit, arc).map(|()| r)
+        r.prepare_open(animate)?;
+        r.draw(hit, arc, &anim).map(|()| r)
     }) {
         Ok(r) => r,
         Err(e) => {
@@ -137,6 +159,8 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
         arc,
         forced: options.demo_hit.is_some(),
         config,
+        anim,
+        animate,
         error: None,
     }));
 
@@ -145,7 +169,11 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, state as isize);
         // The return value is only the previous visibility.
         let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-        start_timers(hwnd).and_then(|()| message_loop())
+        (*state)
+            .renderer
+            .start_open(animate)
+            .and_then(|()| start_timers(hwnd, options.close_ms.unwrap_or(CLOSE_AFTER_MS)))
+            .and_then(|()| message_loop())
     };
     // SAFETY: the window is destroyed (if it still exists) and the pointer cleared before the
     // state is freed, so nothing can reach it afterwards. `state` comes from `Box::into_raw`.
@@ -197,8 +225,8 @@ fn create_popup(
     }
 }
 
-fn start_timers(hwnd: HWND) -> Result<()> {
-    for (id, ms) in [(POLL_TIMER, POLL_MS), (CLOSE_TIMER, CLOSE_AFTER_MS)] {
+fn start_timers(hwnd: HWND, close_ms: u32) -> Result<()> {
+    for (id, ms) in [(POLL_TIMER, POLL_MS), (CLOSE_TIMER, close_ms)] {
         // SAFETY: `hwnd` is a live window of this thread.
         if unsafe { SetTimer(Some(hwnd), id, ms, None) } == 0 {
             return Err(Error::from_thread());
@@ -291,22 +319,28 @@ unsafe fn state<'a>(hwnd: HWND) -> Option<&'a mut State> {
     unsafe { (GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut State).as_mut() }
 }
 
-/// Re-reads the cursor and redraws when the highlighted sector changed.
+/// Re-reads the cursor and redraws when the highlighted sector changed or a transition is
+/// still running.
 fn poll(state: &mut State) -> Result<()> {
-    if state.forced {
-        return Ok(());
-    }
-    let (hit, arc) = track(
-        &state.layout,
-        &state.config,
-        state.center,
-        cursor_pos()?,
-        state.arc,
-    );
-    if hit != state.hit || arc != state.arc {
+    let mut changed = false;
+    if !state.forced {
+        let (hit, arc) = track(
+            &state.layout,
+            &state.config,
+            state.center,
+            cursor_pos()?,
+            state.arc,
+        );
+        changed = hit != state.hit || arc != state.arc;
+        if arc != state.arc && arc.is_some() {
+            state.anim.restart_arc();
+        }
         state.hit = hit;
         state.arc = arc;
-        state.renderer.draw(hit, arc)?;
+        state.anim.set_target(hit);
+    }
+    if state.anim.tick(changed, Instant::now()) {
+        state.renderer.draw(state.hit, state.arc, &state.anim)?;
     }
     Ok(())
 }
@@ -334,6 +368,25 @@ fn wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESU
                 return LRESULT(0);
             }
             WM_TIMER if wparam.0 == CLOSE_TIMER => {
+                let _ = KillTimer(Some(hwnd), CLOSE_TIMER);
+                let fading =
+                    state(hwnd).is_some_and(|s| s.animate && s.renderer.start_close().is_ok());
+                if fading {
+                    let _ = KillTimer(Some(hwnd), POLL_TIMER);
+                    if SetTimer(
+                        Some(hwnd),
+                        CLOSE_FADE_TIMER,
+                        anim::CLOSE_MS + FADE_MARGIN_MS,
+                        None,
+                    ) != 0
+                    {
+                        return LRESULT(0);
+                    }
+                }
+                let _ = DestroyWindow(hwnd);
+                return LRESULT(0);
+            }
+            WM_TIMER if wparam.0 == CLOSE_FADE_TIMER => {
                 let _ = DestroyWindow(hwnd);
                 return LRESULT(0);
             }
@@ -383,6 +436,12 @@ struct RunState {
     hit: Hit,
     /// The submenu arc shown; this window owns it and publishes it to the hook thread.
     arc: Option<SubArc>,
+    /// Highlight and arc transitions of the wheel shown.
+    anim: Anim,
+    /// The wheel shown was opened with animations, so it also fades out.
+    animate: bool,
+    /// The closing fade is running; the window is still visible.
+    closing: bool,
     error: Option<Error>,
 }
 
@@ -444,6 +503,9 @@ pub fn run_background(options: &RunOptions, config_path: PathBuf) -> Result<()> 
         center: (0.0, 0.0),
         hit: Hit::Center,
         arc: None,
+        anim: Anim::settled(Hit::Center),
+        animate: false,
+        closing: false,
         error: None,
     }));
     // SAFETY: `state` stays valid until it is reclaimed below, after the message loop ended.
@@ -504,7 +566,7 @@ fn build_renderer(
 ) -> Result<Renderer> {
     let renderer = Renderer::new(hwnd, layout, palette, config.clone(), glass)?;
     renderer.warm();
-    renderer.draw(Hit::Center, None)?;
+    renderer.draw(Hit::Center, None, &Anim::settled(Hit::Center))?;
     Ok(renderer)
 }
 
@@ -570,6 +632,8 @@ fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<OpenKind> {
     // A new wheel starts without an arc.
     (s.hit, s.arc) = track(&layout, &s.config, s.center, cursor_pos()?, None);
     hook::publish_arc(s.arc);
+    s.animate = anim::should_animate(s.config.options.animations, anim::windows_animations());
+    s.anim = Anim::new(s.animate, s.hit, None, Instant::now());
     if let Some(renderer) = &s.renderer {
         // The window is hidden until SetWindowPos below, so the snapshot shows the desktop
         // without it.
@@ -577,7 +641,8 @@ fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<OpenKind> {
         if stats::enabled() {
             log_glass("open", times);
         }
-        renderer.draw(s.hit, s.arc)?;
+        renderer.prepare_open(s.animate)?;
+        renderer.draw(s.hit, s.arc, &s.anim)?;
     }
     // SAFETY: `hwnd` is the live window of this thread.
     unsafe {
@@ -593,6 +658,9 @@ fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<OpenKind> {
         if SetTimer(Some(hwnd), POLL_TIMER, POLL_MS, None) == 0 {
             return Err(Error::from_thread());
         }
+    }
+    if let Some(renderer) = &s.renderer {
+        renderer.start_open(s.animate)?;
     }
     Ok(kind)
 }
@@ -622,26 +690,78 @@ fn log_glass(when: &str, times: Option<(f64, f64)>) {
     }
 }
 
+/// Hides the wheel at once.
 fn close_wheel(hwnd: HWND) {
     hook::publish_arc(None);
     // SAFETY: `hwnd` is the live window of this thread; the return values carry no news.
     unsafe {
         let _ = KillTimer(Some(hwnd), POLL_TIMER);
+        let _ = KillTimer(Some(hwnd), CLOSE_FADE_TIMER);
         let _ = ShowWindow(hwnd, SW_HIDE);
     }
 }
 
+/// Closes the wheel: fades it out and hides it when the fade is over, or hides it at once when
+/// the wheel was opened without animations.
+fn start_closing(hwnd: HWND, s: &mut RunState) {
+    if s.closing {
+        return;
+    }
+    // SAFETY: `hwnd` is the live window of this thread.
+    unsafe {
+        let visible = IsWindowVisible(hwnd).as_bool();
+        let fading = s.animate
+            && visible
+            && s.renderer.as_ref().is_some_and(|r| r.start_close().is_ok())
+            && SetTimer(
+                Some(hwnd),
+                CLOSE_FADE_TIMER,
+                anim::CLOSE_MS + FADE_MARGIN_MS,
+                None,
+            ) != 0;
+        if fading {
+            hook::publish_arc(None);
+            let _ = KillTimer(Some(hwnd), POLL_TIMER);
+            s.closing = true;
+            return;
+        }
+    }
+    close_wheel(hwnd);
+}
+
+/// If the closing fade is still running, hides the window now and waits until the desktop is
+/// composed without it, so that a snapshot of the desktop cannot catch the fading wheel.
+fn finish_closing(hwnd: HWND, s: &mut RunState) {
+    if s.closing {
+        s.closing = false;
+        close_wheel(hwnd);
+        // SAFETY: plain call; a failure only means the wait did not happen.
+        let _ = unsafe { DwmFlush() };
+    }
+}
+
 fn poll_run(s: &mut RunState) -> Result<()> {
+    if s.closing {
+        // A timer message that was already queued when the fade started.
+        return Ok(());
+    }
     let (hit, arc) = track(&s.layout, &s.config, s.center, cursor_pos()?, s.arc);
-    if hit != s.hit || arc != s.arc {
+    let changed = hit != s.hit || arc != s.arc;
+    if changed {
         if arc != s.arc {
             hook::publish_arc(arc);
+            if arc.is_some() {
+                s.anim.restart_arc();
+            }
         }
         s.hit = hit;
         s.arc = arc;
-        if let Some(renderer) = &s.renderer {
-            renderer.draw(hit, arc)?;
-        }
+        s.anim.set_target(hit);
+    }
+    if s.anim.tick(changed, Instant::now())
+        && let Some(renderer) = &s.renderer
+    {
+        renderer.draw(s.hit, s.arc, &s.anim)?;
     }
     Ok(())
 }
@@ -679,6 +799,7 @@ unsafe fn run_wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                 let started = stats::open_started();
                 guard::fire(PanicTest::Window);
                 run_state(hwnd).map_or(Ok(()), |s| {
+                    finish_closing(hwnd, s);
                     reload(hwnd, s, false);
                     let opened = open_wheel(hwnd, s, center);
                     if let (Some(started), Ok(kind)) = (started, &opened) {
@@ -695,6 +816,10 @@ unsafe fn run_wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                     x: wparam.0 as i32,
                     y: lparam.0 as i32,
                 };
+                if let Some(s) = run_state(hwnd) {
+                    // A wheel still fading out must be gone before the snapshot.
+                    finish_closing(hwnd, s);
+                }
                 // Only while the wheel is hidden; a failure costs nothing, the open takes the
                 // snapshot itself then.
                 if !IsWindowVisible(hwnd).as_bool()
@@ -706,7 +831,10 @@ unsafe fn run_wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
             }
             WM_WHEEL_DISCARD | WM_WHEEL_CLOSE => {
                 if msg == WM_WHEEL_CLOSE {
-                    close_wheel(hwnd);
+                    match run_state(hwnd) {
+                        Some(s) => start_closing(hwnd, s),
+                        None => close_wheel(hwnd),
+                    }
                 }
                 if let Some(Some(renderer)) = run_state(hwnd).map(|s| s.renderer.as_ref()) {
                     renderer.release_snapshot();
@@ -714,6 +842,13 @@ unsafe fn run_wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                 return LRESULT(0);
             }
             WM_TIMER if wparam.0 == POLL_TIMER => run_state(hwnd).map_or(Ok(()), poll_run),
+            WM_TIMER if wparam.0 == CLOSE_FADE_TIMER => {
+                if let Some(s) = run_state(hwnd) {
+                    s.closing = false;
+                }
+                close_wheel(hwnd);
+                return LRESULT(0);
+            }
             WM_CONFIG_CHANGED => {
                 // One reload for a burst of changes.
                 if SetTimer(Some(hwnd), CONFIG_TIMER, CONFIG_DEBOUNCE_MS, None) == 0 {

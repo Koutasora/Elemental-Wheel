@@ -42,6 +42,13 @@ pub struct DemoOptions {
     pub demo_hit: Option<Hit>,
     /// Hidden flag `--no-glass`: opaque look, no backdrop blur.
     pub no_glass: bool,
+    /// Hidden flag `--no-anim` (`--demo` only): no animations whatever the settings say.
+    pub no_anim: bool,
+    /// Hidden flag `--force-anim` (`--demo` only): animate even when Windows has animations off.
+    pub force_anim: bool,
+    /// Hidden flag `--demo-close-ms N` (`--demo` only): close the demo (with the closing fade)
+    /// after N ms instead of 10 s.
+    pub close_ms: Option<u32>,
     /// Hidden flag `--glass <0..100>`: how transparent the glass is (see `glass_level`).
     pub glass: Option<u8>,
 }
@@ -102,6 +109,9 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
     let mut at = None;
     let mut demo_hit = None;
     let mut no_glass = false;
+    let mut no_anim = false;
+    let mut force_anim = false;
+    let mut close_ms = None;
     let mut glass = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -113,6 +123,12 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
             "--test-stall-hook" => stall_hook_once = true,
             "--stats" => stats = true,
             "--no-glass" => no_glass = true,
+            "--no-anim" => no_anim = true,
+            "--force-anim" => force_anim = true,
+            "--demo-close-ms" => {
+                let text = value(&mut args, &arg)?;
+                close_ms = Some(number(&text, "--demo-close-ms")?.clamp(1, 60_000) as u32);
+            }
             "--glass" => {
                 let text = value(&mut args, &arg)?;
                 glass = Some(number(&text, "--glass")?.clamp(0, 100) as u8);
@@ -181,10 +197,16 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
         at,
         demo_hit,
         no_glass,
+        no_anim,
+        force_anim,
+        close_ms,
         glass,
     };
-    if !demo && (at.is_some() || demo_hit.is_some()) {
-        return Err("--at and --demo-hit need --demo".to_string());
+    if !demo && (at.is_some() || demo_hit.is_some() || no_anim || force_anim || close_ms.is_some())
+    {
+        return Err(
+            "--at, --demo-hit, --no-anim, --force-anim and --demo-close-ms need --demo".to_string(),
+        );
     }
     if demo && matches!(test_panic, Some(PanicTest::Hook | PanicTest::Action)) {
         return Err("--test-panic hook and action need --run".to_string());
@@ -430,6 +452,13 @@ mod tests {
         assert_eq!(o.at, Some((960, -540)));
         assert_eq!(o.demo_hit, Some(Hit::Sub(2, 1)));
         assert!(o.no_glass);
+        assert!(!o.no_anim);
+        assert_eq!(o.close_ms, None);
+        let quick = demo(&["--demo", "--no-anim", "--demo-close-ms", "300"]);
+        assert!(quick.no_anim);
+        assert_eq!(quick.close_ms, Some(300));
+        assert!(parse_strs(&["--run", "--no-anim"]).is_err());
+        assert!(parse_strs(&["--demo", "--demo-close-ms", "x"]).is_err());
         assert_eq!(o.glass_level(50), 0.0);
         assert_eq!(demo(&["--demo"]).glass_level(50), 0.5);
         assert_eq!(demo(&["--demo"]).glass_level(80), 0.8);

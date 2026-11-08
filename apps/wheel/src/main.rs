@@ -1,4 +1,5 @@
 mod actions;
+mod anim;
 mod args;
 mod backdrop;
 mod fit;
