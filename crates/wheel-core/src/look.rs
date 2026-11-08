@@ -6,6 +6,11 @@ pub const MIN_GLASS_PCT: u8 = 0;
 pub const MAX_GLASS_PCT: u8 = 100;
 pub const DEFAULT_GLASS_PCT: u8 = 50;
 
+/// The hint in the wheel center that tells how to reach the options (key O), and its font size
+/// in mockup px (a tile name in the center is 14).
+pub const OPTIONS_HINT: &str = "O \u{2013} opcje";
+pub const OPTIONS_HINT_PX: f32 = 10.0;
+
 /// Clamps the glass transparency to `MIN_GLASS_PCT..=MAX_GLASS_PCT`.
 pub fn clamp_glass_pct(pct: u8) -> u8 {
     pct.clamp(MIN_GLASS_PCT, MAX_GLASS_PCT)

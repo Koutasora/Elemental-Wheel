@@ -13,3 +13,4 @@ Statusy: PLANOWANY, W TOKU, ZAMKNIĘTY. W danej chwili najwyżej jeden etap ma s
 | 07 | stabilnosc-i-pomiary | ZAMKNIĘTY | 07-stabilnosc-i-pomiary.md |
 | 08 | wyglad-i-animacje | ZAMKNIĘTY | 08-wyglad-i-animacje.md |
 | 09 | instalator-i-wydanie | ZAMKNIĘTY | 09-instalator-i-wydanie.md |
+| 10 | poprawki-po-wydaniu | ZAMKNIĘTY | 10-poprawki-po-wydaniu.md |

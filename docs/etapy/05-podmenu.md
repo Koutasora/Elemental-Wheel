@@ -14,7 +14,7 @@ Sprawdzenie fizyczną myszą przeniesione z etapu 04.
 - [x] Widok ikon (`view: icons`): `icon` w konfiguracji (ścieżka .ico/.exe/.dll) ma pierwszeństwo; bez niego program i plik dostają ikonę systemową celu, komendy edycji i akcje systemowe glif z Segoe Fluent Icons (Windows 10: Segoe MDL2 Assets), reszta pierwszą literę nazwy; ikony w pamięci podręcznej odświeżanej po zmianie konfiguracji; środek pokazuje nazwę wskazanego kafelka
 - [x] Testy w `wheel-core`: trafianie w łuk (granice, zawijanie przez 0°, 1–5 kafelków, 4–12 sektorów), otwieranie i zamykanie łuku, rozmiar okna z pasmem podmenu
 - [x] `cargo build --release`, `cargo test`, clippy `-D warnings` i `cargo fmt --check` czyste
-- [x] Test automatyczny na LAB (`--accept-injected`, konfiguracja w scratchpadzie): akcje z łuku, zrzuty łuku i widoku ikon, koło przy krawędzi ekranu, regresje z 03 i 04
+- [x] Test automatyczny na LAB (`--accept-injected`, konfiguracja w folderze tymczasowym): akcje z łuku, zrzuty łuku i widoku ikon, koło przy krawędzi ekranu, regresje z 03 i 04
 - [x] Sprawdzenie fizyczną myszą przez użytkownika według listy: kliknięcie, przeciąganie, przytrzymanie, akcje, podmenu
 - [x] Puszczenie prawego na środku („Anuluj”) po przejściu kursorem po kafelkach zamyka koło; puszczenie na środku bez wyjeżdżania z niego zostawia tryb klikania lewym
 - [x] `CHECKLISTA.md` i `README.md` zaktualizowane (`submenu` i `icon` nie są już zarezerwowane)
@@ -28,7 +28,7 @@ Sprawdzenie fizyczną myszą przeniesione z etapu 04.
 - [x] Domyślna konfiguracja: kafelek „Ustawienia” z podmenu Ekran, Dźwięk, Bluetooth, Aktualizacje (`ms-settings:`)
 - [x] `README.md`, `CHECKLISTA.md`
 - [x] `crates/wheel-core/src/trigger.rs`: w stanie otwartym znacznik wyjścia kursora ze środka (zdarzenia ruchu w haku); puszczenie na środku po wyjściu = anuluj; testy
-- Sprawdzenie: tester: build, testy, clippy, fmt; skrypt PowerShell z `--accept-injected` i testowym `config.json` w scratchpadzie (`%APPDATA%` nietknięty) ze zrzutami; na końcu test fizyczną myszą przez użytkownika według listy kroków
+- Sprawdzenie: tester: build, testy, clippy, fmt; skrypt PowerShell z `--accept-injected` i testowym `config.json` w folderze tymczasowym (`%APPDATA%` nietknięty) ze zrzutami; na końcu test fizyczną myszą przez użytkownika według listy kroków
 
 ## Decyzje
 - Domyślna konfiguracja dostaje przykładowe podmenu „Ustawienia” (Ekran, Dźwięk, Bluetooth, Aktualizacje): funkcja widoczna od pierwszego uruchomienia (decyzja użytkownika).
@@ -48,7 +48,7 @@ Sprawdzenie fizyczną myszą przeniesione z etapu 04.
 - Wybierane jest to, co widać: stan łuku prowadzi okno (odpytywanie kursora), a hak przy puszczeniu i kliknięciu bierze łuk opublikowany przez okno, zamiast liczyć własny z innych próbek ruchu.
 - Kanał okno -> hak: `AtomicU16` (`rodzic << 8 | liczba`, 0 = brak łuku), zapis tylko w wątku UI, odczyt w haku tylko przy puszczeniu prawego i kliknięciu lewego; bez Mutexa na ścieżce zdarzeń myszy.
 - Tryb klikania: klik w kafelek łuku wybiera do `sub_click_limit` = 292 + 4 (makieta: `R.s2 + 4`), dalej zamyka; pozostałe kafelki wybierają do granicy pierścienia zewnętrznego 214 (makieta: `R.o2 + 4`; wcześniej 210, więc klik w szczelinę 210..214 zamykał); okno nie zna trybu klikania, więc podświetlenie poza oknem (dalej niż 296) może zostać, choć klik zamknie, jak dotąd dla sektorów zewnętrznych.
-- Test na żywo (`--accept-injected`, skrypt w scratchpadzie, `%APPDATA%` nietknięty): 13 scenariuszy, 25 sprawdzeń PASS (łuk, puszczenie daleko, poza kątem, rodzic, zawijanie przez 0°, zamykanie, tryb klikania z kafelkiem, za pasmem i w szczelinie, lewa krawędź i róg ekranu, widok ikon w ciemnym motywie po zmianie pliku, Escape, krótki klik, przeciąganie); akcje potwierdzone plikiem znacznika.
+- Test na żywo (`--accept-injected`, skrypt w folderze tymczasowym, `%APPDATA%` nietknięty): 13 scenariuszy, 25 sprawdzeń PASS (łuk, puszczenie daleko, poza kątem, rodzic, zawijanie przez 0°, zamykanie, tryb klikania z kafelkiem, za pasmem i w szczelinie, lewa krawędź i róg ekranu, widok ikon w ciemnym motywie po zmianie pliku, Escape, krótki klik, przeciąganie); akcje potwierdzone plikiem znacznika.
 - Ograniczenie: łuk sektora skierowanego poza ekran się nie otworzy, bo kursor nie dojdzie do tego sektora; sam sektor nadal wybiera się kierunkiem.
 - Puszczenie prawego na środku po wyjeździe kursora ze środka anuluje, bez wyjazdu wchodzi w tryb klikania (prośba użytkownika po teście myszą: tryb klikania zostaje „w razie co”). Wyjście ze środka liczy wyzwalacz ze zdarzeń ruchu w haku, bo tam zapada decyzja przy puszczeniu.
 - Test fizyczną myszą przez użytkownika: wszystkie 10 punktów listy działa (2026-11-07).
@@ -67,7 +67,7 @@ Decyzje:
 Zrobione:
 - `wheel-core`: `hit_test_arc`, `SubArc`, `Hit::Sub`, `submenu.rs` (`arc_for_hit`, `item_for_hit`), promienie i rozmiar okna w `layout.rs`, łuk i anulowanie na środku w `trigger.rs`; 90 testów.
 - `wheel`: `icons.rs` (WIC, `SHDefExtractIconW`, lista obrazów systemu, glify, pamięć podręczna, COM), łuk, kreska i widok ikon w `render.rs`, stan łuku w `window.rs`, kanał do haka w `hook.rs`; 44 testy + `render_cases`.
-- Test automatyczny na LAB (`--accept-injected`, konfiguracja w scratchpadzie): 25 sprawdzeń PASS, akcje potwierdzone plikiem znacznika, zrzuty łuku i widoku ikon; osobno anulowanie na środku.
+- Test automatyczny na LAB (`--accept-injected`, konfiguracja w folderze tymczasowym): 25 sprawdzeń PASS, akcje potwierdzone plikiem znacznika, zrzuty łuku i widoku ikon; osobno anulowanie na środku.
 - Test fizyczną myszą przez użytkownika: wszystkie punkty działają.
 - Przegląd managera bez uwag blokujących; README, CHECKLISTA, pomoc programu zaktualizowane.
 

@@ -22,6 +22,10 @@ const HIGHLIGHT_MS: f32 = 90.0;
 const ARC_MS: f32 = 110.0;
 /// How far (at scale 1) the arc starts closer to the wheel than its final place.
 pub const ARC_SLIDE_PX: f32 = 8.0;
+/// The options hint in the center stays fully visible this long after the wheel opens, then fades
+/// out over `HINT_FADE_MS` (without animations it just disappears at the end of both).
+const HINT_SHOW_MS: f32 = 9700.0;
+const HINT_FADE_MS: f32 = 300.0;
 /// Longest step taken at once, so that a stalled timer does not skip the animation.
 const MAX_STEP_MS: f32 = 50.0;
 
@@ -83,6 +87,8 @@ pub struct Anim {
     /// Something is still moving.
     moving: bool,
     last: Instant,
+    /// Time since the wheel opened, for the options hint (real time, not capped).
+    hint_ms: f32,
 }
 
 impl Anim {
@@ -100,12 +106,15 @@ impl Anim {
             },
             moving: slide,
             last: now,
+            hint_ms: 0.0,
         }
     }
 
-    /// A finished state with `hit` highlighted and nothing moving.
+    /// A finished state with `hit` highlighted and nothing moving, the hint already gone.
     pub fn settled(hit: Hit) -> Anim {
-        Anim::new(false, hit, None, Instant::now())
+        let mut anim = Anim::new(false, hit, None, Instant::now());
+        anim.hint_ms = HINT_SHOW_MS + HINT_FADE_MS;
+        anim
     }
 
     /// The highlight moves to `hit`.
@@ -157,10 +166,23 @@ impl Anim {
         } else {
             0.0
         };
+        let hint_before = self.hint();
+        self.hint_ms += now.saturating_duration_since(self.last).as_secs_f32() * 1000.0;
         self.last = now;
-        let redraw = changed || self.moving;
+        let redraw = changed || self.moving || self.hint() != hint_before;
         self.moving = self.step(dt);
         redraw
+    }
+
+    /// Opacity (0..=1) of the options hint in the center.
+    pub fn hint(&self) -> f32 {
+        if self.hint_ms >= HINT_SHOW_MS + HINT_FADE_MS {
+            0.0
+        } else if self.enabled && self.hint_ms > HINT_SHOW_MS {
+            1.0 - progress(self.hint_ms - HINT_SHOW_MS, HINT_FADE_MS)
+        } else {
+            1.0
+        }
     }
 
     /// How much `hit` is highlighted, 0..=1 (eased).
@@ -216,6 +238,39 @@ mod tests {
         let [c0, c1, c2, c3] = ease_out_cubic(1.0, 0.0, 0.08);
         let end = c0 + c1 * 0.08 + c2 * 0.08 * 0.08 + c3 * 0.08 * 0.08 * 0.08;
         assert!(close(end, 0.0));
+    }
+
+    #[test]
+    fn hint_shows_then_fades_and_asks_for_redraws() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let mut anim = Anim::new(true, Hit::Center, None, t0);
+        assert_eq!(anim.hint(), 1.0);
+        // Nothing changes while it is fully visible.
+        assert!(!anim.tick(false, at(9000)));
+        assert!(!anim.tick(false, at(9700)));
+        assert_eq!(anim.hint(), 1.0);
+        // Fading: every tick redraws.
+        assert!(anim.tick(false, at(9850)));
+        assert!((anim.hint() - 0.5).abs() < 1e-3);
+        assert!(anim.tick(false, at(9950)));
+        // The tick that ends it draws the last frame, later ones nothing.
+        assert!(anim.tick(false, at(10100)));
+        assert_eq!(anim.hint(), 0.0);
+        assert!(!anim.tick(false, at(10200)));
+    }
+
+    #[test]
+    fn hint_without_animations_disappears_at_once_after_ten_seconds() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let mut anim = Anim::new(false, Hit::Center, None, t0);
+        assert!(!anim.tick(false, at(9900)));
+        assert_eq!(anim.hint(), 1.0);
+        assert!(anim.tick(false, at(10000)));
+        assert_eq!(anim.hint(), 0.0);
+        assert!(!anim.tick(false, at(10100)));
+        assert_eq!(Anim::settled(Hit::Center).hint(), 0.0);
     }
 
     #[test]

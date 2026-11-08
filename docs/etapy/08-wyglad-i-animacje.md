@@ -31,7 +31,7 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - [x] `actions.rs`, `hook.rs`, `config.rs`: akcja `context_menu`
 - [x] ~~Pomiary `tools/soak.ps1`~~ test na żywo fizyczną myszą z `--stats` (decyzja użytkownika)
 - [x] README, CHECKLISTA
-- Sprawdzenie: tester: build, testy, clippy, fmt; zrzuty offscreen i `--demo` z konfiguracją w scratchpadzie (`%APPDATA%` nietknięty); test na żywo `--run --stats` z konfiguracją w scratchpadzie
+- Sprawdzenie: tester: build, testy, clippy, fmt; zrzuty offscreen i `--demo` z konfiguracją w folderze tymczasowym (`%APPDATA%` nietknięty); test na żywo `--run --stats` z konfiguracją w folderze tymczasowym
 
 ## Decyzje
 - Kolejność etapów zamieniona (decyzja użytkownika): 08 wyglad-i-animacje, 09 instalator-i-wydanie, żeby jedno wydanie 1.0.0 na końcu miało gotowy wygląd.
@@ -54,7 +54,7 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - Znane ograniczenie: w trybie `replace_right_click` migawka tła (BitBlt, 20–50 ms przez RDP) jest robiona przed otwarciem, więc otwarcie ze szkłem trwa o tyle dłużej; bez pomiaru na żywo.
 - Niestabilny test edytora (wspólny katalog tymczasowy przy testach równoległych) poprawiony: osobny katalog na każde wywołanie.
 - Etap 09 w skróconym zakresie (decyzja użytkownika, ok. 1–1,5 h): instalator Inno Setup, autostart, zasobnik tylko z pozycjami Edytor / Wyłącz-Włącz / Zamknij, jeden wariant ikony programu do akceptacji, jeden test instalacji i odinstalowania na LAB plus krótki test fizyczną myszą, wydanie 1.0.0; nowe pomysły tylko na listę na później.
-- Podglądy wyglądu tylko lokalnie (plik HTML na LAB), nie na claude.ai (zasada użytkownika).
+- Podglądy wyglądu tylko lokalnie (plik HTML na LAB), bez publikowania w sieci (zasada użytkownika).
 - Poza zakresem: znany błąd po Escape (decyzja z etapu 07), zasobnik i tryb bez konsoli (etap 09).
 
 ## Pomiary

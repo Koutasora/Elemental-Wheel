@@ -27,7 +27,7 @@ zostawia koło otwarte do wyboru lewym, Esc albo klik poza kołem zamyka. Akcje 
 - [x] `apps/wheel/src/watchdog.rs`: strażnik haka (timer co kilka sekund)
 - [x] `apps/wheel/src/args.rs`, `main.rs`: `--run`, `--quit`, `--hold-ms`, `--move-px`, jedna kopia (mutex); `--demo` bez zmian
 - [x] `CHECKLISTA.md` (punkty 03, ikona w zasobniku w 08), `README.md` (status, uruchomienie w tle)
-- Sprawdzenie: tester: build, testy, clippy, fmt; skrypt PowerShell z ukrytą flagą testową (wstrzyknięte zdarzenia traktowane jak fizyczne) sprawdza kliknięcie (menu kontekstowe Notatnika), przytrzymanie (koło otwarte, wybór wypisany, brak menu) i przeciąganie, zrzuty w scratchpadzie; potem użytkownik fizyczną myszą
+- Sprawdzenie: tester: build, testy, clippy, fmt; skrypt PowerShell z ukrytą flagą testową (wstrzyknięte zdarzenia traktowane jak fizyczne) sprawdza kliknięcie (menu kontekstowe Notatnika), przytrzymanie (koło otwarte, wybór wypisany, brak menu) i przeciąganie, zrzuty w folderze tymczasowym; potem użytkownik fizyczną myszą
 
 ## Decyzje
 - Lista wykluczonych programów i wyłączenie w pełnym ekranie w etapie 04 (wymagają pliku konfiguracji); w 03 automatycznie przepuszczane tylko okna administratora, bo bez tego prawy przycisk przestałby w nich działać.

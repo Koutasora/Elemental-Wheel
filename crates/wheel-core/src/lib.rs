@@ -1,6 +1,7 @@
 //! Core logic of Elemental Wheel.
 
 pub mod config;
+pub mod fit;
 pub mod geometry;
 pub mod icon;
 pub mod keys;

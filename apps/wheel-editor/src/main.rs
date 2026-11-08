@@ -1,7 +1,9 @@
 // In release builds there is no console window; `--version` attaches to the parent console.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod autostart;
 mod icons;
+mod instance;
 mod messages;
 mod model;
 mod options;
@@ -140,6 +142,18 @@ fn main() -> ExitCode {
         }
         Ok(Command::Run(arg, log, tab)) => {
             start_log(log);
+            // An explicit --config (tests) never meets the user's editor.
+            if arg.is_none() {
+                match instance::acquire() {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        wheel_core::log_line!("editor already running; bringing it to the front");
+                        instance::show_running(TITLE, "wheel-editor.exe");
+                        return ExitCode::SUCCESS;
+                    }
+                    Err(e) => wheel_core::log_line!("editor: cannot take the mutex: {e}"),
+                }
+            }
             match config_path(arg) {
                 Ok(path) => (path, tab),
                 Err(e) => {
@@ -290,6 +304,7 @@ struct App {
     icons: icons::Icons,
     last_check: Instant,
     was_focused: bool,
+    autostart: options::Autostart,
 }
 
 impl App {
@@ -305,6 +320,7 @@ impl App {
             icons: icons::Icons::new(icon_font),
             last_check: Instant::now(),
             was_focused: true,
+            autostart: options::Autostart::read(),
         }
     }
 
@@ -428,8 +444,11 @@ impl App {
                     .show(ui, |ui| match self.tab {
                         Tab::Tile => panel::show(ui, &mut self.model),
                         Tab::Options => {
-                            if options::show(ui, &mut self.model) {
+                            if options::show(ui, &mut self.model, &mut self.autostart) {
                                 self.dialog = Some(Dialog::Defaults);
+                            }
+                            if let Some(e) = self.autostart.error.take() {
+                                self.status = Some(Status::error(e));
                             }
                         }
                     });

@@ -12,6 +12,7 @@ use eframe::egui::{
     Painter, Pos2, Rect, Sense, Shape, Stroke, StrokeKind, TextureHandle, TextureId,
     TextureOptions, Ui, Vec2, pos2, vec2,
 };
+use wheel_core::fit;
 use wheel_core::icon::IconSizes;
 use wheel_core::look::{self, Rgba};
 use wheel_core::{
@@ -35,7 +36,7 @@ const CORNER_PX: f32 = 6.0;
 /// Half of the angular gap between neighbouring tiles, in degrees (as in the wheel).
 const OUTER_HALF_GAP_DEG: f32 = 0.8;
 const INNER_HALF_GAP_DEG: f32 = 1.4;
-/// Smallest label font size, in points.
+/// Smallest label font size at wheel scale 1, in points (as in the wheel).
 const MIN_FONT: f32 = 8.0;
 /// How far the shadow reaches beyond the plate, in layout pixels, and into how many strokes it
 /// is drawn.
@@ -59,6 +60,12 @@ const NOTCH_HALF_DEG: f32 = 5.0;
 const NOTCH_CLEARANCE: f32 = 2.0;
 /// How deep the submenu band reaches into the wheel disc, in layout pixels.
 const BAND_OVERLAP: f32 = 5.0;
+
+/// `fit::sector_slot` in the wheel's terms: the label width (minus `pad`) and the block centre.
+fn sector_slot(ring: (f32, f32), a1: f32, a2: f32, h: f32, need: f32, pad: f32) -> (f32, Vec2) {
+    let (w, at) = fit::sector_slot(ring, a1, a2, h, need);
+    (w - pad, vec2(at.0, at.1))
+}
 
 fn polar(center: Pos2, radius: f32, deg: f32) -> Pos2 {
     let a = deg.to_radians();
@@ -175,33 +182,72 @@ fn annular(painter: &Painter, c: Pos2, ring: (f32, f32), span: (f32, f32), round
     painter.add(Shape::closed_line(outline, PathStroke::from(s.stroke)));
 }
 
+/// Where a label may go: for a block of the given height, the width available and the centre of
+/// the block, relative to the wheel centre (screen px).
+type Slot<'a> = &'a dyn Fn(f32, f32) -> (f32, Vec2);
+
+/// Draws a tile name the way the wheel does (`wheel_core::fit`): one or two lines, the font
+/// reduced down to `MIN_FONT` (scaled like the rest of the preview) and then trimmed with an
+/// ellipsis; never wider than the slot. `size` is the base font size in screen px.
+#[allow(clippy::too_many_arguments)]
 fn label(
     painter: &Painter,
-    at: Pos2,
+    center: Pos2,
     text: &str,
     size: f32,
-    width: f32,
+    min_font: f32,
+    slot: Slot,
     color: Color32,
     halo: Option<Color32>,
-) {
+) -> f32 {
     if text.trim().is_empty() {
-        return;
+        return 0.0;
     }
-    let mut job = LayoutJob::simple(text.to_string(), FontId::proportional(size), color, width);
-    job.wrap.max_rows = 2;
-    let galley = painter.layout_job(job);
-    let pos = at - galley.size() / 2.0;
-    if let Some(halo) = halo {
-        for d in [
-            vec2(1.0, 0.0),
-            vec2(-1.0, 0.0),
-            vec2(0.0, 1.0),
-            vec2(0.0, -1.0),
-        ] {
-            painter.galley_with_override_text_color(pos + d, galley.clone(), halo);
+    let measure = |t: &str, scale: f32| {
+        let galley = painter.layout_no_wrap(
+            t.to_string(),
+            FontId::proportional(size * scale),
+            Color32::WHITE,
+        );
+        (galley.size().x, galley.size().y)
+    };
+    let fitted = fit::fit(text, measure, |h| slot(h, f32::INFINITY).0, min_font / size);
+    let font = FontId::proportional(size * fitted.scale);
+    let (text_width, height) = measure(&fitted.text, fitted.scale);
+    let (width, offset) = slot(height, text_width);
+    let width = width.max(1.0);
+    let at = center + offset;
+    // Each line is centred on its own and trimmed to the slot width, like the wheel's layout.
+    let galleys: Vec<_> = fitted
+        .text
+        .lines()
+        .map(|line| {
+            let mut job = LayoutJob::simple_singleline(line.to_string(), font.clone(), color);
+            job.wrap.max_width = width;
+            job.wrap.max_rows = 1;
+            job.wrap.break_anywhere = true;
+            job.wrap.overflow_character = Some('…');
+            painter.layout_job(job)
+        })
+        .collect();
+    let total: f32 = galleys.iter().map(|g| g.size().y).sum();
+    let mut y = at.y - total / 2.0;
+    for galley in galleys {
+        let pos = pos2(at.x - galley.size().x / 2.0, y);
+        y += galley.size().y;
+        if let Some(halo) = halo {
+            for d in [
+                vec2(1.0, 0.0),
+                vec2(-1.0, 0.0),
+                vec2(0.0, 1.0),
+                vec2(0.0, -1.0),
+            ] {
+                painter.galley_with_override_text_color(pos + d, galley.clone(), halo);
+            }
         }
+        painter.galley(pos, galley, color);
     }
-    painter.galley(pos, galley, color);
+    total
 }
 
 /// The sample desktop under the glass: soft colored patches like a wallpaper, made once.
@@ -483,6 +529,10 @@ pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
     let round = CORNER_PX * u * fit;
     let icons_view = config.options.view == ViewMode::Icons;
     let sizes = IconSizes::scaled(u);
+    // Keeps label text off the sector edges, as in the wheel; labels never get smaller than
+    // `MIN_FONT`.
+    let pad = u * fit;
+    let min_font = MIN_FONT * fit;
 
     let open_arc: Option<SubArc> = match model.selection {
         Selection::Outer(i) | Selection::Sub(i, _) => u8::try_from(i)
@@ -644,12 +694,23 @@ pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
             let at = polar(center, mid_r + 2.0 * u * fit, (a0 + a1) / 2.0);
             tile_icon(&painter, icons, item, at, sizes.inner, fit, u, st.text);
         } else {
+            let text_ring = (r.0 + pad, r.1 - pad);
             label(
                 &painter,
-                polar(center, mid_r, (a0 + a1) / 2.0),
+                center,
                 &item.name,
-                (11.0 * u * fit).clamp(MIN_FONT, 22.0),
-                (r.1 - r.0) * 0.8,
+                11.5 * u * fit,
+                min_font,
+                &|h, need| {
+                    sector_slot(
+                        text_ring,
+                        a0 + INNER_HALF_GAP_DEG,
+                        a1 - INNER_HALF_GAP_DEG,
+                        h,
+                        need + pad,
+                        pad,
+                    )
+                },
                 st.text,
                 st.halo,
             );
@@ -691,12 +752,23 @@ pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
                 st.text,
             );
         } else {
+            let text_ring = (r.0 + pad, content_end - pad);
             label(
                 &painter,
-                polar(center, (r.0 + content_end) / 2.0, mid),
+                center,
                 &item.name,
-                (13.0 * u * fit).clamp(MIN_FONT, 24.0),
-                (content_end - r.0) * 0.85,
+                15.0 * u * fit,
+                min_font,
+                &|h, need| {
+                    sector_slot(
+                        text_ring,
+                        a0 + OUTER_HALF_GAP_DEG,
+                        a1 - OUTER_HALF_GAP_DEG,
+                        h,
+                        need + pad,
+                        pad,
+                    )
+                },
                 st.text,
                 st.halo,
             );
@@ -751,16 +823,27 @@ pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
                 round,
                 &st,
             );
-            let at = polar(center, (r.0 + r.1) / 2.0, (a0 + a1) / 2.0);
             if icons_view {
+                let at = polar(center, (r.0 + r.1) / 2.0, (a0 + a1) / 2.0);
                 tile_icon(&painter, icons, item, at, sizes.sub, fit, u, st.text);
             } else {
+                let text_ring = (r.0 + pad, r.1 - pad);
                 label(
                     &painter,
-                    at,
+                    center,
                     &item.name,
-                    (12.0 * u * fit).clamp(MIN_FONT, 22.0),
-                    (r.1 - r.0) * 0.9,
+                    13.5 * u * fit,
+                    min_font,
+                    &|h, need| {
+                        sector_slot(
+                            text_ring,
+                            a0 + OUTER_HALF_GAP_DEG,
+                            a1 - OUTER_HALF_GAP_DEG,
+                            h,
+                            need + pad,
+                            pad,
+                        )
+                    },
                     st.text,
                     st.halo,
                 );
@@ -772,15 +855,45 @@ pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
     let shown = hovered
         .filter(|s| *s != Selection::None)
         .unwrap_or(model.selection);
-    if let Some(item) = model.item_at(shown) {
-        let r = radii.center * fit;
+    let r = radii.center * fit;
+    let name_height = model.item_at(shown).map_or(0.0, |item| {
         label(
             &painter,
             center,
             &item.name,
-            (14.0 * u * fit).clamp(MIN_FONT, 26.0),
-            r * 1.5,
+            14.0 * u * fit,
+            min_font,
+            &|h, _| (fit::circle_width(r - pad, h) - pad, Vec2::ZERO),
             text_color,
+            halo,
+        )
+    });
+    // The options hint sits under the fixed centre text ("Anuluj") in the wheel, which shows
+    // while the pointer is in the centre; a tile name in the centre has no hint.
+    if name_height == 0.0 {
+        let cancel = label(
+            &painter,
+            center,
+            "Anuluj",
+            14.0 * u * fit,
+            min_font,
+            &|h, _| (fit::circle_width(r - pad, h) - pad, Vec2::ZERO),
+            text_color,
+            halo,
+        );
+        let below = cancel / 2.0 + u * fit;
+        label(
+            &painter,
+            center,
+            look::OPTIONS_HINT,
+            look::OPTIONS_HINT_PX * u * fit,
+            min_font,
+            &|h, _| {
+                let reach = below + h / 2.0;
+                let width = fit::circle_width(r - pad, 2.0 * (reach + h / 2.0));
+                (width - pad, vec2(0.0, reach))
+            },
+            c32(p.muted),
             halo,
         );
     }

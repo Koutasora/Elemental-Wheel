@@ -14,7 +14,7 @@ log awarii w `%LOCALAPPDATA%`), a edytor na zmianę pliku z zewnątrz. `tools/so
 - [x] Pomiar pamięci w tle (prywatna, working set, uchwyty, GDI/USER) w widoku nazw i ikon, wyniki w pliku etapu; cel do 15 MB prywatnej (zmierzone: nazwy 13,9 MB, ikony 17 MB; przekroczenie w widoku ikon przyjęte, patrz Decyzje)
 - [x] Pomiar czasu otwarcia (od progu przytrzymania do pierwszej klatki): pierwsze otwarcie, kolejne, po zmianie konfiguracji; mediana i maksimum w pliku etapu; cel mediana do 16 ms
 - ~~Renderer i ikony przygotowane od razu po wczytaniu konfiguracji, nie przy pierwszym otwarciu; układ tekstu glifów nie tworzony przy każdym odrysowaniu; pomiar przed i po~~ (przeniesione do etapu 09)
-- ~~Przebieg `soak.ps1` 10 min na LAB (wejście wstrzykiwane, konfiguracja w scratchpadzie, zmiany konfiguracji): bez awarii i błędów cykli, hak żywy~~ (rezygnacja, patrz Decyzje)
+- ~~Przebieg `soak.ps1` 10 min na LAB (wejście wstrzykiwane, konfiguracja w folderze tymczasowym, zmiany konfiguracji): bez awarii i błędów cykli, hak żywy~~ (rezygnacja, patrz Decyzje)
 - [x] `cargo build --release`, `cargo test`, clippy `-D warnings`, `cargo fmt --check` czyste
 - [x] `README.md` (log, wyniki pomiarów) i `CHECKLISTA.md` zaktualizowane
 
@@ -26,7 +26,7 @@ log awarii w `%LOCALAPPDATA%`), a edytor na zmianę pliku z zewnątrz. `tools/so
 - [x] `apps/wheel-editor/src/model.rs`, `main.rs`: czas modyfikacji pliku przy wczytaniu i zapisie, sprawdzanie przy odzyskaniu fokusu i co kilka sekund, pytanie przy konflikcie, pytanie przed nadpisaniem nowszego pliku; testy modelu
 - [x] Ukryta flaga `--stats`: czas otwarcia każdego otwarcia do logu, co minutę pamięć i uchwyty (`GetProcessMemoryInfo`, `GetGuiResources`)
 - ~~`apps/wheel/src/window.rs`, `render.rs`, `icons.rs`: przygotowanie renderera i ikon po wczytaniu konfiguracji, pamięć podręczna układu tekstu glifów~~ (przeniesione do etapu 09)
-- [x] `tools/soak.ps1`: `wheel.exe --run --accept-injected --stats --config <scratchpad>`, cykliczne otwieranie i zamykanie (z łukiem podmenu), zmiany pliku konfiguracji (także na zepsuty), zbieranie CSV
+- [x] `tools/soak.ps1`: `wheel.exe --run --accept-injected --stats --config <folder-tymczasowy>`, cykliczne otwieranie i zamykanie (z łukiem podmenu), zmiany pliku konfiguracji (także na zepsuty), zbieranie CSV
 - [x] Wyniki pomiarów do pliku etapu i `README.md`; `CHECKLISTA.md`
 - ~~Poprawka: przytrzymanie tuż po anulowaniu Escape nie otwiera koła~~ (znany błąd, patrz Decyzje)
 - Sprawdzenie: tester: build, testy, clippy, fmt; `%APPDATA%` nietknięty

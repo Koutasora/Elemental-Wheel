@@ -10,7 +10,37 @@ use windows::Win32::Foundation::ERROR_SUCCESS;
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 use windows::core::w;
 
+use crate::autostart;
 use crate::model::Model;
+
+/// Autostart checkbox state; it is not part of the config, so it is applied at once.
+pub struct Autostart {
+    pub enabled: bool,
+    /// An error from the last toggle, to be shown by the caller.
+    pub error: Option<String>,
+}
+
+impl Autostart {
+    pub fn read() -> Autostart {
+        Autostart {
+            enabled: autostart::is_enabled(autostart::RUN_KEY),
+            error: None,
+        }
+    }
+
+    fn apply(&mut self) {
+        let result = if self.enabled {
+            autostart::wheel_exe()
+                .and_then(|exe| autostart::set(autostart::RUN_KEY, Some(&autostart::command(&exe))))
+        } else {
+            autostart::set(autostart::RUN_KEY, None)
+        };
+        if let Err(e) = result {
+            self.error = Some(format!("Nie zmieniono autostartu: {e}"));
+            self.enabled = autostart::is_enabled(autostart::RUN_KEY);
+        }
+    }
+}
 
 fn caption(ui: &mut Ui, text: &str) {
     ui.add_space(6.0);
@@ -37,7 +67,7 @@ fn windows_transparency() -> bool {
 }
 
 /// Returns whether "Przywróć domyślne" was clicked; the caller asks for confirmation.
-pub fn show(ui: &mut Ui, model: &mut Model) -> bool {
+pub fn show(ui: &mut Ui, model: &mut Model, autostart: &mut Autostart) -> bool {
     ui.heading("Opcje koła");
 
     caption(ui, "Motyw");
@@ -126,6 +156,14 @@ pub fn show(ui: &mut Ui, model: &mut Model) -> bool {
         &mut o.disable_in_fullscreen,
         "Wyłącz koło w trybie pełnoekranowym",
     );
+
+    ui.add_space(8.0);
+    if ui
+        .checkbox(&mut autostart.enabled, "Uruchamiaj przy logowaniu")
+        .changed()
+    {
+        autostart.apply();
+    }
 
     caption(ui, "Wykluczone programy");
     let mut remove = None;

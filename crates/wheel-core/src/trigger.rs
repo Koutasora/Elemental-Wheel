@@ -111,6 +111,8 @@ pub enum EventKind {
         time: u32,
     },
     Escape,
+    /// The options key (O) was pressed.
+    OptionsKey,
     /// The hold timer started by `Effect::StartHoldTimer` fired.
     HoldElapsed {
         time: u32,
@@ -168,6 +170,8 @@ pub enum Effect {
     Select(Hit),
     /// Close the wheel without selecting.
     Cancel,
+    /// Close the wheel and open the wheel options (as the `wheel_options` action does).
+    OpenOptions,
 }
 
 /// Result of one step.
@@ -431,6 +435,10 @@ impl Trigger {
                 self.state = State::SwallowRightUp;
                 Step::swallow().with(Effect::Cancel)
             }
+            EventKind::OptionsKey => {
+                self.state = State::SwallowRightUp;
+                Step::swallow().with(Effect::OpenOptions)
+            }
             EventKind::LeftDown { .. } | EventKind::LeftUp { .. } => Step::swallow(),
             _ => Step::pass(),
         }
@@ -457,6 +465,10 @@ impl Trigger {
             EventKind::Escape => {
                 self.state = State::Idle;
                 Step::swallow().with(Effect::Cancel)
+            }
+            EventKind::OptionsKey => {
+                self.state = State::Idle;
+                Step::swallow().with(Effect::OpenOptions)
             }
             _ => Step::pass(),
         }
@@ -615,6 +627,7 @@ mod tests {
             EventKind::LeftDown { pos: P, time: 0 },
             EventKind::LeftUp { pos: P, time: 0 },
             EventKind::Escape,
+            EventKind::OptionsKey,
             EventKind::HoldElapsed { time: 0 },
         ] {
             assert_eq!(feed(&mut t, kind), Step::pass(), "{kind:?}");
@@ -1076,6 +1089,86 @@ mod tests {
         right_down(&mut t, 0);
         assert_eq!(feed(&mut t, EventKind::Escape), Step::pass());
         assert!(!t.is_wheel_open());
+    }
+
+    #[test]
+    fn options_key_while_open_opens_options_and_swallows_release() {
+        let mut t = trigger();
+        open(&mut t);
+        let s = feed(&mut t, EventKind::OptionsKey);
+        assert_eq!(s, Step::swallow().with(Effect::OpenOptions));
+        assert!(!t.is_wheel_open());
+        assert_eq!(mv(&mut t, pt(100, 0), 1500), Step::pass());
+        assert_eq!(right_up(&mut t, pt(100, 0), 1600), Step::swallow());
+        assert_eq!(right_up(&mut t, P, 1700), Step::pass());
+    }
+
+    #[test]
+    fn options_key_in_click_mode_opens_options() {
+        let mut t = trigger();
+        open(&mut t);
+        right_up(&mut t, P, 1400);
+        let s = feed(&mut t, EventKind::OptionsKey);
+        assert_eq!(s, Step::swallow().with(Effect::OpenOptions));
+        assert!(!t.is_wheel_open());
+        assert_eq!(right_up(&mut t, P, 1500), Step::pass());
+    }
+
+    #[test]
+    fn options_key_passes_when_not_open() {
+        let mut t = trigger();
+        assert_eq!(feed(&mut t, EventKind::OptionsKey), Step::pass());
+        right_down(&mut t, 0);
+        assert_eq!(feed(&mut t, EventKind::OptionsKey), Step::pass());
+        mv(&mut t, pt(100, 0), 5);
+        assert_eq!(feed(&mut t, EventKind::OptionsKey), Step::pass());
+        right_up(&mut t, pt(100, 0), 10);
+        // After the key closed the wheel and the release was swallowed, it passes again.
+        open(&mut t);
+        feed(&mut t, EventKind::OptionsKey);
+        assert_eq!(feed(&mut t, EventKind::OptionsKey), Step::pass());
+        right_up(&mut t, P, 2000);
+        assert_eq!(feed(&mut t, EventKind::OptionsKey), Step::pass());
+        assert!(!t.is_wheel_open());
+    }
+
+    #[test]
+    fn options_key_from_own_and_foreign_origin_passes() {
+        for origin in [Origin::Own, Origin::Foreign] {
+            let mut t = trigger();
+            open(&mut t);
+            let step = t.step(Event {
+                kind: EventKind::OptionsKey,
+                origin,
+            });
+            assert_eq!(step, Step::pass());
+            assert!(t.is_wheel_open());
+            right_up(&mut t, P, 1400);
+            let step = t.step(Event {
+                kind: EventKind::OptionsKey,
+                origin,
+            });
+            assert_eq!(step, Step::pass());
+            assert!(t.is_wheel_open());
+        }
+    }
+
+    #[test]
+    fn replace_options_key_opens_options() {
+        let mut t = replacing();
+        right_down(&mut t, 1000);
+        let s = feed(&mut t, EventKind::OptionsKey);
+        assert_eq!(s, Step::swallow().with(Effect::OpenOptions));
+        assert_eq!(right_up(&mut t, P, 1010), Step::swallow());
+        assert_eq!(right_up(&mut t, P, 1020), Step::pass());
+
+        let mut t = replacing();
+        right_down(&mut t, 1000);
+        right_up(&mut t, P, 1010);
+        let s = feed(&mut t, EventKind::OptionsKey);
+        assert_eq!(s, Step::swallow().with(Effect::OpenOptions));
+        assert!(!t.is_wheel_open());
+        assert_eq!(feed(&mut t, EventKind::OptionsKey), Step::pass());
     }
 
     #[test]
