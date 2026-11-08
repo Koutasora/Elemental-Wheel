@@ -99,19 +99,26 @@ pub fn show(ui: &mut Ui, model: &mut Model) {
     }
     let o = &mut model.config.options;
 
-    caption(ui, "Czas przytrzymania prawego przycisku");
-    ui.add(
-        DragValue::new(&mut o.hold_ms)
-            .range(MIN_HOLD_MS..=MAX_HOLD_MS)
-            .suffix(" ms"),
-    );
+    ui.add_space(8.0);
+    ui.checkbox(&mut o.replace_right_click, "Koło zamiast prawego przycisku");
+    ui.label("Prawy przycisk zawsze otwiera koło; menu kontekstowe programów nie jest dostępne.");
 
-    caption(ui, "Ruch uznawany za przeciąganie");
-    ui.add(
-        DragValue::new(&mut o.move_px)
-            .range(MIN_MOVE_PX..=MAX_MOVE_PX)
-            .suffix(" px"),
-    );
+    // The thresholds do not apply when the wheel replaces the right button.
+    ui.add_enabled_ui(!o.replace_right_click, |ui| {
+        caption(ui, "Czas przytrzymania prawego przycisku");
+        ui.add(
+            DragValue::new(&mut o.hold_ms)
+                .range(MIN_HOLD_MS..=MAX_HOLD_MS)
+                .suffix(" ms"),
+        );
+
+        caption(ui, "Ruch uznawany za przeciąganie");
+        ui.add(
+            DragValue::new(&mut o.move_px)
+                .range(MIN_MOVE_PX..=MAX_MOVE_PX)
+                .suffix(" px"),
+        );
+    });
 
     ui.add_space(8.0);
     ui.checkbox(

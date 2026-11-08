@@ -37,6 +37,7 @@ target\release\wheel.exe --quit
 ```
 
 - Hold the right button for 180 ms without moving: the wheel opens under the cursor; release selects the sector in that direction.
+- With `replace_right_click` the wheel opens on the press itself and the right button never reaches programs (no context menu); the exceptions below still apply. `hold_ms` and `move_px` are ignored.
 - Short click and drag with the right button (moved more than 6 px before 180 ms) reach programs unchanged.
 - Release in the centre right after opening keeps the wheel open: left click selects; left click in the centre or outside, right click or Esc closes. Release in the centre after the pointer has been on the tiles closes the wheel. Esc while holding cancels.
 - Submenu: pointing at an outer sector with a submenu (marked at its outer edge) opens an arc of up to 5 tiles in the same direction. Releasing or clicking on a tile, or releasing further out in its direction, selects it; the sector itself keeps its own action. Moving to another sector closes the arc.
@@ -55,7 +56,7 @@ target\release\wheel-editor.exe --version
 - Opens `%APPDATA%\Elemental-Wheel\config.json` or the file given with `--config`. A missing file shows the defaults and is created on the first save. Load errors and warnings are shown in the bottom bar.
 - Left: preview of the wheel (both rings, sector count, names or icons, theme, glass look over a sample backdrop, submenu arc of the selected tile). Click a tile to select it.
 - Right, tab "Kafelek": name, action type with its fields (program path, arguments and working folder; file or folder; URL; shortcut; edit command; text; command line; system action), icon path, emptying the slot. Outer tiles get a submenu of up to 5 tiles: add, remove, move up and down. Every name can be changed, edit commands in the inner ring included.
-- Tab "Opcje": theme, size 60-140%, glass transparency 0-100%, animations, inner sectors 4-12, outer sectors 4-12, view, hold time, movement threshold, full screen switch, excluded programs. Fewer sectors hide the extra items without deleting them.
+- Tab "Opcje": theme, size 60-140%, glass transparency 0-100%, animations, inner sectors 4-12, outer sectors 4-12, view, "wheel instead of the right button", hold time, movement threshold, full screen switch, excluded programs. Fewer sectors hide the extra items without deleting them.
 - Dropping a file or folder on a tile of the preview makes it a `program` item (`.exe`, `.lnk`, `.bat`, `.cmd`) or an `open` item, named after the file; the tile keeps its submenu.
 - Save with "Zapisz" or Ctrl+S. The configuration is validated first; on an error the file is left as it was and the reason is shown. Unsaved changes are marked in the title bar and the bottom bar; closing or reloading asks first. A running `wheel.exe` picks up the saved file by itself.
 
@@ -81,7 +82,8 @@ target\release\wheel-editor.exe --version
     "disable_in_fullscreen": true,
     "excluded": ["blender.exe"],
     "glass_pct": 50,
-    "animations": true
+    "animations": true,
+    "replace_right_click": false
   },
   "outer": [
     { "name": "Notatnik", "action": { "type": "program", "path": "notepad.exe" } },
@@ -110,6 +112,7 @@ target\release\wheel-editor.exe --version
 - `excluded` lists program file names (case does not matter).
 - `glass_pct` (0 to 100, default 50): how transparent the glass of the wheel is; 0 gives the opaque look. Without Windows transparency (Settings > Personalization > Colors) the wheel is opaque.
 - `animations` (default `true`): animations of the wheel on or off.
+- `replace_right_click` (default `false`): the wheel opens as soon as the right button goes down, without the hold time and movement threshold; programs get no right clicks (except as in "Run in the background").
 - Numbers outside the allowed range are clamped with a warning (in the log and on stderr). An invalid file (bad JSON or encoding, unknown type, invalid shortcut, too many items) is never overwritten. At start the program falls back to `config.json.bak`, then to the defaults. While running, an invalid file is ignored and the current configuration stays; either way the reason goes to the log (and stderr).
 - The config folder is watched: a changed file is reloaded within a moment, no restart needed. Exclusions, actions, names and trigger thresholds apply from the next press, wheel size and sector count from the next opening. If the folder is missing at start, the file is checked when the wheel opens instead.
 

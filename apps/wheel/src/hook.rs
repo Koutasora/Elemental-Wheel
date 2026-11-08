@@ -265,8 +265,23 @@ impl HookState {
                         self.trigger.reset();
                         return false;
                     }
-                    // The wheel opens at this point once the hold time has elapsed; the window
-                    // takes the desktop snapshot meanwhile.
+                    if let Some(c) = &settings
+                        && c.options.replace_right_click
+                    {
+                        // The wheel opens at once and a release may follow before the effects
+                        // run, so the layout that classifies it is set here.
+                        let o = &c.options;
+                        self.trigger.set_layout(layout_at(
+                            info.pt,
+                            o.scale_pct,
+                            o.inner_sectors,
+                            o.outer_sectors,
+                        ));
+                    }
+                    // The wheel opens at this point once the hold time has elapsed (at once
+                    // when it replaces the right button); the window takes the desktop
+                    // snapshot meanwhile, and the open message queued right after the press
+                    // message finds it ready.
                     post_to_window(
                         self.window,
                         WM_WHEEL_PRESS,

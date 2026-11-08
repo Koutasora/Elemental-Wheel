@@ -264,6 +264,8 @@ pub struct Options {
     pub glass_pct: u8,
     /// Whether the wheel animates opening and highlighting.
     pub animations: bool,
+    /// The wheel opens on the right-button press and replaces the program's own right click.
+    pub replace_right_click: bool,
 }
 
 impl Default for Options {
@@ -280,6 +282,7 @@ impl Default for Options {
             excluded: Vec::new(),
             glass_pct: DEFAULT_GLASS_PCT,
             animations: true,
+            replace_right_click: false,
         }
     }
 }
@@ -298,6 +301,7 @@ impl Options {
         TriggerSettings {
             hold_ms: self.hold_ms,
             move_px: self.move_px,
+            replace_right: self.replace_right_click,
         }
         .clamped()
     }
@@ -1040,7 +1044,8 @@ mod tests {
             c.options.trigger(),
             TriggerSettings {
                 hold_ms: 2000,
-                move_px: 6
+                move_px: 6,
+                replace_right: false
             }
         );
     }
@@ -1072,6 +1077,22 @@ mod tests {
             (back.options.glass_pct, back.options.animations),
             (70, false)
         );
+    }
+
+    #[test]
+    fn replace_right_click_option() {
+        assert!(!Options::default().replace_right_click);
+        let (c, w) = Config::parse(r#"{"options":{"scale_pct":90}}"#).unwrap();
+        assert!(!c.options.replace_right_click && !c.options.trigger().replace_right);
+        assert!(w.is_empty());
+        let (c, w) = Config::parse(r#"{"options":{"replace_right_click":true}}"#).unwrap();
+        assert!(c.options.replace_right_click && c.options.trigger().replace_right);
+        assert!(w.is_empty());
+        let mut config = Config::default();
+        config.options.replace_right_click = true;
+        let text = serde_json::to_string(&config).unwrap();
+        let (back, _) = Config::parse(&text).unwrap();
+        assert!(back.options.replace_right_click);
     }
 
     #[test]
