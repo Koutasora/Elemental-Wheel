@@ -85,6 +85,7 @@
 - [x] Instalator (Inno Setup, jeden użytkownik), który wypisuje zainstalowaną wersję
 - [x] Autostart przy logowaniu
 - [x] Ikona w zasobniku systemowym (włącz/wyłącz, edytor, zamknij)
+- [x] Opcje koła z koła (akcja systemowa) i z zasobnika
 - [x] Tryb bez konsoli
 - [x] Ikona programu (exe, zasobnik, instalator)
 - [x] Test instalacji, aktualizacji i odinstalowania na LAB

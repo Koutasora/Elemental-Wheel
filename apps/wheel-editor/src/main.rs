@@ -48,13 +48,14 @@ pub const ICON_FAMILY: &str = "icons";
 
 enum Command {
     Version,
-    /// Config path and log path from the command line.
-    Run(Option<PathBuf>, Option<PathBuf>),
+    /// Config path, log path and starting tab from the command line.
+    Run(Option<PathBuf>, Option<PathBuf>, Tab),
 }
 
 fn parse_args(args: impl Iterator<Item = String>) -> Result<Command, String> {
     let mut config = None;
     let mut log = None;
+    let mut tab = Tab::Tile;
     let mut args = args;
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -67,10 +68,17 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Command, String> {
                 let value = args.next().ok_or("--log needs a path")?;
                 log = Some(PathBuf::from(value));
             }
+            "--tab" => {
+                tab = match args.next().ok_or("--tab needs a value")?.as_str() {
+                    "kafelek" => Tab::Tile,
+                    "opcje" => Tab::Options,
+                    other => return Err(format!("--tab: unknown tab {other} (kafelek, opcje)")),
+                };
+            }
             other => return Err(format!("Unknown argument: {other}")),
         }
     }
-    Ok(Command::Run(config, log))
+    Ok(Command::Run(config, log, tab))
 }
 
 /// Writes to the console of the parent process: a program built for the `windows` subsystem has
@@ -122,7 +130,7 @@ fn start_log(arg: Option<PathBuf>) {
 }
 
 fn main() -> ExitCode {
-    let path = match parse_args(std::env::args().skip(1)) {
+    let (path, tab) = match parse_args(std::env::args().skip(1)) {
         Ok(Command::Version) => {
             console_print(
                 &format!("Elemental Wheel Editor {}", env!("CARGO_PKG_VERSION")),
@@ -130,10 +138,10 @@ fn main() -> ExitCode {
             );
             return ExitCode::SUCCESS;
         }
-        Ok(Command::Run(arg, log)) => {
+        Ok(Command::Run(arg, log, tab)) => {
             start_log(log);
             match config_path(arg) {
-                Ok(path) => path,
+                Ok(path) => (path, tab),
                 Err(e) => {
                     console_print(&format!("wheel-editor: {e}"), true);
                     return ExitCode::from(1);
@@ -161,7 +169,7 @@ fn main() -> ExitCode {
             let icon_font = install_font(&cc.egui_ctx);
             let model = Model::open(path);
             theme::install(&cc.egui_ctx, model.config.options.theme);
-            Ok(Box::new(App::new(model, icon_font)))
+            Ok(Box::new(App::new(model, icon_font, tab)))
         }),
     );
     match result {
@@ -204,7 +212,7 @@ fn install_font(ctx: &Context) -> bool {
     found
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 enum Tab {
     Tile,
     Options,
@@ -283,12 +291,12 @@ struct App {
 }
 
 impl App {
-    fn new(model: Model, icon_font: bool) -> App {
+    fn new(model: Model, icon_font: bool, tab: Tab) -> App {
         App {
             status: load_status(&model),
             applied_theme: model.config.options.theme,
             model,
-            tab: Tab::Tile,
+            tab,
             dialog: None,
             allow_close: false,
             title: String::new(),
@@ -580,5 +588,43 @@ impl eframe::App for App {
             }
         });
         self.dialog(&ctx);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Result<Command, String> {
+        parse_args(args.iter().map(|a| a.to_string()))
+    }
+
+    #[test]
+    fn tab_defaults_to_the_tile() {
+        let Ok(Command::Run(config, log, tab)) = parse(&[]) else {
+            panic!("expected Run");
+        };
+        assert!(config.is_none() && log.is_none());
+        assert_eq!(tab, Tab::Tile);
+    }
+
+    #[test]
+    fn tab_is_parsed_with_the_other_arguments() {
+        let Ok(Command::Run(config, _, tab)) = parse(&["--tab", "opcje", "--config", "a.json"])
+        else {
+            panic!("expected Run");
+        };
+        assert_eq!(config, Some(PathBuf::from("a.json")));
+        assert_eq!(tab, Tab::Options);
+        assert!(matches!(
+            parse(&["--tab", "kafelek"]),
+            Ok(Command::Run(_, _, Tab::Tile))
+        ));
+    }
+
+    #[test]
+    fn bad_tab_is_an_error() {
+        assert!(parse(&["--tab", "inne"]).is_err());
+        assert!(parse(&["--tab"]).is_err());
     }
 }

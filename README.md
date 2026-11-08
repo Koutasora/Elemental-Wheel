@@ -61,6 +61,7 @@ target\release\wheel.exe --quit
 `wheel.exe` has no console window in the release build; `--version`, `--quit` and `--demo` still print to the console they are started from. With `--run` it puts an icon in the notification area. Its menu:
 
 - Editor - starts `wheel-editor.exe`
+- Options - starts `wheel-editor.exe` on the "Opcje" tab
 - Disable / Enable - a disabled wheel passes the right button through unchanged. The state is not saved: after a restart the wheel is enabled.
 - Quit - stops the wheel
 
@@ -69,11 +70,11 @@ The wheel does not open over the taskbar and the notification area.
 ## Editor
 
 ```
-target\release\wheel-editor.exe [--config <path>]
+target\release\wheel-editor.exe [--config <path>] [--tab kafelek|opcje]
 target\release\wheel-editor.exe --version
 ```
 
-- Opens `%APPDATA%\Elemental-Wheel\config.json` or the file given with `--config`. A missing file shows the defaults and is created on the first save. Load errors and warnings are shown in the bottom bar.
+- Opens `%APPDATA%\Elemental-Wheel\config.json` or the file given with `--config`. A missing file shows the defaults and is created on the first save. Load errors and warnings are shown in the bottom bar. `--tab` opens the editor on the given tab ("Kafelek" by default, or "Opcje").
 - Left: preview of the wheel (both rings, sector count, names or icons, theme, glass look over a sample backdrop, submenu arc of the selected tile). Click a tile to select it.
 - Right, tab "Kafelek": name, action type with its fields (program path, arguments and working folder; file or folder; URL; shortcut; edit command; text; command line; system action), icon path, emptying the slot. Outer tiles get a submenu of up to 5 tiles: add, remove, move up and down. Every name can be changed, edit commands in the inner ring included.
 - Tab "Opcje": theme, size 60-140%, glass transparency 0-100%, animations, inner sectors 4-12, outer sectors 4-12, view, "wheel instead of the right button", hold time, movement threshold, full screen switch, excluded programs. Fewer sectors hide the extra items without deleting them.
@@ -128,7 +129,7 @@ target\release\wheel-editor.exe --version
 - Action types: `none`, `program` (`path`, `args`, `working_dir`), `open` (file or folder), `url`, `shortcut` (`keys`, e.g. `Ctrl+Shift+V`, `Win+V`, `F2`), `edit`, `paste_text` (`text`; the clipboard is restored afterwards), `command` (`line`, run with `cmd /c` without a window), `system`.
 - Property windows opened with `properties` belong to the wheel and close when it stops.
 - `edit` commands: `cut`, `copy`, `paste`, `paste_plain`, `delete`, `undo`, `redo`, `select_all`, `save`, `find`, `rename`, `properties`.
-- `system` actions: `lock`, `close_window`, `minimize_window`, `show_desktop`, `volume_mute`, `volume_up`, `volume_down`, `screenshot`, `context_menu` (a right click at the point where the wheel was opened; the pointer moves there).
+- `system` actions: `lock`, `close_window`, `minimize_window`, `show_desktop`, `volume_mute`, `volume_up`, `volume_down`, `screenshot`, `context_menu` (a right click at the point where the wheel was opened; the pointer moves there), `wheel_options` (starts the editor on the "Opcje" tab). The default "Ustawienia" arc ends with such a tile, "Opcje koła".
 - `program` and `open` paths and arguments expand `%VARIABLES%`.
 - `excluded` lists program file names (case does not matter).
 - `glass_pct` (0 to 100, default 50): how transparent the glass of the wheel is; 0 gives the opaque look. Without Windows transparency (Settings > Personalization > Colors) the wheel is opaque.

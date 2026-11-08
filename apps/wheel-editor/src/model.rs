@@ -134,6 +134,7 @@ pub fn system_label(action: SystemAction) -> &'static str {
         SystemAction::VolumeDown => "Ciszej",
         SystemAction::Screenshot => "Zrzut ekranu",
         SystemAction::ContextMenu => "Menu kontekstowe",
+        SystemAction::WheelOptions => "Opcje koła",
     }
 }
 
@@ -642,7 +643,7 @@ mod tests {
         assert_eq!(m.selection, Selection::None);
         assert_eq!(m.config.outer.len(), 12);
         assert_eq!(m.config.outer[9].name, "Ustawienia");
-        assert_eq!(m.config.outer[9].submenu.len(), 4);
+        assert_eq!(m.config.outer[9].submenu.len(), 5);
         m.set_selection(Selection::Outer(9));
         assert_eq!(m.selection, Selection::None);
         m.set_selection(Selection::Outer(3));
@@ -719,7 +720,7 @@ mod tests {
         m.drop_file(Selection::Outer(9), &exe);
         let item = &m.config.outer[9];
         assert_eq!(item.name, "gra");
-        assert_eq!(item.submenu.len(), 4);
+        assert_eq!(item.submenu.len(), 5);
         assert_eq!(m.selection, Selection::Outer(9));
         m.drop_file(Selection::Sub(9, 1), &d);
         assert!(matches!(

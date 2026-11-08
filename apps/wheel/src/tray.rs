@@ -37,6 +37,7 @@ const EDITOR_EXE: &str = "wheel-editor.exe";
 const CMD_EDITOR: usize = 1;
 const CMD_TOGGLE: usize = 2;
 const CMD_QUIT: usize = 3;
+const CMD_OPTIONS: usize = 4;
 
 /// The message Explorer broadcasts after it restarted (0 = not registered yet).
 static TASKBAR_CREATED: AtomicU32 = AtomicU32::new(0);
@@ -61,11 +62,19 @@ fn toggle_label(enabled: bool) -> &'static str {
 }
 
 /// The editor lies next to the running executable; `--config` is passed only when this process
-/// does not use the default configuration.
-fn editor_command(exe: &Path, config: Option<&Path>) -> (PathBuf, Vec<OsString>) {
-    let args = config
-        .map(|path| vec![OsString::from("--config"), path.as_os_str().to_owned()])
-        .unwrap_or_default();
+/// does not use the default configuration, `--tab` only when a tab is asked for.
+fn editor_command(
+    exe: &Path,
+    config: Option<&Path>,
+    tab: Option<&str>,
+) -> (PathBuf, Vec<OsString>) {
+    let mut args = Vec::new();
+    if let Some(tab) = tab {
+        args.extend([OsString::from("--tab"), OsString::from(tab)]);
+    }
+    if let Some(path) = config {
+        args.extend([OsString::from("--config"), path.as_os_str().to_owned()]);
+    }
     (exe.with_file_name(EDITOR_EXE), args)
 }
 
@@ -182,6 +191,7 @@ fn show_menu(hwnd: HWND, at: POINT) {
             return;
         };
         let _ = AppendMenuW(menu, MF_STRING, CMD_EDITOR, w!("Edytor"));
+        let _ = AppendMenuW(menu, MF_STRING, CMD_OPTIONS, w!("Opcje"));
         let _ = AppendMenuW(menu, MF_STRING, CMD_TOGGLE, PCWSTR(toggle.as_ptr()));
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
         let _ = AppendMenuW(menu, MF_STRING, CMD_QUIT, w!("Zamknij"));
@@ -202,7 +212,8 @@ fn show_menu(hwnd: HWND, at: POINT) {
         chosen.0 as usize
     };
     match command {
-        CMD_EDITOR => open_editor(),
+        CMD_EDITOR => open_editor(None),
+        CMD_OPTIONS => open_editor(Some("opcje")),
         CMD_TOGGLE => {
             let now = !hook::is_enabled();
             hook::set_enabled(now);
@@ -217,12 +228,13 @@ fn show_menu(hwnd: HWND, at: POINT) {
     }
 }
 
-fn open_editor() {
+/// Starts the editor (`tab` is its `--tab` value); on failure logs and tells the user.
+pub fn open_editor(tab: Option<&str>) {
     let started = std::env::current_exe()
         .map_err(|e| format!("cannot find the program path: {e}"))
         .and_then(|exe| {
             let config = CUSTOM_CONFIG.get().and_then(Option::as_deref);
-            let (path, args) = editor_command(&exe, config);
+            let (path, args) = editor_command(&exe, config, tab);
             Command::new(&path)
                 .args(args)
                 .spawn()
@@ -266,7 +278,7 @@ mod tests {
 
     #[test]
     fn editor_lies_next_to_the_exe_without_arguments_for_the_default_config() {
-        let (path, args) = editor_command(Path::new(r"C:\Apps\Wheel\wheel.exe"), None);
+        let (path, args) = editor_command(Path::new(r"C:\Apps\Wheel\wheel.exe"), None, None);
         assert_eq!(path, PathBuf::from(r"C:\Apps\Wheel\wheel-editor.exe"));
         assert!(args.is_empty());
     }
@@ -274,12 +286,31 @@ mod tests {
     #[test]
     fn editor_gets_the_custom_config() {
         let config = Path::new(r"D:\cfg\my config.json");
-        let (_, args) = editor_command(Path::new(r"C:\Apps\Wheel\wheel.exe"), Some(config));
+        let (_, args) = editor_command(Path::new(r"C:\Apps\Wheel\wheel.exe"), Some(config), None);
         assert_eq!(
             args,
             vec![
                 OsString::from("--config"),
                 OsString::from(r"D:\cfg\my config.json")
+            ]
+        );
+    }
+
+    #[test]
+    fn editor_gets_the_tab_before_the_config() {
+        let config = Path::new(r"D:\cfg\a.json");
+        let (_, args) = editor_command(
+            Path::new(r"C:\Apps\Wheel\wheel.exe"),
+            Some(config),
+            Some("opcje"),
+        );
+        assert_eq!(
+            args,
+            vec![
+                OsString::from("--tab"),
+                OsString::from("opcje"),
+                OsString::from("--config"),
+                OsString::from(r"D:\cfg\a.json")
             ]
         );
     }

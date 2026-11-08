@@ -193,6 +193,10 @@ fn system(action: SystemAction, target: HWND, press: Point) -> Result<(), String
             send_right_click(press);
             Ok(())
         }
+        SystemAction::WheelOptions => {
+            crate::tray::open_editor(Some("opcje"));
+            Ok(())
+        }
     }
 }
 
