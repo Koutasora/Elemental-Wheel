@@ -22,6 +22,7 @@ instaluje się instalatorem Inno Setup dla jednego użytkownika; wydanie 1.0.0.
 - [x] Wersja 1.0.0 w `Cargo.toml` (workspace)
 - [x] `installer/elemental-wheel.iss`, `tools/build-installer.ps1` (build release, ISCC, wypisuje wersję i ścieżkę instalatora)
 - [ ] Test na LAB: kopia `%APPDATA%\Elemental-Wheel` przed testem i przywrócenie po; instalacja, pliki, skróty, klucz Run, działające koło; odinstalowanie i sprawdzenie usunięcia; test fizyczną myszą przez użytkownika
+- [ ] Akcja systemowa „Opcje koła” (`wheel_options`, edytor otwarty na zakładce Opcje, `--tab opcje`), 5. kafelek łuku „Ustawienia” w domyślnej konfiguracji, pozycja „Opcje” w menu zasobnika (`crates/wheel-core/src/config.rs`, `apps/wheel/src/actions.rs`, `tray.rs`, `apps/wheel-editor`)
 - [ ] README (instalacja, zasobnik, odinstalowanie, status 1.0.0), CHECKLISTA, szkic wydania (`gh release create --draft`)
 - Sprawdzenie: tester: build, testy, clippy, fmt, `--version` obu programów, kompilacja instalatora; test instalacji i odinstalowania na LAB; test fizyczną myszą; manager: przegląd diffu
 
@@ -33,6 +34,7 @@ instaluje się instalatorem Inno Setup dla jednego użytkownika; wydanie 1.0.0.
 - Zasobnik: ikona ładowana `LoadImageW` (zasób nr 1 exe, rozmiar z DPI), bo `LoadIconMetric` wymaga comctl32 v6 i manifestu (exe nie startował); hak przepuszcza zdarzenia nad paskiem zadań i obszarem powiadomień (klasy Shell_TrayWnd, Shell_SecondaryTrayWnd, NotifyIconOverflowWindow, TopLevelWindowForOverflowXamlIsland) i nad oknami własnego procesu (menu zasobnika), żeby prawy klik na ikonie nie otwierał koła.
 - Test instalatora (tester): `--quit` kończy się po zniknięciu okna, a proces trzyma `wheel.exe` jeszcze ok. 0,5 s; aktualizacja przy działającym kole przerywana przez Restart Manager, deinstalator zostawiał `wheel.exe`. Poprawka: instalator i deinstalator po `--quit` czekają na zwolnienie mutexu `Local\ElementalWheel` (do 5 s), inaczej czytelny komunikat.
 - Aktualizacja zachowuje wybór zadania „Uruchamiaj przy logowaniu” z poprzedniej instalacji (standardowe zachowanie Inno Setup, zostaje); pozostałość `is-*-uninstall.tmp` w `%TEMP%` to zwykłe zachowanie Inno Setup.
+- „Opcje koła” w kole i w zasobniku (prośba użytkownika: z koła nie dało się dojść do opcji, łuk „Ustawienia” to ustawienia Windows); w domyślnej konfiguracji jako 5. kafelek łuku „Ustawienia”, istniejące konfiguracje bez zmian.
 
 ## Pomiary i testy
 - Instalator 4,13 MB (Inno Setup 6.7.3), wersja 1.0.0.
