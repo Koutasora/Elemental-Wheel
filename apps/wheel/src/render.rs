@@ -11,7 +11,7 @@ use std::sync::Arc;
 use wheel_core::icon::IconSizes;
 use wheel_core::{Config, Hit, Layout, SubArc, ViewMode, arc_for_hit};
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::{E_FAIL, HMODULE, HWND, S_FALSE};
 use windows::Win32::Graphics::Direct2D::Common::{
@@ -107,7 +107,7 @@ const PARENT_GLASS_ALPHA: f32 = 0.3;
 /// Standard deviation of the blur of the desktop snapshot at 100% scale and 96 DPI, in px.
 const BLUR_SIGMA: f32 = 9.0;
 /// Longest wait for the GPU between the steps of `Painter::warm`, in milliseconds.
-const GPU_WAIT_MS: u128 = 200;
+const GPU_WAIT_MS: u64 = 300;
 /// Standard deviation of the halo behind label text, in px at the same scale.
 const HALO_SIGMA: f32 = 1.8;
 /// The sheen of the disc is its part inside an ellipse of this height (share of the radius) whose
@@ -358,9 +358,11 @@ impl Renderer {
 
     /// Builds everything that would otherwise be made on first use (label layouts and halos,
     /// submenu shapes, effect pipelines), so that the first open is as fast as the later ones.
-    /// Failures are logged; the wheel still draws, only slower the first time.
-    pub fn warm(&self) {
-        if let Err(e) = self.painter.warm() {
+    /// Failures are logged; the wheel still draws, only slower the first time. With `wait_gpu`
+    /// the GPU is let to catch up between the drawings (see `Painter::warm`); the open path
+    /// passes false, as it must not be delayed.
+    pub fn warm(&self, wait_gpu: bool) {
+        if let Err(e) = self.painter.warm(wait_gpu) {
             wheel_core::log_line!("cannot warm the renderer up: {e}");
         }
     }
@@ -758,10 +760,17 @@ impl Painter {
     }
 
     /// Draws every label and submenu once into a scratch bitmap, and runs the glass pipeline
-    /// once, so that their caches and GPU pipelines exist before the first open. The GPU is let
-    /// to catch up after every drawing: with work queued up the driver keeps allocating new
-    /// buffers, and the memory it grew to stays with the process after the trim.
-    fn warm(&self) -> Result<()> {
+    /// once, so that their caches and GPU pipelines exist before the first open. With `wait_gpu`
+    /// the GPU is let to catch up after every drawing: with work queued up the driver keeps
+    /// allocating new buffers, and the memory it grew to stays with the process after the trim.
+    /// All the waits together take at most `GPU_WAIT_MS`; the rest of the drawings run unwaited.
+    fn warm(&self, wait_gpu: bool) -> Result<()> {
+        let deadline = wait_gpu.then(|| Instant::now() + Duration::from_millis(GPU_WAIT_MS));
+        let settle = || {
+            if let Some(deadline) = deadline {
+                wait_for_gpu(deadline);
+            }
+        };
         let target = new_bitmap(&self.ctx, self.size, self.size, D2D1_BITMAP_OPTIONS_TARGET)?;
         let n = self.layout.outer_sectors();
         let hits = std::iter::once(Hit::Center)
@@ -769,7 +778,7 @@ impl Painter {
             .chain((0..n).map(Hit::Outer));
         for hit in hits {
             self.paint(&target, hit, None, &Anim::settled(hit))?;
-            wait_for_gpu();
+            settle();
         }
         let mut first_arc = None;
         for parent in 0..n {
@@ -781,7 +790,7 @@ impl Painter {
             for j in 0..arc.count {
                 let hit = Hit::Sub(parent, j);
                 self.paint(&target, hit, Some(arc), &Anim::settled(hit))?;
-                wait_for_gpu();
+                settle();
             }
         }
         if let Some(frost) = &self.frost {
@@ -2023,9 +2032,14 @@ fn d2d_for(dxgi_device: &IDXGIDevice) -> Result<(ID2D1Factory1, ID2D1Device)> {
     })
 }
 
-/// Waits (at most `GPU_WAIT_MS`) until the GPU has run everything queued on the shared device;
-/// does nothing if the wait cannot be set up.
-fn wait_for_gpu() {
+/// Whether a wait that ends at `deadline` has run out at `now`.
+fn wait_over(deadline: Instant, now: Instant) -> bool {
+    now >= deadline
+}
+
+/// Waits (until `deadline` at most) until the GPU has run everything queued on the shared
+/// device; does nothing if the wait cannot be set up.
+fn wait_for_gpu(deadline: Instant) {
     let Some(device) = D3D_DEVICE.with(|cache| cache.borrow().clone()) else {
         return;
     };
@@ -2056,9 +2070,8 @@ fn wait_for_gpu() {
                 0,
             ) != S_FALSE
         };
-        let started = Instant::now();
-        while !finished() && started.elapsed().as_millis() < GPU_WAIT_MS {
-            std::thread::yield_now();
+        while !finished() && !wait_over(deadline, Instant::now()) {
+            std::thread::sleep(Duration::from_millis(1));
         }
     }
 }
@@ -2118,6 +2131,18 @@ fn new_d3d_device() -> Result<ID3D11Device> {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+
+    #[test]
+    fn gpu_wait_runs_out_at_the_deadline() {
+        let now = Instant::now();
+        let deadline = now + Duration::from_millis(GPU_WAIT_MS);
+        assert!(!super::wait_over(deadline, now));
+        assert!(super::wait_over(deadline, deadline));
+        assert!(super::wait_over(
+            deadline,
+            deadline + Duration::from_millis(1)
+        ));
+    }
 
     use wheel_core::{Action, EditCommand, Item, SystemAction, ThemeChoice, arc_for_hit};
 
@@ -2439,7 +2464,7 @@ mod tests {
             .expect("painter");
             println!("  new {:.1} ms, {:.1} MB", ms(t), private_mb());
             let t = Instant::now();
-            painter.warm().expect("warm");
+            painter.warm(true).expect("warm");
             println!("  warm {:.1} ms, {:.1} MB", ms(t), private_mb());
             let halos: Vec<(f32, f32)> = painter
                 .layouts

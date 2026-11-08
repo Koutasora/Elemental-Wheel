@@ -150,7 +150,7 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
     .and_then(|r| {
         if options.linger_ms.is_some() {
             // As the background process starts: warm up, first frame, trim.
-            r.warm();
+            r.warm(true);
             r.draw(Hit::Center, None, &Anim::settled(Hit::Center))?;
             r.trim();
         }
@@ -547,6 +547,7 @@ pub fn run_background(options: &RunOptions, config_path: PathBuf) -> Result<()> 
         palette,
         &config,
         glass_level(glass_override, &config),
+        true,
     ) {
         Ok(r) => r,
         Err(e) => {
@@ -628,9 +629,11 @@ fn build_renderer(
     palette: Palette,
     config: &Arc<Config>,
     glass: f32,
+    wait_gpu: bool,
 ) -> Result<Renderer> {
+    let started = Instant::now();
     let renderer = Renderer::new(hwnd, layout, palette, config.clone(), glass)?;
-    renderer.warm();
+    renderer.warm(wait_gpu);
     renderer.draw(Hit::Center, None, &Anim::settled(Hit::Center))?;
     // The window is still hidden here; what the warm-up left in caches is not needed any more.
     renderer.trim();
@@ -638,6 +641,12 @@ fn build_renderer(
     // if the wheel is shown by then.
     // SAFETY: `hwnd` is the live window of this thread. A failure only means no second trim.
     let _ = unsafe { SetTimer(Some(hwnd), TRIM_TIMER, TRIM_DELAY_MS, None) };
+    if stats::enabled() {
+        wheel_core::log_line!(
+            "stats: renderer built in {} ms (gpu wait {wait_gpu})",
+            started.elapsed().as_millis()
+        );
+    }
     Ok(renderer)
 }
 
@@ -660,7 +669,7 @@ fn reload(hwnd: HWND, s: &mut RunState, apply_layout: bool) {
         if apply_layout {
             let at = cursor_pos().unwrap_or_default();
             let layout = layout_at(at, s.scale_pct, s.inner_sectors, s.sectors);
-            match build_renderer(hwnd, layout, s.palette, &s.config, s.glass_level()) {
+            match build_renderer(hwnd, layout, s.palette, &s.config, s.glass_level(), true) {
                 Ok(renderer) => {
                     s.renderer = Some(renderer);
                     s.layout = layout;
@@ -691,6 +700,8 @@ fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<OpenKind> {
             s.palette,
             &s.config,
             s.glass_level(),
+            // The open must not wait; the memory evens out at the next rebuild or trim.
+            false,
         )?);
         s.layout = layout;
     }
