@@ -2112,7 +2112,7 @@ dependencies = [
 
 [[package]]
 name = "wheel"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "wheel-core",
  "windows",
@@ -2122,7 +2122,7 @@ dependencies = [
 
 [[package]]
 name = "wheel-core"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -2130,7 +2130,7 @@ dependencies = [
 
 [[package]]
 name = "wheel-editor"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "eframe",
  "rfd",

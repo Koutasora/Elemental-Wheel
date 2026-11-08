@@ -2,11 +2,11 @@
 
 Action wheel opened by holding the right mouse button, laid out like the circle of fifths (Windows 10/11).
 
-Status: version 1.0.0. Choosing a sector runs its action (program, file, URL, shortcut, edit command, text, command, system action); outer sectors can have a submenu arc of up to 5 tiles; tiles show names or icons. The wheel is drawn as glass over a blurred copy of the screen under it, with short animations. A separate editor window edits the tiles and options.
+Status: version 1.0.1. Choosing a sector runs its action (program, file, URL, shortcut, edit command, text, command, system action); outer sectors can have a submenu arc of up to 5 tiles; tiles show names or icons. The wheel is drawn as glass over a blurred copy of the screen under it, with short animations. A separate editor window edits the tiles and options.
 
 ## Install
 
-Download `Elemental-Wheel-1.0.0-setup.exe` from [GitHub Releases](https://github.com/Koutasora/Elemental-Wheel/releases) and run it. No administrator rights needed.
+Download `Elemental-Wheel-1.0.1-setup.exe` from [GitHub Releases](https://github.com/Koutasora/Elemental-Wheel/releases) and run it. No administrator rights needed.
 
 - Installs for the current user only, into `%LOCALAPPDATA%\Programs\Elemental-Wheel`: `wheel.exe` and `wheel-editor.exe`.
 - Start menu shortcuts: the wheel (`wheel.exe --run`) and the editor.
