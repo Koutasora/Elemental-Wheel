@@ -22,7 +22,7 @@ instaluje się instalatorem Inno Setup dla jednego użytkownika; wydanie 1.0.0.
 - [x] Wersja 1.0.0 w `Cargo.toml` (workspace)
 - [x] `installer/elemental-wheel.iss`, `tools/build-installer.ps1` (build release, ISCC, wypisuje wersję i ścieżkę instalatora)
 - [ ] Test na LAB: kopia `%APPDATA%\Elemental-Wheel` przed testem i przywrócenie po; instalacja, pliki, skróty, klucz Run, działające koło; odinstalowanie i sprawdzenie usunięcia; test fizyczną myszą przez użytkownika
-- [ ] Akcja systemowa „Opcje koła” (`wheel_options`, edytor otwarty na zakładce Opcje, `--tab opcje`), 5. kafelek łuku „Ustawienia” w domyślnej konfiguracji, pozycja „Opcje” w menu zasobnika (`crates/wheel-core/src/config.rs`, `apps/wheel/src/actions.rs`, `tray.rs`, `apps/wheel-editor`)
+- [x] Akcja systemowa „Opcje koła” (`wheel_options`, edytor otwarty na zakładce Opcje, `--tab opcje`), 5. kafelek łuku „Ustawienia” w domyślnej konfiguracji, pozycja „Opcje” w menu zasobnika (`crates/wheel-core/src/config.rs`, `apps/wheel/src/actions.rs`, `tray.rs`, `apps/wheel-editor`)
 - [ ] README (instalacja, zasobnik, odinstalowanie, status 1.0.0), CHECKLISTA, szkic wydania (`gh release create --draft`)
 - Sprawdzenie: tester: build, testy, clippy, fmt, `--version` obu programów, kompilacja instalatora; test instalacji i odinstalowania na LAB; test fizyczną myszą; manager: przegląd diffu
 
