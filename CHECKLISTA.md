@@ -79,7 +79,7 @@
 - [x] Start w tle bez dostępu do kursora (główny monitor; test jednostkowy)
 - [x] Akcja „Menu kontekstowe”
 - [x] Podgląd w edytorze z nowym wyglądem
-- [x] Pamięć w tle: szkło 21,6 MB (nazwy) / 24,6 MB (ikony), bez szkła 13,5 / 16,2 MB
+- [x] Pamięć w tle: szkło 22,9 MB (nazwy) / 25,0 MB (ikony), bez szkła 13,4 / 16,7 MB (po wyłączeniu szkła w działającym kole do restartu 19,3 / 22,3 MB)
 
 ## 09 instalator-i-wydanie
 - [ ] Instalator (Inno Setup, jeden użytkownik), który wypisuje zainstalowaną wersję

@@ -12,7 +12,7 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - [x] Szkło (rozmyte tło jak Vista Aero / macOS) z opcją `glass_pct` 0–100 (0 = bez szkła) w konfiguracji i jako suwak w edytorze; bez szkła także przy wyłączonej przezroczystości Windows
 - [x] Renderer i ikony przygotowane po wczytaniu konfiguracji (otwarcie nie buduje renderera); układy tekstu i geometrie nie tworzone przy każdym odrysowaniu
 - [x] Mediana otwarcia do 16 ms (na żywo, fizyczna mysz, szkło: 6,3 ms, maks. 19,6 ms przy pierwszym otwarciu)
-- [x] Pamięć prywatna w tle: ze szkłem do 25 MB, bez szkła do 15 MB (nazwy) i 17 MB (ikony) — `--run` 3 min, także po przeładowaniu konfiguracji: 21,6 / 24,6 MB ze szkłem, 13,5 / 16,2 MB bez
+- [x] Pamięć prywatna w tle: ze szkłem do 25 MB, bez szkła do 15 MB (nazwy) i 17 MB (ikony), bez szkła liczone po uruchomieniu koła bez szkła — `--run` 3 min z przeładowaniem konfiguracji: 22,9 / 25,0 MB ze szkłem, 13,4 / 16,7 MB bez; wyłączenie szkła w działającym kole: 19,3 / 22,3 MB do ponownego uruchomienia (decyzja użytkownika)
 - [x] Opcja `replace_right_click` (konfiguracja i edytor, domyślnie wyłączona): koło od razu po wciśnięciu prawego przycisku; systemowy prawy przycisk nie dociera do programów (poza oknami administratora, wykluczeniami i pełnym ekranem); test fizyczną myszą
 - [x] „Właściwości” z koła działa w Eksploratorze i na pulpicie (jeden plik, kilka plików, folder, ikona na pulpicie; test fizyczną myszą)
 - [x] Akcja systemowa `context_menu` („Menu kontekstowe”) w konfiguracji i edytorze
@@ -49,7 +49,8 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - `--run` nie startował, gdy GetCursorPos odmawia dostępu (np. zminimalizowane RDP): w tym etapie start na głównym monitorze; sprawdzone testem jednostkowym czystej funkcji, bez próby na żywo.
 - Akcja `context_menu` (prośba użytkownika): wstrzyknięte prawe kliknięcie z MARKER w punkcie wciśnięcia, żeby w trybie `replace_right_click` dało się otworzyć zwykłe menu.
 - Pamięć w tle zbadana jednak w tym etapie (prośba użytkownika): 30,9 MB to stan po przeładowaniu konfiguracji — rozgrzewka renderera kolejkowała rysunki bez czekania na GPU, sterownik AMD zostawiał po każdej przebudowie 8–13 MB; czekanie na GPU po każdym rysunku rozgrzewki usuwa wzrost. Po akcji „Właściwości” pamięć rośnie o ok. 4 MB (arkusz właściwości w procesie koła).
-- Ryzyko: przeładowanie ze szkła na brak szkła zostawia potoki efektów szkła (ok. 19 zamiast 13 MB; niesprawdzone po poprawce).
+- Wyłączenie szkła w działającym kole zostawia efekty szkła w pamięci do ponownego uruchomienia (nazwy 19,3, ikony 22,3 MB); przyjęte przez użytkownika, bo szkło wyłącza się rzadko, a po restarcie wartości mieszczą się w celu.
+- Czekanie na GPU w rozgrzewce: łącznie najwyżej 300 ms, przy przebudowie w trakcie otwarcia bez czekania (uwaga managera); budowa renderera po przeładowaniu 230–410 ms przy ukrytym kole.
 - Znane ograniczenie: w trybie `replace_right_click` migawka tła (BitBlt, 20–50 ms przez RDP) jest robiona przed otwarciem, więc otwarcie ze szkłem trwa o tyle dłużej; bez pomiaru na żywo.
 - Niestabilny test edytora (wspólny katalog tymczasowy przy testach równoległych) poprawiony: osobny katalog na każde wywołanie.
 - Etap 09 w skróconym zakresie (decyzja użytkownika, ok. 1–1,5 h): instalator Inno Setup, autostart, zasobnik tylko z pozycjami Edytor / Wyłącz-Włącz / Zamknij, jeden wariant ikony programu do akceptacji, jeden test instalacji i odinstalowania na LAB plus krótki test fizyczną myszą, wydanie 1.0.0; nowe pomysły tylko na listę na później.
@@ -68,8 +69,10 @@ LAB (RDP), 1920x1080, 96 DPI, release, konfiguracja 12+12 sektorów, dwa podmenu
 | pamięć prywatna demo po zamknięciu (nazwy / ikony, szkło) | 21,6 / 24,3 MB |
 | pamięć prywatna demo po zamknięciu (nazwy / ikony, bez szkła) | 13,8 / 17,0 MB |
 | pamięć prywatna `--run` (nazwy, szkło) przed poprawką: po przeładowaniu konfiguracji / po teście z „Właściwości” | 30,9 / 34,8 MB |
-| pamięć prywatna `--run`, 3 min z przeładowaniem, po poprawce: nazwy / ikony, szkło | 21,6 / 24,6 MB |
-| pamięć prywatna `--run`, 3 min z przeładowaniem, po poprawce: nazwy / ikony, bez szkła | 13,5 / 16,2 MB |
+| pamięć prywatna `--run`, 3 min z przeładowaniem, po poprawce: nazwy / ikony, szkło | 22,9 / 25,0 MB |
+| pamięć prywatna `--run`, 3 min z przeładowaniem, po poprawce: nazwy / ikony, bez szkła | 13,4 / 16,7 MB |
+| pamięć prywatna `--run`, szkło wyłączone w działającym kole: nazwy / ikony | 19,3 / 22,3 MB |
+| budowa renderera przy przeładowaniu (z czekaniem na GPU) | 230–410 ms |
 
 ## Podsumowanie
 (wypełnia /etap-zamknij)
