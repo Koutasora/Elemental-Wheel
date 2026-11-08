@@ -2,7 +2,7 @@
 
 Action wheel opened by holding the right mouse button, laid out like the circle of fifths (Windows 10/11).
 
-Status: stage 06, choosing a sector runs its action (program, file, URL, shortcut, edit command, text, command, system action); outer sectors can have a submenu arc of up to 5 tiles; tiles show names or icons. The choice is also printed. A separate editor window edits the tiles and options.
+Status: stage 08, choosing a sector runs its action (program, file, URL, shortcut, edit command, text, command, system action); outer sectors can have a submenu arc of up to 5 tiles; tiles show names or icons. The wheel is drawn as glass over a blurred copy of the screen under it, with short animations. A separate editor window edits the tiles and options.
 
 ## Build
 
@@ -111,22 +111,22 @@ target\release\wheel-editor.exe --version
 - `program` and `open` paths and arguments expand `%VARIABLES%`.
 - `excluded` lists program file names (case does not matter).
 - `glass_pct` (0 to 100, default 50): how transparent the glass of the wheel is; 0 gives the opaque look. Without Windows transparency (Settings > Personalization > Colors) the wheel is opaque.
-- `animations` (default `true`): animations of the wheel on or off.
+- `animations` (default `true`): animations of the wheel on or off. With animation effects off in Windows (Settings > Accessibility > Visual effects) the wheel does not animate either.
 - `replace_right_click` (default `false`): the wheel opens as soon as the right button goes down, without the hold time and movement threshold; programs get no right clicks (except as in "Run in the background").
 - Numbers outside the allowed range are clamped with a warning (in the log and on stderr). An invalid file (bad JSON or encoding, unknown type, invalid shortcut, too many items) is never overwritten. At start the program falls back to `config.json.bak`, then to the defaults. While running, an invalid file is ignored and the current configuration stays; either way the reason goes to the log (and stderr).
 - The config folder is watched: a changed file is reloaded within a moment, no restart needed. Exclusions, actions, names and trigger thresholds apply from the next press, wheel size and sector count from the next opening. If the folder is missing at start, the file is checked when the wheel opens instead.
 
 ## Measurements
 
-Release build, 1920x1080 at 96 DPI, 8 outer and 8 inner sectors, one submenu; measured with `tools/soak.ps1` (development tool, injected input).
+Release build, 1920x1080 at 96 DPI over RDP, 12 outer and 12 inner sectors, glass 50; `--run --stats` with a physical mouse.
 
-| | names view | icons view |
-|---|---|---|
-| private memory in the background | 13.9 MB | 17.0 MB |
-| opening, median / max | 3.3 / 5.2 ms | 3.2 / 4.9 ms |
-| first opening after a config change | | 89 ms |
-
-Over 6-minute runs: private memory within 0.4 MB, handle count stable.
+| | |
+|---|---|
+| opening, median / max | 6.3 / 19.6 ms |
+| screen copy for the glass (on the press, before the wheel opens) | 20-50 ms |
+| private memory in the background, glass, names view | 31 MB |
+| private memory, `--demo`, names / icons view, glass | 21.6 / 24.3 MB |
+| private memory, `--demo`, names / icons view, no glass | 13.8 / 17.0 MB |
 
 ## Known issues
 
