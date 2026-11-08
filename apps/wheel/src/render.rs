@@ -152,6 +152,7 @@ struct Painter {
     inner_font: IDWriteTextFormat,
     sub_font: IDWriteTextFormat,
     hub_font: IDWriteTextFormat,
+    hint_font: IDWriteTextFormat,
     /// Disc under the rings (centre to the outer edge of the outer ring); built once.
     wheel_plate: ID2D1Geometry,
     /// Tile shapes of the inner and the outer ring; built once.
@@ -599,6 +600,11 @@ impl Painter {
                 inner_font: text_format(&dwrite, 11.5 * k, DWRITE_FONT_WEIGHT_MEDIUM)?,
                 sub_font: text_format(&dwrite, 13.5 * k, DWRITE_FONT_WEIGHT_MEDIUM)?,
                 hub_font: text_format(&dwrite, 14.0 * k, DWRITE_FONT_WEIGHT_MEDIUM)?,
+                hint_font: text_format(
+                    &dwrite,
+                    wheel_core::look::OPTIONS_HINT_PX * k,
+                    DWRITE_FONT_WEIGHT_MEDIUM,
+                )?,
                 letter_font: text_format(&dwrite, 14.0 * k, DWRITE_FONT_WEIGHT_BOLD)?,
                 dwrite,
                 icons,
@@ -1201,6 +1207,31 @@ impl Painter {
                 p.fg,
                 1.0,
             )?;
+            // The options hint sits under "Anuluj" (the text stays where it is) and gives way to
+            // a tile name.
+            let hint = anim.hint();
+            if hit == Hit::Center && hint > 0.0 {
+                let below = self
+                    .layouts
+                    .borrow()
+                    .get(&(Kind::Hub, text.to_string()))
+                    .map_or(0.0, |l| l.height / 2.0 + k);
+                self.faded(hint, (0.0, 0.0), || {
+                    self.label(
+                        Kind::Hint,
+                        wheel_core::look::OPTIONS_HINT,
+                        &self.hint_font,
+                        &|h, _| {
+                            let reach = below + h / 2.0;
+                            let width =
+                                fit::circle_width(radii.center - pad, 2.0 * (reach + h / 2.0));
+                            (width - pad, (c, c + reach))
+                        },
+                        p.muted,
+                        1.0,
+                    )
+                })?;
+            }
         }
         Ok(())
     }
@@ -1848,6 +1879,7 @@ enum Kind {
     /// Tile of the submenu arc: parent sector and index in its submenu.
     Sub(u8, u8),
     Hub,
+    Hint,
 }
 
 struct FittedLabel {

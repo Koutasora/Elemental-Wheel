@@ -199,9 +199,9 @@ fn label(
     slot: Slot,
     color: Color32,
     halo: Option<Color32>,
-) {
+) -> f32 {
     if text.trim().is_empty() {
-        return;
+        return 0.0;
     }
     let measure = |t: &str, scale: f32| {
         let galley = painter.layout_no_wrap(
@@ -247,6 +247,7 @@ fn label(
         }
         painter.galley(pos, galley, color);
     }
+    total
 }
 
 /// The sample desktop under the glass: soft colored patches like a wallpaper, made once.
@@ -854,8 +855,8 @@ pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
     let shown = hovered
         .filter(|s| *s != Selection::None)
         .unwrap_or(model.selection);
-    if let Some(item) = model.item_at(shown) {
-        let r = radii.center * fit;
+    let r = radii.center * fit;
+    let name_height = model.item_at(shown).map_or(0.0, |item| {
         label(
             &painter,
             center,
@@ -865,8 +866,24 @@ pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
             &|h, _| (fit::circle_width(r - pad, h) - pad, Vec2::ZERO),
             text_color,
             halo,
-        );
-    }
+        )
+    });
+    // The options hint under the name, as the wheel shows it when it opens (without the fade).
+    let below = name_height / 2.0 + u * fit;
+    label(
+        &painter,
+        center,
+        look::OPTIONS_HINT,
+        look::OPTIONS_HINT_PX * u * fit,
+        min_font,
+        &|h, _| {
+            let reach = below + h / 2.0;
+            let width = fit::circle_width(r - pad, 2.0 * (reach + h / 2.0));
+            (width - pad, vec2(0.0, reach))
+        },
+        c32(p.muted),
+        halo,
+    );
     out
 }
 

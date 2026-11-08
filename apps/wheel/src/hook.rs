@@ -33,9 +33,9 @@ use windows::Win32::System::Threading::{
     PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    INPUT, INPUT_0, INPUT_MOUSE, MOUSE_EVENT_FLAGS, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_MOVE,
-    MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT, SendInput,
-    VK_ESCAPE,
+    GetAsyncKeyState, INPUT, INPUT_0, INPUT_MOUSE, MOUSE_EVENT_FLAGS, MOUSEEVENTF_ABSOLUTE,
+    MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_VIRTUALDESK,
+    MOUSEINPUT, SendInput, VK_CONTROL, VK_ESCAPE, VK_LWIN, VK_MENU, VK_RWIN,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GA_ROOT, GWL_STYLE, GetAncestor, GetClassNameW, GetMessageW, GetSystemMetrics,
@@ -54,6 +54,17 @@ use crate::args::PanicTest;
 use crate::guard;
 use crate::watchdog;
 use crate::window::{WM_WHEEL_CLOSE, WM_WHEEL_DISCARD, WM_WHEEL_OPEN, WM_WHEEL_PRESS, layout_at};
+
+/// Virtual-key code of the O key (the options key of the open wheel).
+const VK_O: u32 = 0x4F;
+
+/// Whether Ctrl, Alt or a Windows key is held.
+fn shortcut_modifier_held() -> bool {
+    [VK_CONTROL, VK_MENU, VK_LWIN, VK_RWIN]
+        .iter()
+        // SAFETY: plain call; the high bit of the result is the key state.
+        .any(|vk| unsafe { GetAsyncKeyState(i32::from(vk.0)) } < 0)
+}
 
 /// `dwExtraInfo` of the input this program injects ("ELWH").
 pub const MARKER: usize = 0x454C_5748;
@@ -213,6 +224,8 @@ struct HookState {
     passthrough_right: bool,
     /// A physical Escape press was swallowed; swallow its repeats and release too.
     swallow_escape: bool,
+    /// Same for the options key (O).
+    swallow_options: bool,
     own_integrity: u32,
     /// Top-level window under the cursor at the last right press (`HWND` bits): the target of
     /// the action.
@@ -332,25 +345,37 @@ impl HookState {
         if !is_enabled() {
             return false;
         }
-        if info.vkCode != u32::from(VK_ESCAPE.0) {
+        let escape = info.vkCode == u32::from(VK_ESCAPE.0);
+        if !escape && info.vkCode != VK_O {
             return false;
         }
         let origin = self.origin(info.dwExtraInfo, info.flags.0 & LLKHF_INJECTED.0 != 0);
         if origin != Origin::Physical {
             return false;
         }
+        let (swallowing, kind) = if escape {
+            (&mut self.swallow_escape, EventKind::Escape)
+        } else {
+            (&mut self.swallow_options, EventKind::OptionsKey)
+        };
         match msg {
             WM_KEYDOWN | WM_SYSKEYDOWN => {
-                if self.swallow_escape {
+                if *swallowing {
                     return true;
                 }
-                if !self.trigger.is_wheel_open() {
+                // O with Ctrl, Alt or Win is a shortcut of the program under the wheel.
+                if !self.trigger.is_wheel_open() || (!escape && shortcut_modifier_held()) {
                     return false;
                 }
-                self.swallow_escape = self.feed(Event::physical(EventKind::Escape));
-                self.swallow_escape
+                let swallow = self.feed(Event::physical(kind));
+                if escape {
+                    self.swallow_escape = swallow;
+                } else {
+                    self.swallow_options = swallow;
+                }
+                swallow
             }
-            WM_KEYUP | WM_SYSKEYUP => std::mem::take(&mut self.swallow_escape),
+            WM_KEYUP | WM_SYSKEYUP => std::mem::take(swallowing),
             _ => false,
         }
     }
@@ -465,6 +490,7 @@ impl HookState {
         self.effects.clear();
         self.passthrough_right = false;
         self.swallow_escape = false;
+        self.swallow_options = false;
         if let Err(e) = self.install() {
             wheel_core::log_line!("wheel: cannot reinstall the hooks: {e}");
             return;
@@ -484,6 +510,7 @@ impl HookState {
         self.notes.clear();
         self.passthrough_right = false;
         self.swallow_escape = false;
+        self.swallow_options = false;
         post_to_window(self.window, WM_WHEEL_CLOSE, 0, 0);
     }
 
@@ -570,6 +597,7 @@ fn thread_main(
         watchdog_timer: 0,
         passthrough_right: false,
         swallow_escape: false,
+        swallow_options: false,
         own_integrity: own_integrity(),
         target: 0,
         press: Point::new(0, 0),
@@ -705,6 +733,14 @@ fn run_effect(effect: Effect) {
             };
             print_line("cancelled");
             post_to_window(window, WM_WHEEL_CLOSE, 0, 0);
+        }
+        Effect::OpenOptions => {
+            let Some(window) = with_state(|s| s.window) else {
+                return;
+            };
+            print_line("options");
+            post_to_window(window, WM_WHEEL_CLOSE, 0, 0);
+            crate::tray::open_editor(Some("opcje"));
         }
     }
 }
