@@ -40,6 +40,7 @@ Poprawić znane błędy i braki z wydania 1.0.0 i wydać wersję 1.0.1 z nowym i
 - Podpis „O – opcje” widoczny 10 s po otwarciu zamiast ok. 2 s (decyzja użytkownika po zrzutach).
 - Podpis rysowany pod „Anuluj” w środku (środek przy kursorze na środku pokazuje „Anuluj”), tylko gdy kursor jest na środku; kolor przygaszony motywu, 10 px; w podglądzie edytora statycznie. Klawisz O ignorowany przy Ctrl/Alt/Win (skróty programów działają). Test na LAB wejściem wstrzykiwanym: O przy przytrzymaniu i w trybie klikania otwiera edytor `--tab opcje --config <test>`, litera nie trafia do Notatnika; O przy zamkniętym kole i Ctrl+O przechodzą.
 - Po przeglądzie managera: tylko pierwsze wciśnięcie O otwiera opcje (O trzymane przed otwarciem koła i jego powtórzenia idą do programu, bez połkniętego zwolnienia); podgląd rysuje podpis pod „Anuluj” tylko bez nazwy kafelka w środku, jak koło. Instalator 1.0.1 przebudowany, zainstalowany na LAB na działające koło (kod 0, `config.json` bez zmian), plik i SHA-256 w szkicu wydania podmienione.
+- Użytkownik potwierdził: błąd po Escape nie jest już opisany jako znany; szkic wydania v1.0.0 usunięty (publikowane będzie od razu v1.0.1).
 - Wzmianki w etapach 01–08: „claude.ai” → „w sieci”, „scratchpad” → „folder tymczasowy”, bez „przez Claude”; treść decyzji bez zmian.
 
 ## Podsumowanie
