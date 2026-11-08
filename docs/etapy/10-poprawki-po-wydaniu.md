@@ -4,7 +4,7 @@
 Poprawić znane błędy i braki z wydania 1.0.0 i wydać wersję 1.0.1 z nowym instalatorem.
 
 ## Kryteria zamknięcia
-- [ ] Edytor ma przełącznik autostartu: zmienia wpis HKCU Run, zgodny z wyborem z instalatora
+- [x] Edytor ma przełącznik autostartu: zmienia wpis HKCU Run, zgodny z wyborem z instalatora
 - [ ] Drugie uruchomienie edytora pokazuje działające okno zamiast drugiej kopii
 - [ ] Długie nazwy w podglądzie edytora łamią się jak w kole i nie wychodzą poza kafelek
 - [ ] Błąd po Escape: przyczyna znaleziona i poprawiona (48 par „otwórz, Escape, otwórz” bez błędu) albo opisana w Decyzjach jako znana, z wynikiem diagnozy
@@ -14,9 +14,9 @@ Poprawić znane błędy i braki z wydania 1.0.0 i wydać wersję 1.0.1 z nowym i
 - [ ] Testy, clippy i fmt przechodzą; README i CHECKLISTA zgodne ze zmianami
 
 ## Plan
-- [ ] Autostart w edytorze: `apps/wheel-editor/src/options.rs`, `main.rs` (odczyt i zapis HKCU Run, ta sama nazwa wpisu co w `installer/elemental-wheel.iss`)
-- [ ] Jedna kopia edytora: `apps/wheel-editor/src/main.rs` (mutex, przeniesienie okna na wierzch)
-- [ ] Łamanie nazw w podglądzie: `apps/wheel-editor` (podgląd), ewentualnie wspólna funkcja w `crates/wheel-core`
+- [x] Autostart w edytorze: `apps/wheel-editor/src/options.rs`, `main.rs` (odczyt i zapis HKCU Run, ta sama nazwa wpisu co w `installer/elemental-wheel.iss`)
+- [x] Jedna kopia edytora: `apps/wheel-editor/src/main.rs` (mutex, przeniesienie okna na wierzch)
+- [x] Łamanie nazw w podglądzie: `apps/wheel-editor` (podgląd), ewentualnie wspólna funkcja w `crates/wheel-core`
 - [ ] Błąd po Escape: diagnoza `tools/soak.ps1` i ślad w `apps/wheel/src/hook.rs`, `window.rs`; jedna runda, potem decyzja
 - [ ] Pamięć szkła: zwalnianie zasobów szkła po `glass_pct = 0` w `apps/wheel/src/window.rs` lub rendererze
 - [x] Usunięcie wzmianek z `docs/etapy/01..08`
@@ -24,6 +24,10 @@ Poprawić znane błędy i braki z wydania 1.0.0 i wydać wersję 1.0.1 z nowym i
 - Sprawdzenie: `cargo test`, clippy, fmt; `soak.ps1` dla Escape (po zgodzie, przejmuje pulpit); pomiar pamięci `--stats`; zrzut podglądu z długimi nazwami do akceptacji; instalacja 1.0.1 na 1.0.0 przy działającym kole
 
 ## Decyzje
+- Autostart w edytorze zmienia rejestr od razu, niezależnie od „Zapisz”: nie jest częścią `config.json`; ten sam wpis `Elemental Wheel` co instalator, ścieżka `wheel.exe` obok edytora.
+- Etykieta autostartu tylko po polsku: edytor nie ma mechanizmu tłumaczeń.
+- Jedna kopia edytora tylko bez `--config` (testy z własną konfiguracją nie dotykają edytora użytkownika); drugie uruchomienie nie przekazuje `--tab`.
+- Logika dopasowania nazw (`fit`) przeniesiona z `apps/wheel` do `crates/wheel-core`, wspólna dla koła i podglądu, żeby się nie rozjeżdżały; podgląd używa Segoe UI zwykłej wagi (koło: Medium), miejsce przycięcia może się różnić o znak.
 - Wzmianki w etapach 01–08: „claude.ai” → „w sieci”, „scratchpad” → „folder tymczasowy”, bez „przez Claude”; treść decyzji bez zmian.
 
 ## Podsumowanie

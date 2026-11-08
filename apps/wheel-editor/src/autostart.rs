@@ -115,6 +115,11 @@ mod tests {
     #[test]
     fn value_is_written_and_deleted_in_a_throwaway_key() {
         let key = r"Software\ElementalWheelTest\Run";
+        // Leftover from an interrupted earlier run.
+        // SAFETY: plain call with a constant key name.
+        unsafe {
+            let _ = RegDeleteTreeW(HKEY_CURRENT_USER, w!(r"Software\ElementalWheelTest"));
+        }
         assert!(!is_enabled(key));
         set(key, Some(r#""C:\x\wheel.exe" --run"#)).unwrap();
         assert!(is_enabled(key));

@@ -93,3 +93,11 @@
 - [x] Test instalacji, aktualizacji i odinstalowania na LAB
 - [x] Test fizyczną myszą zainstalowanej wersji
 - [x] Wydanie 1.0.0 z opisem zgodnym z README (szkic na GitHubie, publikacja po scaleniu PR)
+
+## 10 poprawki-po-wydaniu
+- [x] Przełącznik autostartu w edytorze (Opcje)
+- [x] Jedna kopia edytora, drugie uruchomienie wyciąga okno
+- [x] Długie nazwy w podglądzie łamane jak w kole
+- [ ] Błąd po Escape: poprawka albo diagnoza
+- [ ] Pamięć po wyłączeniu szkła bez restartu
+- [ ] Wydanie 1.0.1 (instalator, test aktualizacji z 1.0.0)
