@@ -23,8 +23,8 @@ instaluje się instalatorem Inno Setup dla jednego użytkownika; wydanie 1.0.0.
 - [x] `installer/elemental-wheel.iss`, `tools/build-installer.ps1` (build release, ISCC, wypisuje wersję i ścieżkę instalatora)
 - [ ] Test na LAB: kopia `%APPDATA%\Elemental-Wheel` przed testem i przywrócenie po; instalacja, pliki, skróty, klucz Run, działające koło; odinstalowanie i sprawdzenie usunięcia; test fizyczną myszą przez użytkownika
 - [x] Akcja systemowa „Opcje koła” (`wheel_options`, edytor otwarty na zakładce Opcje, `--tab opcje`), 5. kafelek łuku „Ustawienia” w domyślnej konfiguracji, pozycja „Opcje” w menu zasobnika (`crates/wheel-core/src/config.rs`, `apps/wheel/src/actions.rs`, `tray.rs`, `apps/wheel-editor`)
-- [ ] Edytor: przycisk „Przywróć domyślne” na zakładce Opcje — cała konfiguracja (kafelki i opcje) domyślna, z potwierdzeniem, zapis dopiero po „Zapisz” (`apps/wheel-editor`)
-- [ ] Koło w Eksploratorze i na pulpicie zaznacza element pod kursorem przy otwarciu (UI Automation, jak prawy przycisk Windows), akcja czeka na zaznaczenie (`apps/wheel`)
+- [x] Edytor: przycisk „Przywróć domyślne” na zakładce Opcje — cała konfiguracja (kafelki i opcje) domyślna, z potwierdzeniem, zapis dopiero po „Zapisz” (`apps/wheel-editor`)
+- [x] Koło w Eksploratorze i na pulpicie zaznacza element pod kursorem przy otwarciu (UI Automation, jak prawy przycisk Windows), akcja czeka na zaznaczenie (`apps/wheel`)
 - [ ] README (instalacja, zasobnik, odinstalowanie, status 1.0.0), CHECKLISTA, szkic wydania (`gh release create --draft`)
 - Sprawdzenie: tester: build, testy, clippy, fmt, `--version` obu programów, kompilacja instalatora; test instalacji i odinstalowania na LAB; test fizyczną myszą; manager: przegląd diffu
 
@@ -38,10 +38,14 @@ instaluje się instalatorem Inno Setup dla jednego użytkownika; wydanie 1.0.0.
 - Aktualizacja zachowuje wybór zadania „Uruchamiaj przy logowaniu” z poprzedniej instalacji (standardowe zachowanie Inno Setup, zostaje); pozostałość `is-*-uninstall.tmp` w `%TEMP%` to zwykłe zachowanie Inno Setup.
 - „Opcje koła” w kole i w zasobniku (prośba użytkownika: z koła nie dało się dojść do opcji, łuk „Ustawienia” to ustawienia Windows); w domyślnej konfiguracji jako 5. kafelek łuku „Ustawienia”, istniejące konfiguracje bez zmian.
 - Test fizyczną myszą (użytkownik): instalacja, zasobnik, Opcje koła działają. Zgłoszone: brak „Przywróć domyślne” — jeden przycisk resetujący całą konfigurację (wybór użytkownika z wariantów: same opcje / dwa przyciski / jeden na wszystko); akcje koła w Eksploratorze działały na poprzednim zaznaczeniu, bo przechwycony prawy przycisk nie zaznacza pliku — koło zaznacza element pod kursorem przy otwarciu (już zaznaczony element i puste miejsce: zaznaczenie bez zmian).
+- Zaznaczanie startuje przy wciśnięciu prawego (w haku, kolejka do wątku MTA z UI Automation), nie przy otwarciu: okno koła zasłania punkt dla `ElementFromPoint`; tylko elementy ListItem, najwyżej 6 poziomów w górę, w obrębie okna docelowego.
+- Przegląd managera: ścieżka testu zaznaczania na `target/test-tmp` (wcześniej ścieżka sesji w repo); wyjątek własnego procesu w haku zawężony do menu (`#32768`), żeby okno koła w trakcie zanikania i arkusz „Właściwości” nie blokowały koła; sprawdzenie przy deinstalacji w `InitializeUninstall` (nic nie usuwa przy niepowodzeniu); `--run` odłącza konsolę po starcie (zamknięcie terminala nie zabija koła); nazwy pozycji menu w README po polsku jak w programie; neutralny komunikat przy błędzie uruchomienia edytora.
+- Inno Setup 6.7.3 był zainstalowany na LAB przed etapem (decyzja z etapu 08).
 
 ## Pomiary i testy
 - Instalator 4,13 MB (Inno Setup 6.7.3), wersja 1.0.0.
 - Test na LAB (tester, instalacja cicha): instalacja, aktualizacja przy działającym kole bez autostartu i z autostartem, odinstalowanie przy działającym kole: PASS po poprawce czekania na mutex (przed poprawką aktualizacja przerywana, `wheel.exe` zostawał). Stan LAB przywrócony z kopii.
+- Zaznaczanie pod kursorem (test ignorowany `select::tests::explorer_selection`, UIA, bez myszy): 4–11 ms na element; pierwszy przebieg po świeżo utworzonym folderze bywa `NoItem` (Eksplorator nie zdążył wypełnić listy), kolejne PASS.
 
 ## Podsumowanie
 (wypełnia /etap-zamknij)
