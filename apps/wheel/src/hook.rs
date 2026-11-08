@@ -53,7 +53,7 @@ use crate::actions;
 use crate::args::PanicTest;
 use crate::guard;
 use crate::watchdog;
-use crate::window::{WM_WHEEL_CLOSE, WM_WHEEL_OPEN, layout_at};
+use crate::window::{WM_WHEEL_CLOSE, WM_WHEEL_DISCARD, WM_WHEEL_OPEN, WM_WHEEL_PRESS, layout_at};
 
 /// `dwExtraInfo` of the input this program injects ("ELWH").
 pub const MARKER: usize = 0x454C_5748;
@@ -199,6 +199,8 @@ struct HookState {
     /// Top-level window under the cursor at the last right press (`HWND` bits): the target of
     /// the action.
     target: isize,
+    /// Where that press happened (screen pixels): the `context_menu` action clicks there.
+    press: Point,
     /// (pid, what is known about the process, tick of the check)
     process_cache: Vec<(u32, ProcessInfo, u64)>,
 }
@@ -260,11 +262,35 @@ impl HookState {
                     }
                     let root = root_window_at(info.pt);
                     self.target = root.0 as isize;
+                    self.press = pos;
                     self.passthrough_right = self.should_pass(root, settings.as_deref());
                     if self.passthrough_right {
                         self.trigger.reset();
                         return false;
                     }
+                    if let Some(c) = &settings
+                        && c.options.replace_right_click
+                    {
+                        // The wheel opens at once and a release may follow before the effects
+                        // run, so the layout that classifies it is set here.
+                        let o = &c.options;
+                        self.trigger.set_layout(layout_at(
+                            info.pt,
+                            o.scale_pct,
+                            o.inner_sectors,
+                            o.outer_sectors,
+                        ));
+                    }
+                    // The wheel opens at this point once the hold time has elapsed (at once
+                    // when it replaces the right button); the window takes the desktop
+                    // snapshot meanwhile, and the open message queued right after the press
+                    // message finds it ready.
+                    post_to_window(
+                        self.window,
+                        WM_WHEEL_PRESS,
+                        info.pt.x as isize as usize,
+                        info.pt.y as isize,
+                    );
                 }
                 EventKind::RightUp { .. } if self.passthrough_right => {
                     self.passthrough_right = false;
@@ -514,6 +540,7 @@ fn thread_main(
         swallow_escape: false,
         own_integrity: own_integrity(),
         target: 0,
+        press: Point::new(0, 0),
         process_cache: Vec::new(),
     };
     if let Err(e) = state.install() {
@@ -590,17 +617,23 @@ fn run_effect(effect: Effect) {
         Effect::StartHoldTimer(ms) => {
             with_state(|s| s.start_timer(ms));
         }
-        Effect::ReplayClick { down_pos, up_pos } => send_mouse(&[
-            mouse_input(down_pos, MOUSEEVENTF_RIGHTDOWN),
-            mouse_input(up_pos, MOUSEEVENTF_RIGHTUP),
-        ]),
+        Effect::ReplayClick { down_pos, up_pos } => {
+            discard_snapshot();
+            send_mouse(&[
+                mouse_input(down_pos, MOUSEEVENTF_RIGHTDOWN),
+                mouse_input(up_pos, MOUSEEVENTF_RIGHTUP),
+            ]);
+        }
         Effect::ReplayDragStart {
             down_pos,
             current_pos,
-        } => send_mouse(&[
-            mouse_input(down_pos, MOUSEEVENTF_RIGHTDOWN),
-            mouse_input(current_pos, MOUSE_EVENT_FLAGS(0)),
-        ]),
+        } => {
+            discard_snapshot();
+            send_mouse(&[
+                mouse_input(down_pos, MOUSEEVENTF_RIGHTDOWN),
+                mouse_input(current_pos, MOUSE_EVENT_FLAGS(0)),
+            ]);
+        }
         Effect::OpenWheel { center } => {
             let (Some(window), Some(config)) = (with_state(|s| s.window), current()) else {
                 return;
@@ -623,15 +656,15 @@ fn run_effect(effect: Effect) {
         // The window stays open and follows the cursor by itself; nothing to do.
         Effect::EnterClickMode => {}
         Effect::Select(hit) => {
-            let (Some((window, target)), Some(config)) =
-                (with_state(|s| (s.window, s.target)), current())
+            let (Some((window, target, press)), Some(config)) =
+                (with_state(|s| (s.window, s.target, s.press)), current())
             else {
                 return;
             };
             print_line(&selection_text(hit, &config));
             post_to_window(window, WM_WHEEL_CLOSE, 0, 0);
             if let Some(item) = wheel_core::item_for_hit(hit, &config) {
-                actions::run(&item.action, target, window.0 as isize);
+                actions::run(&item.action, target, press, window.0 as isize);
             }
         }
         Effect::Cancel => {
@@ -641,6 +674,13 @@ fn run_effect(effect: Effect) {
             print_line("cancelled");
             post_to_window(window, WM_WHEEL_CLOSE, 0, 0);
         }
+    }
+}
+
+/// The press did not open the wheel (a click or a drag): the window can drop its snapshot.
+fn discard_snapshot() {
+    if let Some(window) = with_state(|s| s.window) {
+        post_to_window(window, WM_WHEEL_DISCARD, 0, 0);
     }
 }
 
@@ -688,16 +728,26 @@ fn normalize(pos: i32, origin: i32, extent: i32) -> i32 {
     ((rel * 65536 + 32768) / extent).clamp(0, 65535) as i32
 }
 
-fn mouse_input(pos: Point, button: MOUSE_EVENT_FLAGS) -> INPUT {
+/// The virtual screen: left, top, width, height.
+type Desktop = (i32, i32, i32, i32);
+
+fn desktop() -> Desktop {
     // SAFETY: plain metric queries.
-    let (x, y, w, h) = unsafe {
+    unsafe {
         (
             GetSystemMetrics(SM_XVIRTUALSCREEN),
             GetSystemMetrics(SM_YVIRTUALSCREEN),
             GetSystemMetrics(SM_CXVIRTUALSCREEN),
             GetSystemMetrics(SM_CYVIRTUALSCREEN),
         )
-    };
+    }
+}
+
+fn mouse_input(pos: Point, button: MOUSE_EVENT_FLAGS) -> INPUT {
+    mouse_input_in(pos, desktop(), button)
+}
+
+fn mouse_input_in(pos: Point, (x, y, w, h): Desktop, button: MOUSE_EVENT_FLAGS) -> INPUT {
     INPUT {
         r#type: INPUT_MOUSE,
         Anonymous: INPUT_0 {
@@ -711,6 +761,20 @@ fn mouse_input(pos: Point, button: MOUSE_EVENT_FLAGS) -> INPUT {
             },
         },
     }
+}
+
+/// A right click at `pos`: both events move the cursor there. Marked as ours, so the hook lets
+/// it through to the program.
+fn right_click_inputs(pos: Point, desk: Desktop) -> [INPUT; 2] {
+    [
+        mouse_input_in(pos, desk, MOUSEEVENTF_RIGHTDOWN),
+        mouse_input_in(pos, desk, MOUSEEVENTF_RIGHTUP),
+    ]
+}
+
+/// Clicks the right button at `pos` (the context menu of the program under it).
+pub fn send_right_click(pos: Point) {
+    send_mouse(&right_click_inputs(pos, desktop()));
 }
 
 fn send_mouse(inputs: &[INPUT]) {
@@ -912,6 +976,25 @@ mod tests {
         assert!(right_edge > 65500);
         assert_eq!(normalize(-5000, -1920, 3840), 0);
         assert_eq!(normalize(9000, -1920, 3840), 65535);
+    }
+
+    #[test]
+    fn right_click_moves_to_the_point_and_is_marked() {
+        let desk = (-1920, 0, 3840, 1080);
+        let [down, up] = right_click_inputs(Point::new(0, 540), desk);
+        for (input, button) in [(down, MOUSEEVENTF_RIGHTDOWN), (up, MOUSEEVENTF_RIGHTUP)] {
+            assert_eq!(input.r#type, INPUT_MOUSE);
+            // SAFETY: built as a mouse input.
+            let mi = unsafe { input.Anonymous.mi };
+            assert_eq!(mi.dx, normalize(0, -1920, 3840));
+            assert_eq!(mi.dy, normalize(540, 0, 1080));
+            assert!((32000..33500).contains(&mi.dx));
+            assert_eq!(
+                mi.dwFlags,
+                MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | button
+            );
+            assert_eq!(mi.dwExtraInfo, MARKER);
+        }
     }
 
     #[test]

@@ -2,7 +2,9 @@
 
 use std::path::PathBuf;
 
-use wheel_core::{ThemeChoice, clamp_hold_ms, clamp_move_px, clamp_outer_sectors, clamp_scale_pct};
+use wheel_core::{
+    Hit, ThemeChoice, clamp_hold_ms, clamp_move_px, clamp_outer_sectors, clamp_scale_pct,
+};
 
 /// Values given on the command line; they override the config file only when present.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -34,6 +36,43 @@ pub struct DemoOptions {
     pub log: Option<PathBuf>,
     /// Hidden test flag: one deliberate panic to check that it is caught.
     pub test_panic: Option<PanicTest>,
+    /// Hidden flag `--at X,Y` (`--demo` only): wheel centre in screen pixels instead of the cursor.
+    pub at: Option<(i32, i32)>,
+    /// Hidden flag `--demo-hit` (`--demo` only): highlighted tile forced instead of the cursor.
+    pub demo_hit: Option<Hit>,
+    /// Hidden flag `--no-glass`: opaque look, no backdrop blur.
+    pub no_glass: bool,
+    /// Hidden flag `--no-anim` (`--demo` only): no animations whatever the settings say.
+    pub no_anim: bool,
+    /// Hidden flag `--force-anim` (`--demo` only): animate even when Windows has animations off.
+    pub force_anim: bool,
+    /// Hidden flag `--demo-close-ms N` (`--demo` only): close the demo (with the closing fade)
+    /// after N ms instead of 10 s.
+    pub close_ms: Option<u32>,
+    /// Hidden flag `--demo-linger-ms N` (`--demo` only): after the close, keep the process
+    /// alive N ms with the window hidden, as in the background (warmed up and trimmed as at the
+    /// start of `--run`), and log its memory every second.
+    pub linger_ms: Option<u32>,
+    /// Hidden flag `--glass <0..100>`: how transparent the glass is (see `glass_level`).
+    pub glass: Option<u8>,
+}
+
+impl DemoOptions {
+    /// Glass transparency forced by `--no-glass` or `--glass`; these win over the file.
+    pub fn glass_override(&self) -> Option<f32> {
+        if self.no_glass {
+            Some(0.0)
+        } else {
+            self.glass.map(|pct| f32::from(pct) / 100.0)
+        }
+    }
+
+    /// Transparency of the glass, 0 (opaque look, no glass) to 1 (most transparent); the
+    /// configuration's `glass_pct` unless a flag overrides it.
+    pub fn glass_level(&self, config_pct: u8) -> f32 {
+        self.glass_override()
+            .unwrap_or(f32::from(config_pct) / 100.0)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,6 +110,14 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
     let mut stall_hook_once = false;
     let mut stats = false;
     let mut test_panic = None;
+    let mut at = None;
+    let mut demo_hit = None;
+    let mut no_glass = false;
+    let mut no_anim = false;
+    let mut force_anim = false;
+    let mut close_ms = None;
+    let mut linger_ms = None;
+    let mut glass = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--version" => return Ok(Command::Version),
@@ -80,6 +127,23 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
             "--accept-injected" => accept_injected = true,
             "--test-stall-hook" => stall_hook_once = true,
             "--stats" => stats = true,
+            "--no-glass" => no_glass = true,
+            "--no-anim" => no_anim = true,
+            "--force-anim" => force_anim = true,
+            "--demo-close-ms" => {
+                let text = value(&mut args, &arg)?;
+                close_ms = Some(number(&text, "--demo-close-ms")?.clamp(1, 60_000) as u32);
+            }
+            "--demo-linger-ms" => {
+                let text = value(&mut args, &arg)?;
+                linger_ms = Some(number(&text, "--demo-linger-ms")?.clamp(1, 600_000) as u32);
+            }
+            "--glass" => {
+                let text = value(&mut args, &arg)?;
+                glass = Some(number(&text, "--glass")?.clamp(0, 100) as u8);
+            }
+            "--at" => at = Some(point(&value(&mut args, &arg)?)?),
+            "--demo-hit" => demo_hit = Some(forced_hit(&value(&mut args, &arg)?)?),
             "--test-panic" => {
                 test_panic = Some(match value(&mut args, &arg)?.as_str() {
                     "hook" => PanicTest::Hook,
@@ -139,7 +203,26 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
         config,
         log,
         test_panic,
+        at,
+        demo_hit,
+        no_glass,
+        no_anim,
+        force_anim,
+        close_ms,
+        linger_ms,
+        glass,
     };
+    if !demo
+        && (at.is_some()
+            || demo_hit.is_some()
+            || no_anim
+            || force_anim
+            || close_ms.is_some()
+            || linger_ms.is_some())
+    {
+        return Err("--at, --demo-hit, --no-anim, --force-anim, --demo-close-ms and --demo-linger-ms need --demo"
+            .to_string());
+    }
     if demo && matches!(test_panic, Some(PanicTest::Hook | PanicTest::Action)) {
         return Err("--test-panic hook and action need --run".to_string());
     }
@@ -165,6 +248,30 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
 fn value(args: &mut impl Iterator<Item = String>, option: &str) -> Result<String, String> {
     args.next()
         .ok_or_else(|| format!("Missing value for {option}"))
+}
+
+/// Parses `X,Y` (screen pixels).
+fn point(text: &str) -> Result<(i32, i32), String> {
+    let bad = || format!("Invalid value for --at: {text}");
+    let (x, y) = text.split_once(',').ok_or_else(bad)?;
+    let coord = |t: &str| {
+        let n = number(t, "--at")?;
+        Ok::<i32, String>(n.clamp(i32::MIN.into(), i32::MAX.into()) as i32)
+    };
+    Ok((coord(x).map_err(|_| bad())?, coord(y).map_err(|_| bad())?))
+}
+
+/// Parses `outer:N`, `inner:N` or `sub:P:K`.
+fn forced_hit(text: &str) -> Result<Hit, String> {
+    let bad = || format!("Invalid value for --demo-hit: {text}");
+    let index = |t: &str| t.parse::<u8>().map_err(|_| bad());
+    let parts: Vec<&str> = text.split(':').collect();
+    match parts[..] {
+        ["outer", n] => Ok(Hit::Outer(index(n)?)),
+        ["inner", n] => Ok(Hit::Inner(index(n)?)),
+        ["sub", p, k] => Ok(Hit::Sub(index(p)?, index(k)?)),
+        _ => Err(bad()),
+    }
 }
 
 /// Parses an integer. Any valid integer is accepted, however large: values beyond `i64` are
@@ -343,6 +450,60 @@ mod tests {
         assert!(parse_strs(&["--demo", "--test-panic", "action"]).is_err());
         assert!(parse_strs(&["--run", "--test-panic"]).is_err());
         assert!(parse_strs(&["--run", "--test-panic", "bogus"]).is_err());
+    }
+
+    #[test]
+    fn demo_position_and_forced_hit() {
+        let o = demo(&["--demo"]);
+        assert_eq!((o.at, o.demo_hit, o.no_glass), (None, None, false));
+        let o = demo(&[
+            "--at",
+            "960,-540",
+            "--demo",
+            "--demo-hit",
+            "sub:2:1",
+            "--no-glass",
+        ]);
+        assert_eq!(o.at, Some((960, -540)));
+        assert_eq!(o.demo_hit, Some(Hit::Sub(2, 1)));
+        assert!(o.no_glass);
+        assert!(!o.no_anim);
+        assert_eq!(o.close_ms, None);
+        let quick = demo(&["--demo", "--no-anim", "--demo-close-ms", "300"]);
+        assert!(quick.no_anim);
+        assert_eq!(quick.close_ms, Some(300));
+        assert!(parse_strs(&["--run", "--no-anim"]).is_err());
+        assert!(parse_strs(&["--demo", "--demo-close-ms", "x"]).is_err());
+        assert_eq!(
+            demo(&["--demo", "--demo-linger-ms", "5000"]).linger_ms,
+            Some(5000)
+        );
+        assert!(parse_strs(&["--run", "--demo-linger-ms", "5000"]).is_err());
+        assert_eq!(o.glass_level(50), 0.0);
+        assert_eq!(demo(&["--demo"]).glass_level(50), 0.5);
+        assert_eq!(demo(&["--demo"]).glass_level(80), 0.8);
+        assert_eq!(demo(&["--demo", "--glass", "75"]).glass_level(50), 0.75);
+        assert_eq!(demo(&["--demo", "--glass", "400"]).glass, Some(100));
+        assert!(parse_strs(&["--demo", "--glass", "x"]).is_err());
+        assert_eq!(
+            demo(&["--demo", "--demo-hit", "outer:3"]).demo_hit,
+            Some(Hit::Outer(3))
+        );
+        assert_eq!(
+            demo(&["--demo", "--demo-hit", "inner:0"]).demo_hit,
+            Some(Hit::Inner(0))
+        );
+        for args in [
+            &["--demo", "--at", "5"][..],
+            &["--demo", "--at", "a,b"],
+            &["--demo", "--at"],
+            &["--demo", "--demo-hit", "sub:1"],
+            &["--demo", "--demo-hit", "outer:x"],
+            &["--demo", "--demo-hit", "middle:1"],
+            &["--run", "--at", "1,2"],
+        ] {
+            assert!(parse_strs(args).is_err(), "{args:?}");
+        }
     }
 
     #[test]

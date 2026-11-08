@@ -1,7 +1,8 @@
 //! Label fitting: picks line split and font scale from measured text sizes. Pure logic, so it is
 //! tested with a fake measure function instead of DirectWrite.
 
-/// Smallest font scale tried before falling back to ellipsis trimming.
+/// Smallest font scale (relative to the base size) tried before falling back to ellipsis
+/// trimming; callers can raise it with an absolute minimum size.
 pub const MIN_SCALE: f32 = 0.75;
 const STEP: f32 = 0.05;
 
@@ -9,14 +10,17 @@ const STEP: f32 = 0.05;
 pub struct Fitted {
     /// Text to draw; a `\n` separates the two lines.
     pub text: String,
-    /// Font size relative to the base size (`MIN_SCALE..=1.0`).
+    /// Font size relative to the base size (the floor given to `fit` up to 1.0, or the floor itself
+    /// when that is above 1.0).
     pub scale: f32,
     /// True when nothing fits even at `MIN_SCALE` and the text has to be trimmed.
     pub trim: bool,
 }
 
 /// Chooses how to draw `text`: one line at the base size, else two lines at the base size, else
-/// the same two tries at smaller sizes down to `MIN_SCALE`, else trimmed at `MIN_SCALE`.
+/// the same two tries at smaller sizes down to the floor, else trimmed at the floor. The floor is
+/// `MIN_SCALE` or `min_scale` (an absolute minimum font size expressed relative to the base size),
+/// whichever is larger; when it is above 1.0 the base size itself is raised to it.
 ///
 /// `measure(text, scale)` returns the (width, height) of the text at that scale (`\n` starts a new
 /// line); `avail(height)` returns the width available for a block of that height, or 0 or less
@@ -25,12 +29,14 @@ pub fn fit(
     text: &str,
     measure: impl Fn(&str, f32) -> (f32, f32),
     avail: impl Fn(f32) -> f32,
+    min_scale: f32,
 ) -> Fitted {
+    let floor = MIN_SCALE.max(min_scale);
     let fits = |t: &str, s: f32| {
         let (w, h) = measure(t, s);
         w <= avail(h)
     };
-    let mut scale = 1.0;
+    let mut scale = 1.0f32.max(floor);
     loop {
         if fits(text, scale) {
             return Fitted {
@@ -48,17 +54,17 @@ pub fn fit(
                 trim: false,
             };
         }
-        if scale <= MIN_SCALE {
+        if scale <= floor {
             break;
         }
-        scale = (scale - STEP).max(MIN_SCALE);
+        scale = (scale - STEP).max(floor);
     }
     // Trimmed: use two lines when their height fits at all, like a long name in the mockup.
-    let two = best_split(text, |t| measure(t, MIN_SCALE).0)
-        .filter(|t| avail(measure(t, MIN_SCALE).1) > 0.0);
+    let two =
+        best_split(text, |t| measure(t, floor).0).filter(|t| avail(measure(t, floor).1) > 0.0);
     Fitted {
         text: two.unwrap_or_else(|| text.to_string()),
-        scale: MIN_SCALE,
+        scale: floor,
         trim: true,
     }
 }
@@ -155,24 +161,24 @@ mod tests {
 
     #[test]
     fn one_line_at_base_size() {
-        let f = fit("Kopiuj", measure, avail_for(100.0));
+        let f = fit("Kopiuj", measure, avail_for(100.0), 0.0);
         assert_eq!((f.text.as_str(), f.scale, f.trim), ("Kopiuj", 1.0, false));
     }
 
     #[test]
     fn two_lines_at_base_size_with_balanced_split() {
         // 17 chars do not fit in 120 px; the best split is after "bbbbbbb".
-        let f = fit("aaa bbbbbbb cc dd", measure, avail_for(120.0));
+        let f = fit("aaa bbbbbbb cc dd", measure, avail_for(120.0), 0.0);
         assert_eq!(f.text, "aaa bbbbbbb\ncc dd");
         assert_eq!((f.scale, f.trim), (1.0, false));
-        let f = fit("aaaa bb cccccc", measure, avail_for(80.0));
+        let f = fit("aaaa bb cccccc", measure, avail_for(80.0), 0.0);
         assert_eq!(f.text, "aaaa bb\ncccccc");
     }
 
     #[test]
     fn single_word_shrinks_in_steps() {
         // 10 chars = 100 px at 1.0; 91 px needs scale 0.9.
-        let f = fit("aaaaaaaaaa", measure, avail_for(91.0));
+        let f = fit("aaaaaaaaaa", measure, avail_for(91.0), 0.0);
         assert_eq!(f.text, "aaaaaaaaaa");
         assert!((f.scale - 0.9).abs() < 1e-4);
         assert!(!f.trim);
@@ -180,21 +186,21 @@ mod tests {
 
     #[test]
     fn prefers_base_size_two_lines_over_smaller_one_line() {
-        let f = fit("aaaaa bbbbb", measure, avail_for(60.0));
+        let f = fit("aaaaa bbbbb", measure, avail_for(60.0), 0.0);
         assert_eq!(f.text, "aaaaa\nbbbbb");
         assert_eq!(f.scale, 1.0);
     }
 
     #[test]
     fn trims_at_min_scale_when_nothing_fits() {
-        let f = fit("aaaaaaaaaaaa", measure, avail_for(50.0));
+        let f = fit("aaaaaaaaaaaa", measure, avail_for(50.0), 0.0);
         assert_eq!(f.text, "aaaaaaaaaaaa");
         assert_eq!((f.scale, f.trim), (MIN_SCALE, true));
     }
 
     #[test]
     fn trimmed_text_keeps_two_lines_when_they_fit_the_height() {
-        let f = fit("aaaaaaaaaaaa bbbbbbbbbbbb", measure, avail_for(50.0));
+        let f = fit("aaaaaaaaaaaa bbbbbbbbbbbb", measure, avail_for(50.0), 0.0);
         assert_eq!(f.text, "aaaaaaaaaaaa\nbbbbbbbbbbbb");
         assert!(f.trim);
     }
@@ -203,9 +209,27 @@ mod tests {
     fn height_limit_forces_one_line() {
         // Two lines are 19.2 px tall even at the minimum scale: only 15 px are available.
         let avail = |h: f32| if h <= 15.0 { 100.0 } else { 0.0 };
-        let f = fit("aaaaaaaaaa bbbbbbbbbb", measure, avail);
+        let f = fit("aaaaaaaaaa bbbbbbbbbb", measure, avail, 0.0);
         assert_eq!(f.text, "aaaaaaaaaa bbbbbbbbbb");
         assert!(f.trim);
+    }
+
+    #[test]
+    fn absolute_minimum_raises_the_floor_and_trims() {
+        // Floor 0.9: 12 chars need 108 px at 0.9, only 100 available -> trimmed at 0.9.
+        let f = fit("aaaaaaaaaaaa", measure, avail_for(100.0), 0.9);
+        assert_eq!((f.scale, f.trim), (0.9, true));
+        // The same text fits at 0.8 when the floor does not forbid it.
+        let f = fit("aaaaaaaaaaaa", measure, avail_for(100.0), 0.0);
+        assert!(f.scale < 0.9 && !f.trim, "{f:?}");
+    }
+
+    #[test]
+    fn floor_above_base_size_raises_the_start() {
+        let f = fit("aaaaa", measure, avail_for(100.0), 1.4);
+        assert!((f.scale - 1.4).abs() < 1e-4 && !f.trim, "{f:?}");
+        let f = fit("aaaaa", measure, avail_for(60.0), 1.4);
+        assert!((f.scale - 1.4).abs() < 1e-4 && f.trim, "{f:?}");
     }
 
     #[test]

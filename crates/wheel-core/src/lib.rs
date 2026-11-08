@@ -6,6 +6,7 @@ pub mod icon;
 pub mod keys;
 pub mod layout;
 pub mod log;
+pub mod look;
 pub mod submenu;
 pub mod trigger;
 
@@ -19,6 +20,7 @@ pub use geometry::{
 };
 pub use keys::{Shortcut, is_extended, parse_shortcut};
 pub use layout::{DEFAULT_SCALE_PCT, Layout, MAX_SCALE_PCT, MIN_SCALE_PCT, clamp_scale_pct};
+pub use look::{DEFAULT_GLASS_PCT, MAX_GLASS_PCT, MIN_GLASS_PCT, clamp_glass_pct};
 pub use submenu::{arc_for_hit, item_for_hit};
 pub use trigger::{
     DEFAULT_HOLD_MS, DEFAULT_MOVE_PX, Effect, Event, EventKind, MAX_HOLD_MS, MAX_MOVE_PX,

@@ -13,8 +13,8 @@ use windows::Win32::Foundation::MAX_PATH;
 use windows::Win32::Graphics::Direct2D::{ID2D1Bitmap, ID2D1DeviceContext};
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_NORMAL,
-    DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER, IDWriteFactory,
-    IDWriteTextFormat,
+    DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_RANGE,
+    IDWriteFactory, IDWriteTextFormat,
 };
 use windows::Win32::Graphics::Imaging::{
     CLSID_WICImagingFactory, GUID_WICPixelFormat32bppPBGRA, IWICBitmapSource, IWICImagingFactory,
@@ -33,11 +33,36 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, HICON};
 use windows::core::{Interface, PCWSTR, Result, w};
 
+/// Largest side of a glyph's visible outline relative to its icon box, so every glyph looks as
+/// big as a file icon regardless of how much of the em square the font uses.
+const GLYPH_INK_FRACTION: f32 = 0.72;
+/// Limits of the correction, so a tiny or huge outline cannot blow a glyph up or shrink it away.
+const GLYPH_SCALE_RANGE: (f32, f32) = (0.5, 1.5);
+
+/// How to draw a glyph so its outline is `GLYPH_INK_FRACTION` of the icon box and centred in it;
+/// measured once when the cache is built.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GlyphFit {
+    /// Factor for the font size (the icon box side is the base size).
+    pub scale: f32,
+    /// Offset of the outline centre from the box centre at the base size; multiply by `scale`.
+    pub dx: f32,
+    pub dy: f32,
+}
+
+impl GlyphFit {
+    const IDENTITY: GlyphFit = GlyphFit {
+        scale: 1.0,
+        dx: 0.0,
+        dy: 0.0,
+    };
+}
+
 /// What a tile draws once loaded.
 pub enum TileIcon<'a> {
     Bitmap(&'a ID2D1Bitmap),
     /// Draw with `Icons::glyph_format`.
-    Glyph(char),
+    Glyph(char, GlyphFit),
     Letter(char),
     Blank,
 }
@@ -45,7 +70,7 @@ pub enum TileIcon<'a> {
 /// What one tile resolved to.
 enum Tile {
     Bitmap(ID2D1Bitmap),
-    Glyph(char),
+    Glyph(char, GlyphFit),
     Letter(char),
     Blank,
 }
@@ -78,6 +103,8 @@ impl Icons {
             .and_then(|(name, _)| glyph_text_format(dwrite, name, sizes.outer as f32).ok());
         let mut loader = Loader {
             ctx,
+            dwrite,
+            glyph_format: glyph_format.as_ref(),
             wic: wic_factory().ok(),
             has_glyph: font.map(|(_, has)| has),
             bitmaps: HashMap::new(),
@@ -111,7 +138,7 @@ impl Icons {
         };
         match tile {
             Some(Tile::Bitmap(b)) => TileIcon::Bitmap(b),
-            Some(Tile::Glyph(c)) => TileIcon::Glyph(*c),
+            Some(Tile::Glyph(c, fit)) => TileIcon::Glyph(*c, *fit),
             Some(Tile::Letter(c)) => TileIcon::Letter(*c),
             Some(Tile::Blank) | None => TileIcon::Blank,
         }
@@ -129,6 +156,9 @@ type GlyphCheck = Box<dyn Fn(char) -> bool>;
 
 struct Loader<'a> {
     ctx: &'a ID2D1DeviceContext,
+    dwrite: &'a IDWriteFactory,
+    /// Format the glyphs are measured (and later drawn) with.
+    glyph_format: Option<&'a IDWriteTextFormat>,
     wic: Option<IWICImagingFactory>,
     /// Whether the glyph font has a character; `None` without a glyph font.
     has_glyph: Option<GlyphCheck>,
@@ -145,11 +175,53 @@ impl Loader<'_> {
                 None => letter(),
             },
             IconSpec::Glyph(c) => match &self.has_glyph {
-                Some(has) if has(c) => Tile::Glyph(c),
+                Some(has) if has(c) => Tile::Glyph(c, self.glyph_fit(c, size)),
                 _ => letter(),
             },
             IconSpec::Letter(c) => Tile::Letter(c),
             IconSpec::Blank => Tile::Blank,
+        }
+    }
+
+    /// Measures the outline of `c` in a `size` px box (DirectWrite overhang metrics of a large
+    /// layout, so nothing is cut off) and derives how to scale and shift it.
+    fn glyph_fit(&self, c: char, size: u32) -> GlyphFit {
+        let Some(format) = self.glyph_format else {
+            return GlyphFit::IDENTITY;
+        };
+        let em = size as f32;
+        let side = em * 4.0;
+        let mut buf = [0u16; 2];
+        let text = c.encode_utf16(&mut buf);
+        // SAFETY: plain COM calls with valid arguments.
+        let overhang = unsafe {
+            let layout = self.dwrite.CreateTextLayout(text, format, side, side);
+            layout
+                .and_then(|l| {
+                    l.SetFontSize(
+                        em,
+                        DWRITE_TEXT_RANGE {
+                            startPosition: 0,
+                            length: text.len() as u32,
+                        },
+                    )?;
+                    l.GetOverhangMetrics()
+                })
+                .ok()
+        };
+        let Some(o) = overhang else {
+            return GlyphFit::IDENTITY;
+        };
+        // Overhang is how far the outline reaches beyond each box edge (negative: inside it).
+        let (w, h) = (side + o.left + o.right, side + o.top + o.bottom);
+        let ink = w.max(h);
+        if ink < 1.0 {
+            return GlyphFit::IDENTITY;
+        }
+        GlyphFit {
+            scale: (em * GLYPH_INK_FRACTION / ink).clamp(GLYPH_SCALE_RANGE.0, GLYPH_SCALE_RANGE.1),
+            dx: (o.right - o.left) / 2.0,
+            dy: (o.bottom - o.top) / 2.0,
         }
     }
 
@@ -430,7 +502,7 @@ mod tests {
         EditCommand::Properties,
     ];
 
-    const SYSTEM: [SystemAction; 8] = [
+    const SYSTEM: [SystemAction; 9] = [
         SystemAction::Lock,
         SystemAction::CloseWindow,
         SystemAction::MinimizeWindow,
@@ -439,6 +511,7 @@ mod tests {
         SystemAction::VolumeUp,
         SystemAction::VolumeDown,
         SystemAction::Screenshot,
+        SystemAction::ContextMenu,
     ];
 
     #[test]

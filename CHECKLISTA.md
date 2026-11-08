@@ -68,14 +68,21 @@
 - [x] Narzędzie `tools/soak.ps1` (test i pomiary); test wielogodzinny pominięty (decyzja)
 - [ ] Znany błąd: przytrzymanie tuż po zamknięciu koła Escape czasem nie otwiera koła
 
-## 08 instalator-i-wydanie
-- [ ] Instalator, który wypisuje zainstalowaną wersję
+## 08 wyglad-i-animacje
+- [x] Podkład pod kafelkami, cień, zaokrąglone kafelki, znacznik podmenu nie zasłania nazwy
+- [x] Szkło: rozmyte tło pod kołem, połysk, poświata tekstu; moc szkła 0–100% w opcjach
+- [x] Animacje otwarcia, zamknięcia, podświetlenia i łuku; opcja wyłączenia, zgodność z ustawieniem Windows
+- [x] Renderer gotowy przed pierwszym otwarciem (także po zmianie konfiguracji), migawka tła przy wciśnięciu
+- [x] Otwarcie na żywo: mediana 6,3 ms
+- [x] Opcja „Koło zamiast prawego przycisku”
+- [x] „Właściwości” z koła w Eksploratorze i na pulpicie
+- [x] Start w tle bez dostępu do kursora (główny monitor; test jednostkowy)
+- [x] Akcja „Menu kontekstowe”
+- [x] Podgląd w edytorze z nowym wyglądem
+- [x] Pamięć w tle: szkło 22,9 MB (nazwy) / 25,0 MB (ikony), bez szkła 13,4 / 16,7 MB (po wyłączeniu szkła w działającym kole do restartu 19,3 / 22,3 MB)
+
+## 09 instalator-i-wydanie
+- [ ] Instalator (Inno Setup, jeden użytkownik), który wypisuje zainstalowaną wersję
 - [ ] Autostart przy logowaniu
 - [ ] Ikona w zasobniku systemowym (włącz/wyłącz, edytor, zamknij)
-- [ ] Wydanie z opisem zgodnym z README
-
-## 09 wyglad-i-animacje
-- [ ] Dopracowany wygląd koła i efekty
-- [ ] Animacje otwierania, zamykania i podświetlenia
-- [ ] Renderer i ikony przygotowane po wczytaniu konfiguracji (otwarcie po zmianie konfiguracji 89 ms)
-- [ ] Pamięć w widoku ikon do 15 MB (dziś 17 MB)
+- [ ] Wydanie 1.0.0 z opisem zgodnym z README

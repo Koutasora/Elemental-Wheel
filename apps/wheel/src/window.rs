@@ -3,9 +3,11 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 
 use wheel_core::{Config, Hit, Layout, SubArc, arc_for_hit, hit_test_arc};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows::Win32::Graphics::Dwm::DwmFlush;
 use windows::Win32::Graphics::Gdi::{MONITOR_DEFAULTTONEAREST, MonitorFromPoint};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::{
@@ -23,6 +25,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{Error, PCWSTR, Result, w};
 
+use crate::anim::{self, Anim};
 use crate::args::{DemoOptions, PanicTest, RunOptions};
 use crate::guard;
 use crate::hook::{self, HookOptions};
@@ -42,16 +45,32 @@ pub const WM_WHEEL_CLOSE: u32 = WM_APP + 2;
 pub const WM_WHEEL_QUIT: u32 = WM_APP + 3;
 /// Posted by the config folder watcher: something in the folder changed.
 pub const WM_CONFIG_CHANGED: u32 = WM_APP + 4;
+/// Posted by the hook thread when the right button goes down and the wheel may open at
+/// (wparam, lparam) = (x, y): take the snapshot of the desktop now.
+pub const WM_WHEEL_PRESS: u32 = WM_APP + 5;
+/// Posted by the hook thread when that press turned out to be a click or a drag: drop the snapshot.
+pub const WM_WHEEL_DISCARD: u32 = WM_APP + 6;
 
 const POLL_TIMER: usize = 1;
 const POLL_MS: u32 = 16;
 const CLOSE_TIMER: usize = 2;
 const CONFIG_TIMER: usize = 3;
 const STATS_TIMER: usize = 4;
+/// Hides the window when the closing fade is over.
+const CLOSE_FADE_TIMER: usize = 5;
+/// Hidden `--demo-linger-ms`: logs the memory of the hidden demo every second, then ends it.
+const LINGER_TIMER: usize = 6;
+const LINGER_TICK_MS: u32 = 1000;
+/// Second trim after the wheel was hidden: the first one frees only part of the memory, the rest
+/// is released by the driver once it has gone idle.
+const TRIM_TIMER: usize = 7;
+const TRIM_DELAY_MS: u32 = 1000;
 const STATS_MS: u32 = 60_000;
 /// Wait after a change so that an editor can finish saving; further changes restart the wait.
 const CONFIG_DEBOUNCE_MS: u32 = 100;
 const CLOSE_AFTER_MS: u32 = 10_000;
+/// Wait beyond the closing fade, so that its last frame is shown before the window goes.
+const FADE_MARGIN_MS: u32 = 15;
 
 struct State {
     renderer: Renderer,
@@ -61,7 +80,14 @@ struct State {
     hit: Hit,
     /// The submenu arc shown; this window owns it.
     arc: Option<SubArc>,
+    /// Hidden `--demo-hit`: the highlight stays on this tile whatever the cursor does.
+    forced: bool,
     config: Arc<Config>,
+    /// Highlight and arc transitions; animations also fade the demo out.
+    anim: Anim,
+    animate: bool,
+    /// Hidden `--demo-linger-ms`: how long the process stays after the close.
+    linger_ms: Option<u32>,
     error: Option<Error>,
 }
 
@@ -70,7 +96,10 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
     // SAFETY: called once at startup before any window exists.
     unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)? };
 
-    let cursor = cursor_pos()?;
+    let cursor = match options.at {
+        Some((x, y)) => POINT { x, y },
+        None => cursor_pos()?,
+    };
     let (_, config) = Settings::load(config_path, options.overrides);
     let o = &config.options;
     let layout = Layout::new(
@@ -96,10 +125,40 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
         left as f32 + size as f32 / 2.0,
         top as f32 + size as f32 / 2.0,
     );
-    let (hit, arc) = track(&layout, &config, center, cursor, None);
-    let renderer = match Renderer::new(hwnd, layout, theme::palette(o.theme), config.clone())
-        .and_then(|r| r.draw(hit, arc).map(|()| r))
-    {
+    let (hit, arc) = match options.demo_hit {
+        Some(hit) => (hit, arc_for_hit(hit, &config)),
+        None => track(&layout, &config, center, cursor, None),
+    };
+    let animate = anim::should_animate(
+        o.animations && !options.no_anim,
+        options.force_anim || anim::windows_animations(),
+    );
+    // An arc already open slides out once the wheel has faded in.
+    let anim = Anim::new(
+        animate,
+        hit,
+        arc.map(|_| anim::OPEN_MS as f32),
+        Instant::now(),
+    );
+    let renderer = match Renderer::new(
+        hwnd,
+        layout,
+        theme::palette(o.theme),
+        config.clone(),
+        options.glass_level(config.options.glass_pct),
+    )
+    .and_then(|r| {
+        if options.linger_ms.is_some() {
+            // As the background process starts: warm up, first frame, trim.
+            r.warm(true);
+            r.draw(Hit::Center, None, &Anim::settled(Hit::Center))?;
+            r.trim();
+        }
+        // The window is still hidden, so the snapshot shows the desktop without it.
+        log_glass("demo", r.prepare(left, top));
+        r.prepare_open(animate)?;
+        r.draw(hit, arc, &anim).map(|()| r)
+    }) {
         Ok(r) => r,
         Err(e) => {
             // SAFETY: `hwnd` was created above and is destroyed only here.
@@ -113,7 +172,11 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
         center,
         hit,
         arc,
+        forced: options.demo_hit.is_some(),
         config,
+        anim,
+        animate,
+        linger_ms: options.linger_ms,
         error: None,
     }));
 
@@ -122,7 +185,11 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, state as isize);
         // The return value is only the previous visibility.
         let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-        start_timers(hwnd).and_then(|()| message_loop())
+        (*state)
+            .renderer
+            .start_open(animate)
+            .and_then(|()| start_timers(hwnd, options.close_ms.unwrap_or(CLOSE_AFTER_MS)))
+            .and_then(|()| message_loop())
     };
     // SAFETY: the window is destroyed (if it still exists) and the pointer cleared before the
     // state is freed, so nothing can reach it afterwards. `state` comes from `Box::into_raw`.
@@ -133,6 +200,29 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
     };
     loop_result?;
     state.error.map_or(Ok(()), Err)
+}
+
+/// Ends the demo after the close: at once, or with `--demo-linger-ms` hides the window like the
+/// background process does, frees the snapshot and keeps logging memory until the time is up.
+///
+/// # Safety
+/// `hwnd` is the demo window of this thread; no `State` reference is alive.
+unsafe fn end_demo(hwnd: HWND) {
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        let Some(s) = state(hwnd).filter(|s| s.linger_ms.is_some()) else {
+            let _ = DestroyWindow(hwnd);
+            return;
+        };
+        let _ = KillTimer(Some(hwnd), POLL_TIMER);
+        let _ = ShowWindow(hwnd, SW_HIDE);
+        s.renderer.release_snapshot();
+        s.renderer.trim();
+        stats::log_memory();
+        if SetTimer(Some(hwnd), LINGER_TIMER, LINGER_TICK_MS, None) == 0 {
+            let _ = DestroyWindow(hwnd);
+        }
+    }
 }
 
 /// Creates the (hidden) non-activating topmost popup of class `class_name`; `extra` is added to
@@ -174,8 +264,8 @@ fn create_popup(
     }
 }
 
-fn start_timers(hwnd: HWND) -> Result<()> {
-    for (id, ms) in [(POLL_TIMER, POLL_MS), (CLOSE_TIMER, CLOSE_AFTER_MS)] {
+fn start_timers(hwnd: HWND, close_ms: u32) -> Result<()> {
+    for (id, ms) in [(POLL_TIMER, POLL_MS), (CLOSE_TIMER, close_ms)] {
         // SAFETY: `hwnd` is a live window of this thread.
         if unsafe { SetTimer(Some(hwnd), id, ms, None) } == 0 {
             return Err(Error::from_thread());
@@ -208,6 +298,16 @@ fn cursor_pos() -> Result<POINT> {
     // SAFETY: `pt` is a valid out buffer.
     unsafe { GetCursorPos(&mut pt)? };
     Ok(pt)
+}
+
+/// Where the background process takes its first layout from: the cursor, or when Windows refuses
+/// to give it (disconnected or minimised remote session) the origin, which lies on the primary
+/// monitor.
+fn start_point(cursor: Result<POINT>) -> POINT {
+    cursor.unwrap_or_else(|e| {
+        wheel_core::log_line!("cannot read the cursor position ({e}); using the primary monitor");
+        POINT::default()
+    })
 }
 
 /// Wheel layout for the monitor under `pt` (96 DPI if its DPI cannot be read).
@@ -268,19 +368,28 @@ unsafe fn state<'a>(hwnd: HWND) -> Option<&'a mut State> {
     unsafe { (GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut State).as_mut() }
 }
 
-/// Re-reads the cursor and redraws when the highlighted sector changed.
+/// Re-reads the cursor and redraws when the highlighted sector changed or a transition is
+/// still running.
 fn poll(state: &mut State) -> Result<()> {
-    let (hit, arc) = track(
-        &state.layout,
-        &state.config,
-        state.center,
-        cursor_pos()?,
-        state.arc,
-    );
-    if hit != state.hit || arc != state.arc {
+    let mut changed = false;
+    if !state.forced {
+        let (hit, arc) = track(
+            &state.layout,
+            &state.config,
+            state.center,
+            cursor_pos()?,
+            state.arc,
+        );
+        changed = hit != state.hit || arc != state.arc;
+        if arc != state.arc && arc.is_some() {
+            state.anim.restart_arc();
+        }
         state.hit = hit;
         state.arc = arc;
-        state.renderer.draw(hit, arc)?;
+        state.anim.set_target(hit);
+    }
+    if state.anim.tick(changed, Instant::now()) {
+        state.renderer.draw(state.hit, state.arc, &state.anim)?;
     }
     Ok(())
 }
@@ -308,7 +417,42 @@ fn wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESU
                 return LRESULT(0);
             }
             WM_TIMER if wparam.0 == CLOSE_TIMER => {
-                let _ = DestroyWindow(hwnd);
+                let _ = KillTimer(Some(hwnd), CLOSE_TIMER);
+                stats::log_memory();
+                let fading =
+                    state(hwnd).is_some_and(|s| s.animate && s.renderer.start_close().is_ok());
+                if fading {
+                    let _ = KillTimer(Some(hwnd), POLL_TIMER);
+                    if SetTimer(
+                        Some(hwnd),
+                        CLOSE_FADE_TIMER,
+                        anim::CLOSE_MS + FADE_MARGIN_MS,
+                        None,
+                    ) != 0
+                    {
+                        return LRESULT(0);
+                    }
+                }
+                end_demo(hwnd);
+                return LRESULT(0);
+            }
+            WM_TIMER if wparam.0 == CLOSE_FADE_TIMER => {
+                let _ = KillTimer(Some(hwnd), CLOSE_FADE_TIMER);
+                end_demo(hwnd);
+                return LRESULT(0);
+            }
+            WM_TIMER if wparam.0 == LINGER_TIMER => {
+                // A second trim a moment after the first, as the background process does.
+                if let Some(s) = state(hwnd) {
+                    s.renderer.trim();
+                }
+                stats::log_memory();
+                if state(hwnd).is_some_and(|s| {
+                    s.linger_ms = s.linger_ms.map(|ms| ms.saturating_sub(LINGER_TICK_MS));
+                    s.linger_ms == Some(0)
+                }) {
+                    let _ = DestroyWindow(hwnd);
+                }
                 return LRESULT(0);
             }
             WM_TIMER if wparam.0 == POLL_TIMER => {
@@ -342,6 +486,8 @@ struct RunState {
     /// `None` only while it is being re-created for another monitor DPI.
     renderer: Option<Renderer>,
     palette: Palette,
+    /// Glass transparency forced by a command line flag; otherwise the file's `glass_pct` counts.
+    glass_override: Option<f32>,
     config: Arc<Config>,
     settings: Settings,
     /// Size of the wheel in use. A reloaded file changes it only after the open that found the
@@ -355,11 +501,29 @@ struct RunState {
     hit: Hit,
     /// The submenu arc shown; this window owns it and publishes it to the hook thread.
     arc: Option<SubArc>,
+    /// Highlight and arc transitions of the wheel shown.
+    anim: Anim,
+    /// The wheel shown was opened with animations, so it also fades out.
+    animate: bool,
+    /// The closing fade is running; the window is still visible.
+    closing: bool,
     error: Option<Error>,
 }
 
+impl RunState {
+    /// Glass look wanted (the renderer still falls back to opaque when it cannot be had).
+    fn glass_level(&self) -> f32 {
+        glass_level(self.glass_override, &self.config)
+    }
+}
+
+fn glass_level(glass_override: Option<f32>, config: &Config) -> f32 {
+    glass_override.unwrap_or(f32::from(config.options.glass_pct) / 100.0)
+}
+
 /// Background mode: a hidden click-through window plus the hook thread; runs until
-/// `WM_WHEEL_QUIT`. The render resources are created once up front so that opening is fast.
+/// `WM_WHEEL_QUIT`. The render resources are created up front (and again after a configuration
+/// change) so that opening is fast.
 pub fn run_background(options: &RunOptions, config_path: PathBuf) -> Result<()> {
     // SAFETY: called once at startup before any window exists.
     unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)? };
@@ -371,14 +535,20 @@ pub fn run_background(options: &RunOptions, config_path: PathBuf) -> Result<()> 
     };
     let o = &config.options;
     let (scale_pct, inner_sectors, sectors) = (o.scale_pct, o.inner_sectors, o.outer_sectors);
-    let layout = layout_at(cursor_pos()?, scale_pct, inner_sectors, sectors);
+    let layout = layout_at(start_point(cursor_pos()), scale_pct, inner_sectors, sectors);
     let size = layout.size_px() as i32;
     let hwnd = create_popup(RUN_CLASS, run_wnd_proc, WS_EX_TRANSPARENT, (0, 0, size))?;
 
     let palette = theme::palette(config.options.theme);
-    let renderer = match Renderer::new(hwnd, layout, palette, config.clone())
-        .and_then(|r| r.draw(Hit::Center, None).map(|()| r))
-    {
+    let glass_override = options.wheel.glass_override();
+    let renderer = match build_renderer(
+        hwnd,
+        layout,
+        palette,
+        &config,
+        glass_level(glass_override, &config),
+        true,
+    ) {
         Ok(r) => r,
         Err(e) => {
             // SAFETY: `hwnd` was created above and is destroyed only here.
@@ -389,6 +559,7 @@ pub fn run_background(options: &RunOptions, config_path: PathBuf) -> Result<()> 
     let state = Box::into_raw(Box::new(RunState {
         renderer: Some(renderer),
         palette,
+        glass_override,
         config: config.clone(),
         settings,
         scale_pct,
@@ -398,6 +569,9 @@ pub fn run_background(options: &RunOptions, config_path: PathBuf) -> Result<()> 
         center: (0.0, 0.0),
         hit: Hit::Center,
         arc: None,
+        anim: Anim::settled(Hit::Center),
+        animate: false,
+        closing: false,
         error: None,
     }));
     // SAFETY: `state` stays valid until it is reclaimed below, after the message loop ended.
@@ -447,9 +621,39 @@ unsafe fn run_state<'a>(hwnd: HWND) -> Option<&'a mut RunState> {
     unsafe { (GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut RunState).as_mut() }
 }
 
-/// Picks up a changed config file: the hook thread gets the new configuration, the wheel the
-/// new look (rebuilt in `open_wheel`).
-fn reload(s: &mut RunState, apply_layout: bool) {
+/// Creates the renderer with everything it would otherwise build at the first open (see
+/// `Renderer::warm`) and shows its first frame.
+fn build_renderer(
+    hwnd: HWND,
+    layout: Layout,
+    palette: Palette,
+    config: &Arc<Config>,
+    glass: f32,
+    wait_gpu: bool,
+) -> Result<Renderer> {
+    let started = Instant::now();
+    let renderer = Renderer::new(hwnd, layout, palette, config.clone(), glass)?;
+    renderer.warm(wait_gpu);
+    renderer.draw(Hit::Center, None, &Anim::settled(Hit::Center))?;
+    // The window is still hidden here; what the warm-up left in caches is not needed any more.
+    renderer.trim();
+    // The second trim, as after a close (the first frees only part of the memory); it is skipped
+    // if the wheel is shown by then.
+    // SAFETY: `hwnd` is the live window of this thread. A failure only means no second trim.
+    let _ = unsafe { SetTimer(Some(hwnd), TRIM_TIMER, TRIM_DELAY_MS, None) };
+    if stats::enabled() {
+        wheel_core::log_line!(
+            "stats: renderer built in {} ms (gpu wait {wait_gpu})",
+            started.elapsed().as_millis()
+        );
+    }
+    Ok(renderer)
+}
+
+/// Picks up a changed config file: the hook thread gets the new configuration. When the wheel is
+/// hidden (`apply_layout`) the renderer with the new look is built at once; otherwise it is
+/// rebuilt in `open_wheel`.
+fn reload(hwnd: HWND, s: &mut RunState, apply_layout: bool) {
     if let Some(config) = s.settings.refresh() {
         hook::publish(config.clone());
         s.palette = theme::palette(config.options.theme);
@@ -460,7 +664,20 @@ fn reload(s: &mut RunState, apply_layout: bool) {
             s.sectors = config.options.outer_sectors;
         }
         s.config = config;
+        // The old renderer goes first, a window can have only one composition target.
         s.renderer = None;
+        if apply_layout {
+            let at = cursor_pos().unwrap_or_default();
+            let layout = layout_at(at, s.scale_pct, s.inner_sectors, s.sectors);
+            match build_renderer(hwnd, layout, s.palette, &s.config, s.glass_level(), true) {
+                Ok(renderer) => {
+                    s.renderer = Some(renderer);
+                    s.layout = layout;
+                }
+                // The open will try again and report the error.
+                Err(e) => wheel_core::log_line!("cannot rebuild the renderer after a reload: {e}"),
+            }
+        }
     }
 }
 
@@ -477,7 +694,15 @@ fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<OpenKind> {
         // The monitor DPI differs: size and fonts change, so the render resources are rebuilt.
         // The old ones go first, a window can have only one composition target.
         s.renderer = None;
-        s.renderer = Some(Renderer::new(hwnd, layout, s.palette, s.config.clone())?);
+        s.renderer = Some(build_renderer(
+            hwnd,
+            layout,
+            s.palette,
+            &s.config,
+            s.glass_level(),
+            // The open must not wait; the memory evens out at the next rebuild or trim.
+            false,
+        )?);
         s.layout = layout;
     }
     let size = layout.size_px() as i32;
@@ -489,8 +714,17 @@ fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<OpenKind> {
     // A new wheel starts without an arc.
     (s.hit, s.arc) = track(&layout, &s.config, s.center, cursor_pos()?, None);
     hook::publish_arc(s.arc);
+    s.animate = anim::should_animate(s.config.options.animations, anim::windows_animations());
+    s.anim = Anim::new(s.animate, s.hit, None, Instant::now());
     if let Some(renderer) = &s.renderer {
-        renderer.draw(s.hit, s.arc)?;
+        // The window is hidden until SetWindowPos below, so the snapshot shows the desktop
+        // without it.
+        let times = renderer.prepare(left, top);
+        if stats::enabled() {
+            log_glass("open", times);
+        }
+        renderer.prepare_open(s.animate)?;
+        renderer.draw(s.hit, s.arc, &s.anim)?;
     }
     // SAFETY: `hwnd` is the live window of this thread.
     unsafe {
@@ -507,29 +741,127 @@ fn open_wheel(hwnd: HWND, s: &mut RunState, center: POINT) -> Result<OpenKind> {
             return Err(Error::from_thread());
         }
     }
+    if let Some(renderer) = &s.renderer {
+        renderer.start_open(s.animate)?;
+    }
     Ok(kind)
 }
 
+/// Takes the snapshot of the desktop for a wheel that may open at `at`; the window is hidden
+/// now. `open_wheel` uses it if the wheel does open there with the same layout.
+fn take_snapshot(s: &RunState, at: POINT) {
+    let Some(renderer) = &s.renderer else {
+        return;
+    };
+    let layout = layout_at(at, s.scale_pct, s.inner_sectors, s.sectors);
+    if layout != s.layout {
+        // Another monitor DPI: the open rebuilds the renderer anyway.
+        return;
+    }
+    let size = layout.size_px() as i32;
+    let times = renderer.snapshot(at.x - size / 2, at.y - size / 2);
+    if stats::enabled() {
+        log_glass("press", times);
+    }
+}
+
+/// Logs how long the snapshot of the desktop and its blur took (capture, upload plus blur).
+fn log_glass(when: &str, times: Option<(f64, f64)>) {
+    if let Some((capture, blur)) = times {
+        wheel_core::log_line!("glass {when}: capture_ms={capture:.3} blur_ms={blur:.3}");
+    }
+}
+
+/// Hides the wheel at once.
 fn close_wheel(hwnd: HWND) {
     hook::publish_arc(None);
     // SAFETY: `hwnd` is the live window of this thread; the return values carry no news.
     unsafe {
         let _ = KillTimer(Some(hwnd), POLL_TIMER);
+        let _ = KillTimer(Some(hwnd), CLOSE_FADE_TIMER);
         let _ = ShowWindow(hwnd, SW_HIDE);
     }
 }
 
+/// Frees the snapshot and its effects, and once the window is hidden also the memory the
+/// graphics stack keeps for reuse. While the closing fade still runs the window is visible, and
+/// the fade timer calls this again when it ends.
+fn release_gpu(hwnd: HWND) {
+    // SAFETY: `hwnd` is the live window of this thread; the state reference is short-lived.
+    unsafe {
+        let Some(renderer) = run_state(hwnd).and_then(|s| s.renderer.as_ref()) else {
+            return;
+        };
+        renderer.release_snapshot();
+        if !IsWindowVisible(hwnd).as_bool() {
+            renderer.trim();
+            // A failure only means the second trim does not happen.
+            let _ = SetTimer(Some(hwnd), TRIM_TIMER, TRIM_DELAY_MS, None);
+        }
+    }
+}
+
+/// Closes the wheel: fades it out and hides it when the fade is over, or hides it at once when
+/// the wheel was opened without animations.
+fn start_closing(hwnd: HWND, s: &mut RunState) {
+    if s.closing {
+        return;
+    }
+    // SAFETY: `hwnd` is the live window of this thread.
+    unsafe {
+        let visible = IsWindowVisible(hwnd).as_bool();
+        let fading = s.animate
+            && visible
+            && s.renderer.as_ref().is_some_and(|r| r.start_close().is_ok())
+            && SetTimer(
+                Some(hwnd),
+                CLOSE_FADE_TIMER,
+                anim::CLOSE_MS + FADE_MARGIN_MS,
+                None,
+            ) != 0;
+        if fading {
+            hook::publish_arc(None);
+            let _ = KillTimer(Some(hwnd), POLL_TIMER);
+            s.closing = true;
+            return;
+        }
+    }
+    close_wheel(hwnd);
+}
+
+/// If the closing fade is still running, hides the window now and waits until the desktop is
+/// composed without it, so that a snapshot of the desktop cannot catch the fading wheel.
+fn finish_closing(hwnd: HWND, s: &mut RunState) {
+    if s.closing {
+        s.closing = false;
+        close_wheel(hwnd);
+        // SAFETY: plain call; a failure only means the wait did not happen.
+        let _ = unsafe { DwmFlush() };
+    }
+}
+
 fn poll_run(s: &mut RunState) -> Result<()> {
+    if s.closing {
+        // A timer message that was already queued when the fade started.
+        return Ok(());
+    }
     let (hit, arc) = track(&s.layout, &s.config, s.center, cursor_pos()?, s.arc);
-    if hit != s.hit || arc != s.arc {
+    let changed = hit != s.hit || arc != s.arc;
+    if changed {
         if arc != s.arc {
             hook::publish_arc(arc);
+            if arc.is_some() {
+                s.anim.restart_arc();
+            }
         }
         s.hit = hit;
         s.arc = arc;
-        if let Some(renderer) = &s.renderer {
-            renderer.draw(hit, arc)?;
-        }
+        s.anim.set_target(hit);
+    }
+    if s.anim.tick(changed, Instant::now())
+        && let Some(renderer) = &s.renderer
+    {
+        renderer.draw(s.hit, s.arc, &s.anim)?;
     }
     Ok(())
 }
@@ -567,7 +899,8 @@ unsafe fn run_wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                 let started = stats::open_started();
                 guard::fire(PanicTest::Window);
                 run_state(hwnd).map_or(Ok(()), |s| {
-                    reload(s, false);
+                    finish_closing(hwnd, s);
+                    reload(hwnd, s, false);
                     let opened = open_wheel(hwnd, s, center);
                     if let (Some(started), Ok(kind)) = (started, &opened) {
                         stats::open_finished(started, *kind);
@@ -578,11 +911,43 @@ unsafe fn run_wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                     opened.map(|_| ())
                 })
             }
-            WM_WHEEL_CLOSE => {
-                close_wheel(hwnd);
+            WM_WHEEL_PRESS => {
+                let at = POINT {
+                    x: wparam.0 as i32,
+                    y: lparam.0 as i32,
+                };
+                if let Some(s) = run_state(hwnd) {
+                    // A wheel still fading out must be gone before the snapshot.
+                    finish_closing(hwnd, s);
+                }
+                // Only while the wheel is hidden; a failure costs nothing, the open takes the
+                // snapshot itself then.
+                if !IsWindowVisible(hwnd).as_bool()
+                    && let Some(s) = run_state(hwnd)
+                {
+                    take_snapshot(s, at);
+                }
+                return LRESULT(0);
+            }
+            WM_WHEEL_DISCARD | WM_WHEEL_CLOSE => {
+                if msg == WM_WHEEL_CLOSE {
+                    match run_state(hwnd) {
+                        Some(s) => start_closing(hwnd, s),
+                        None => close_wheel(hwnd),
+                    }
+                }
+                release_gpu(hwnd);
                 return LRESULT(0);
             }
             WM_TIMER if wparam.0 == POLL_TIMER => run_state(hwnd).map_or(Ok(()), poll_run),
+            WM_TIMER if wparam.0 == CLOSE_FADE_TIMER => {
+                if let Some(s) = run_state(hwnd) {
+                    s.closing = false;
+                }
+                close_wheel(hwnd);
+                release_gpu(hwnd);
+                return LRESULT(0);
+            }
             WM_CONFIG_CHANGED => {
                 // One reload for a burst of changes.
                 if SetTimer(Some(hwnd), CONFIG_TIMER, CONFIG_DEBOUNCE_MS, None) == 0 {
@@ -590,6 +955,15 @@ unsafe fn run_wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                 } else {
                     Ok(())
                 }
+            }
+            WM_TIMER if wparam.0 == TRIM_TIMER => {
+                let _ = KillTimer(Some(hwnd), TRIM_TIMER);
+                if !IsWindowVisible(hwnd).as_bool()
+                    && let Some(renderer) = run_state(hwnd).and_then(|s| s.renderer.as_ref())
+                {
+                    renderer.trim();
+                }
+                return LRESULT(0);
             }
             WM_TIMER if wparam.0 == STATS_TIMER => {
                 stats::log_memory();
@@ -602,7 +976,7 @@ unsafe fn run_wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                 }
                 let _ = KillTimer(Some(hwnd), CONFIG_TIMER);
                 if let Some(s) = run_state(hwnd) {
-                    reload(s, true);
+                    reload(hwnd, s, true);
                 }
                 return LRESULT(0);
             }
@@ -623,5 +997,23 @@ unsafe fn run_wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
             let _ = DestroyWindow(hwnd);
         }
         LRESULT(0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows::Win32::Foundation::E_ACCESSDENIED;
+
+    #[test]
+    fn start_point_keeps_the_cursor() {
+        let at = POINT { x: -1500, y: 40 };
+        assert_eq!(start_point(Ok(at)), at);
+    }
+
+    #[test]
+    fn start_point_falls_back_to_the_origin_when_the_cursor_is_denied() {
+        let denied = Err(Error::from(E_ACCESSDENIED));
+        assert_eq!(start_point(denied), POINT { x: 0, y: 0 });
     }
 }

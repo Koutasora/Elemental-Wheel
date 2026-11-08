@@ -13,6 +13,7 @@ use crate::geometry::{
 };
 use crate::keys::parse_shortcut;
 use crate::layout::{DEFAULT_SCALE_PCT, MAX_SCALE_PCT, MIN_SCALE_PCT, clamp_scale_pct};
+use crate::look::{DEFAULT_GLASS_PCT, MAX_GLASS_PCT, MIN_GLASS_PCT, clamp_glass_pct};
 use crate::trigger::{
     DEFAULT_HOLD_MS, DEFAULT_MOVE_PX, MAX_HOLD_MS, MAX_MOVE_PX, MIN_HOLD_MS, MIN_MOVE_PX,
     TriggerSettings, clamp_hold_ms, clamp_move_px,
@@ -108,11 +109,12 @@ pub enum SystemAction {
     VolumeUp,
     VolumeDown,
     Screenshot,
+    ContextMenu,
 }
 
 impl SystemAction {
     /// Every action, in the order shown in lists.
-    pub const ALL: [SystemAction; 8] = [
+    pub const ALL: [SystemAction; 9] = [
         SystemAction::Lock,
         SystemAction::CloseWindow,
         SystemAction::MinimizeWindow,
@@ -121,6 +123,7 @@ impl SystemAction {
         SystemAction::VolumeUp,
         SystemAction::VolumeDown,
         SystemAction::Screenshot,
+        SystemAction::ContextMenu,
     ];
 }
 
@@ -258,6 +261,13 @@ pub struct Options {
     pub disable_in_fullscreen: bool,
     /// Names of `.exe` files that get the normal right button.
     pub excluded: Vec<String>,
+    /// How transparent the glass of the wheel is, 0 (opaque look) to 100.
+    #[serde(deserialize_with = "sat_u8")]
+    pub glass_pct: u8,
+    /// Whether the wheel animates opening and highlighting.
+    pub animations: bool,
+    /// The wheel opens on the right-button press and replaces the program's own right click.
+    pub replace_right_click: bool,
 }
 
 impl Default for Options {
@@ -272,6 +282,9 @@ impl Default for Options {
             move_px: DEFAULT_MOVE_PX,
             disable_in_fullscreen: true,
             excluded: Vec::new(),
+            glass_pct: DEFAULT_GLASS_PCT,
+            animations: true,
+            replace_right_click: false,
         }
     }
 }
@@ -290,6 +303,7 @@ impl Options {
         TriggerSettings {
             hold_ms: self.hold_ms,
             move_px: self.move_px,
+            replace_right: self.replace_right_click,
         }
         .clamped()
     }
@@ -484,6 +498,13 @@ impl Config {
             &mut o.move_px,
             clamp_move_px,
             (MIN_MOVE_PX, MAX_MOVE_PX),
+        );
+        clamp_warn(
+            &mut warnings,
+            "glass_pct",
+            &mut o.glass_pct,
+            clamp_glass_pct,
+            (MIN_GLASS_PCT, MAX_GLASS_PCT),
         );
         self.outer.resize(MAX_RING_ITEMS, Item::empty());
         self.inner
@@ -1025,9 +1046,55 @@ mod tests {
             c.options.trigger(),
             TriggerSettings {
                 hold_ms: 2000,
-                move_px: 6
+                move_px: 6,
+                replace_right: false
             }
         );
+    }
+
+    #[test]
+    fn glass_and_animation_options() {
+        let o = Options::default();
+        assert_eq!((o.glass_pct, o.animations), (50, true));
+        // Missing fields get the defaults.
+        let (c, w) = Config::parse(r#"{"options":{"scale_pct":90}}"#).unwrap();
+        assert_eq!((c.options.glass_pct, c.options.animations), (50, true));
+        assert!(w.is_empty());
+        let (c, w) = Config::parse(r#"{"options":{"glass_pct":0,"animations":false}}"#).unwrap();
+        assert_eq!((c.options.glass_pct, c.options.animations), (0, false));
+        assert!(w.is_empty());
+        // Out of range: clamped with a warning, also far outside the field type.
+        let (c, w) = Config::parse(r#"{"options":{"glass_pct":250}}"#).unwrap();
+        assert_eq!(c.options.glass_pct, 100);
+        assert!(w.len() == 1 && w[0].contains("glass_pct"), "{w:?}");
+        let (c, _) = Config::parse(r#"{"options":{"glass_pct":-5}}"#).unwrap();
+        assert_eq!(c.options.glass_pct, 0);
+        // Saved and read back.
+        let mut config = Config::default();
+        config.options.glass_pct = 70;
+        config.options.animations = false;
+        let text = serde_json::to_string(&config).unwrap();
+        let (back, _) = Config::parse(&text).unwrap();
+        assert_eq!(
+            (back.options.glass_pct, back.options.animations),
+            (70, false)
+        );
+    }
+
+    #[test]
+    fn replace_right_click_option() {
+        assert!(!Options::default().replace_right_click);
+        let (c, w) = Config::parse(r#"{"options":{"scale_pct":90}}"#).unwrap();
+        assert!(!c.options.replace_right_click && !c.options.trigger().replace_right);
+        assert!(w.is_empty());
+        let (c, w) = Config::parse(r#"{"options":{"replace_right_click":true}}"#).unwrap();
+        assert!(c.options.replace_right_click && c.options.trigger().replace_right);
+        assert!(w.is_empty());
+        let mut config = Config::default();
+        config.options.replace_right_click = true;
+        let text = serde_json::to_string(&config).unwrap();
+        let (back, _) = Config::parse(&text).unwrap();
+        assert!(back.options.replace_right_click);
     }
 
     #[test]
@@ -1184,6 +1251,21 @@ mod tests {
         assert_eq!(c.outer[10].icon.as_deref(), Some("m.png"));
         assert_eq!(c.outer.len(), 12);
         assert_eq!(c.version, 1);
+    }
+
+    #[test]
+    fn context_menu_system_action_round_trips() {
+        let json = r#"{"outer":[{"name":"M","action":{"type":"system","action":"context_menu"}}]}"#;
+        let (c, w) = Config::parse(json).unwrap();
+        assert!(w.is_empty());
+        let action = Action::System {
+            action: SystemAction::ContextMenu,
+        };
+        assert_eq!(c.outer[0].action, action);
+        assert!(SystemAction::ALL.contains(&SystemAction::ContextMenu));
+        let text = serde_json::to_string(&c).unwrap();
+        assert!(text.contains(r#""action":"context_menu""#));
+        assert_eq!(Config::parse(&text).unwrap().0.outer[0].action, action);
     }
 
     #[test]

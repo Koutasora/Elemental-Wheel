@@ -133,6 +133,7 @@ pub fn system_label(action: SystemAction) -> &'static str {
         SystemAction::VolumeUp => "Głośniej",
         SystemAction::VolumeDown => "Ciszej",
         SystemAction::Screenshot => "Zrzut ekranu",
+        SystemAction::ContextMenu => "Menu kontekstowe",
     }
 }
 
@@ -501,7 +502,10 @@ mod tests {
     }
 
     fn model() -> Model {
-        let mut m = Model::open(dir("none").join("missing.json"));
+        // A folder per call: tests run in parallel and `dir` empties the folder it returns.
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let mut m = Model::open(dir(&format!("none-{n}")).join("missing.json"));
         m.selection = Selection::Outer(0);
         m
     }

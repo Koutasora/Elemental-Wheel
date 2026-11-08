@@ -42,6 +42,9 @@ pub struct TriggerSettings {
     pub hold_ms: u32,
     /// Movement further than this (strictly) turns the press into a normal drag.
     pub move_px: i32,
+    /// The wheel replaces the right button: it opens on the press, without the hold time and the
+    /// movement threshold, so a click or a drag never reaches the program.
+    pub replace_right: bool,
 }
 
 impl Default for TriggerSettings {
@@ -49,6 +52,7 @@ impl Default for TriggerSettings {
         TriggerSettings {
             hold_ms: DEFAULT_HOLD_MS,
             move_px: DEFAULT_MOVE_PX,
+            replace_right: false,
         }
     }
 }
@@ -59,6 +63,7 @@ impl TriggerSettings {
         TriggerSettings {
             hold_ms: clamp_hold_ms(self.hold_ms),
             move_px: clamp_move_px(self.move_px),
+            replace_right: self.replace_right,
         }
     }
 }
@@ -304,6 +309,13 @@ impl Trigger {
                 State::ClickMode { .. } => {
                     self.state = State::SwallowRightUp;
                     Step::swallow().with(Effect::Cancel)
+                }
+                _ if self.settings.replace_right => {
+                    self.state = State::Open {
+                        center: pos,
+                        left_center: false,
+                    };
+                    Step::swallow().with(Effect::OpenWheel { center: pos })
                 }
                 _ => {
                     self.state = State::Pending {
@@ -575,18 +587,21 @@ mod tests {
         let c = TriggerSettings {
             hold_ms: 1,
             move_px: 999,
+            ..TriggerSettings::default()
         }
         .clamped();
         assert_eq!((c.hold_ms, c.move_px), (50, 50));
         let t = Trigger::new(TriggerSettings {
             hold_ms: 1,
             move_px: 0,
+            ..TriggerSettings::default()
         });
         assert_eq!(
             t.settings(),
             TriggerSettings {
                 hold_ms: 50,
-                move_px: 1
+                move_px: 1,
+                replace_right: false
             }
         );
     }
@@ -1077,6 +1092,7 @@ mod tests {
         let mut t = Trigger::new(TriggerSettings {
             hold_ms: 300,
             move_px: 10,
+            ..TriggerSettings::default()
         });
         let s = right_down(&mut t, 0);
         assert_eq!(s.effects, vec![Effect::StartHoldTimer(300)]);
@@ -1084,5 +1100,105 @@ mod tests {
         let s = hold_elapsed(&mut t, 299);
         assert_eq!(s, Step::pass().with(Effect::StartHoldTimer(1)));
         assert_eq!(hold_elapsed(&mut t, 300).effects, vec![open_wheel()]);
+    }
+
+    fn replacing() -> Trigger {
+        let mut t = Trigger::new(TriggerSettings {
+            replace_right: true,
+            ..TriggerSettings::default()
+        });
+        t.set_layout(Layout::new(96, 100, 12, 12));
+        t
+    }
+
+    #[test]
+    fn replace_opens_on_press_and_swallows() {
+        let mut t = replacing();
+        let s = right_down(&mut t, 1000);
+        assert_eq!(s, Step::swallow().with(open_wheel()));
+        assert!(t.is_wheel_open());
+    }
+
+    #[test]
+    fn replace_click_never_replays() {
+        let mut t = replacing();
+        right_down(&mut t, 1000);
+        let s = right_up(&mut t, P, 1010);
+        assert_eq!(s, Step::swallow().with(Effect::EnterClickMode));
+        // Click mode: a left click on the centre cancels, nothing is replayed.
+        let s = left_down(&mut t, P);
+        assert_eq!(s.effects, vec![Effect::Cancel]);
+    }
+
+    #[test]
+    fn replace_drag_never_replays() {
+        let mut t = replacing();
+        right_down(&mut t, 1000);
+        // Far beyond any movement threshold: the wheel stays open, the move passes as usual.
+        assert_eq!(mv(&mut t, pt(300, 0), 1010), Step::pass());
+        assert!(t.is_wheel_open());
+        let s = right_up(&mut t, pt(300, 0), 1020);
+        assert!(matches!(s.effects.as_slice(), [Effect::Select(_)]));
+        assert_eq!(s.verdict, Verdict::Swallow);
+    }
+
+    #[test]
+    fn replace_release_over_tile_selects() {
+        let mut t = replacing();
+        right_down(&mut t, 1000);
+        let s = right_up(&mut t, pt(0, -150), 1500);
+        assert_eq!(s.verdict, Verdict::Swallow);
+        assert!(matches!(
+            s.effects.as_slice(),
+            [Effect::Select(Hit::Outer(0))]
+        ));
+        assert!(!t.is_wheel_open());
+    }
+
+    #[test]
+    fn replace_release_in_centre_after_tiles_cancels() {
+        let mut t = replacing();
+        right_down(&mut t, 1000);
+        mv(&mut t, pt(0, -150), 1100);
+        let s = right_up(&mut t, P, 1200);
+        assert_eq!(s.effects, vec![Effect::Cancel]);
+    }
+
+    #[test]
+    fn replace_escape_cancels_and_swallows_release() {
+        let mut t = replacing();
+        right_down(&mut t, 1000);
+        let s = feed(&mut t, EventKind::Escape);
+        assert_eq!(s, Step::swallow().with(Effect::Cancel));
+        assert_eq!(right_up(&mut t, P, 1100), Step::swallow());
+        assert!(!t.is_wheel_open());
+    }
+
+    #[test]
+    fn replace_second_press_in_click_mode_cancels() {
+        let mut t = replacing();
+        right_down(&mut t, 1000);
+        right_up(&mut t, P, 1010);
+        let s = right_down(&mut t, 2000);
+        assert_eq!(s, Step::swallow().with(Effect::Cancel));
+        assert_eq!(right_up(&mut t, P, 2010), Step::swallow());
+    }
+
+    #[test]
+    fn replace_exceptions_reset_and_pass() {
+        // The app resets the machine and lets the press through for elevated windows, excluded
+        // programs and full screen; the release then passes too.
+        let mut t = replacing();
+        right_down(&mut t, 1000);
+        t.reset();
+        assert_eq!(right_up(&mut t, P, 1010), Step::pass());
+        assert!(!t.is_wheel_open());
+    }
+
+    #[test]
+    fn replace_ignores_thresholds_and_default_mode_keeps_them() {
+        let mut t = Trigger::new(TriggerSettings::default());
+        let s = right_down(&mut t, 0);
+        assert_eq!(s.effects, vec![Effect::StartHoldTimer(180)]);
     }
 }
