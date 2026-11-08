@@ -52,6 +52,7 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - Ryzyko: przeładowanie ze szkła na brak szkła zostawia potoki efektów szkła (ok. 19 zamiast 13 MB; niesprawdzone po poprawce).
 - Znane ograniczenie: w trybie `replace_right_click` migawka tła (BitBlt, 20–50 ms przez RDP) jest robiona przed otwarciem, więc otwarcie ze szkłem trwa o tyle dłużej; bez pomiaru na żywo.
 - Niestabilny test edytora (wspólny katalog tymczasowy przy testach równoległych) poprawiony: osobny katalog na każde wywołanie.
+- Etap 09 w skróconym zakresie (decyzja użytkownika, ok. 1–1,5 h): instalator Inno Setup, autostart, zasobnik tylko z pozycjami Edytor / Wyłącz-Włącz / Zamknij, jeden wariant ikony programu do akceptacji, jeden test instalacji i odinstalowania na LAB plus krótki test fizyczną myszą, wydanie 1.0.0; nowe pomysły tylko na listę na później.
 - Podglądy wyglądu tylko lokalnie (plik HTML na LAB), nie na claude.ai (zasada użytkownika).
 - Poza zakresem: znany błąd po Escape (decyzja z etapu 07), zasobnik i tryb bez konsoli (etap 09).
 
