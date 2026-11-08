@@ -23,6 +23,8 @@ instaluje się instalatorem Inno Setup dla jednego użytkownika; wydanie 1.0.0.
 - [x] `installer/elemental-wheel.iss`, `tools/build-installer.ps1` (build release, ISCC, wypisuje wersję i ścieżkę instalatora)
 - [ ] Test na LAB: kopia `%APPDATA%\Elemental-Wheel` przed testem i przywrócenie po; instalacja, pliki, skróty, klucz Run, działające koło; odinstalowanie i sprawdzenie usunięcia; test fizyczną myszą przez użytkownika
 - [x] Akcja systemowa „Opcje koła” (`wheel_options`, edytor otwarty na zakładce Opcje, `--tab opcje`), 5. kafelek łuku „Ustawienia” w domyślnej konfiguracji, pozycja „Opcje” w menu zasobnika (`crates/wheel-core/src/config.rs`, `apps/wheel/src/actions.rs`, `tray.rs`, `apps/wheel-editor`)
+- [ ] Edytor: przycisk „Przywróć domyślne” na zakładce Opcje — cała konfiguracja (kafelki i opcje) domyślna, z potwierdzeniem, zapis dopiero po „Zapisz” (`apps/wheel-editor`)
+- [ ] Koło w Eksploratorze i na pulpicie zaznacza element pod kursorem przy otwarciu (UI Automation, jak prawy przycisk Windows), akcja czeka na zaznaczenie (`apps/wheel`)
 - [ ] README (instalacja, zasobnik, odinstalowanie, status 1.0.0), CHECKLISTA, szkic wydania (`gh release create --draft`)
 - Sprawdzenie: tester: build, testy, clippy, fmt, `--version` obu programów, kompilacja instalatora; test instalacji i odinstalowania na LAB; test fizyczną myszą; manager: przegląd diffu
 
@@ -35,6 +37,7 @@ instaluje się instalatorem Inno Setup dla jednego użytkownika; wydanie 1.0.0.
 - Test instalatora (tester): `--quit` kończy się po zniknięciu okna, a proces trzyma `wheel.exe` jeszcze ok. 0,5 s; aktualizacja przy działającym kole przerywana przez Restart Manager, deinstalator zostawiał `wheel.exe`. Poprawka: instalator i deinstalator po `--quit` czekają na zwolnienie mutexu `Local\ElementalWheel` (do 5 s), inaczej czytelny komunikat.
 - Aktualizacja zachowuje wybór zadania „Uruchamiaj przy logowaniu” z poprzedniej instalacji (standardowe zachowanie Inno Setup, zostaje); pozostałość `is-*-uninstall.tmp` w `%TEMP%` to zwykłe zachowanie Inno Setup.
 - „Opcje koła” w kole i w zasobniku (prośba użytkownika: z koła nie dało się dojść do opcji, łuk „Ustawienia” to ustawienia Windows); w domyślnej konfiguracji jako 5. kafelek łuku „Ustawienia”, istniejące konfiguracje bez zmian.
+- Test fizyczną myszą (użytkownik): instalacja, zasobnik, Opcje koła działają. Zgłoszone: brak „Przywróć domyślne” — jeden przycisk resetujący całą konfigurację (wybór użytkownika z wariantów: same opcje / dwa przyciski / jeden na wszystko); akcje koła w Eksploratorze działały na poprzednim zaznaczeniu, bo przechwycony prawy przycisk nie zaznacza pliku — koło zaznacza element pod kursorem przy otwarciu (już zaznaczony element i puste miejsce: zaznaczenie bez zmian).
 
 ## Pomiary i testy
 - Instalator 4,13 MB (Inno Setup 6.7.3), wersja 1.0.0.
