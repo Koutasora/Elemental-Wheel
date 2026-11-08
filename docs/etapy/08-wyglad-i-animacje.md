@@ -18,7 +18,7 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - [x] Akcja systemowa `context_menu` („Menu kontekstowe”) w konfiguracji i edytorze
 - [x] Podgląd w edytorze zgodny z nowym wyglądem koła (szkło nad tłem próbnym, suwak działa od razu)
 - [x] Wygląd zatwierdzony przez użytkownika na zrzutach (szkło runda 3: „wygląda bardzo dobrze”)
-- [x] `cargo build --release`, `cargo test`, clippy `-D warnings`, `cargo fmt --check` czyste (68 + 130 + 30 testów); README i CHECKLISTA zaktualizowane
+- [x] `cargo build --release`, `cargo test`, clippy `-D warnings`, `cargo fmt --check` czyste (69 + 130 + 30 testów); README i CHECKLISTA zaktualizowane
 
 ## Plan
 - [x] `apps/wheel/src/render.rs`, `theme.rs`: nieprzezroczyste wypełnienia, cień, akcent, minimalna czcionka; zrzuty do akceptacji przed animacjami
