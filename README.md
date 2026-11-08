@@ -125,9 +125,8 @@ Release build, 1920x1080 at 96 DPI over RDP, 12 outer and 12 inner sectors, glas
 |---|---|
 | opening, median / max | 6.3 / 19.6 ms |
 | screen copy for the glass (on the press, before the wheel opens) | 20-50 ms |
-| private memory in the background, glass, names view | 31 MB |
-| private memory, `--demo`, names / icons view, glass | 21.6 / 24.3 MB |
-| private memory, `--demo`, names / icons view, no glass | 13.8 / 17.0 MB |
+| private memory in the background, names / icons view, glass | 21.6 / 24.6 MB |
+| private memory in the background, names / icons view, no glass | 13.5 / 16.2 MB |
 
 ## Known issues
 

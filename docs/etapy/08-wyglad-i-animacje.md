@@ -12,7 +12,7 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - [x] Szkło (rozmyte tło jak Vista Aero / macOS) z opcją `glass_pct` 0–100 (0 = bez szkła) w konfiguracji i jako suwak w edytorze; bez szkła także przy wyłączonej przezroczystości Windows
 - [x] Renderer i ikony przygotowane po wczytaniu konfiguracji (otwarcie nie buduje renderera); układy tekstu i geometrie nie tworzone przy każdym odrysowaniu
 - [x] Mediana otwarcia do 16 ms (na żywo, fizyczna mysz, szkło: 6,3 ms, maks. 19,6 ms przy pierwszym otwarciu)
-- ~~Pamięć prywatna w tle: ze szkłem do 25 MB, bez szkła do 15 MB (nazwy) i 17 MB (ikony)~~ (przeniesione do etapu 09, decyzja użytkownika: w `--run` 30,9 MB od startu, w demo 21,6 MB; patrz Pomiary)
+- [x] Pamięć prywatna w tle: ze szkłem do 25 MB, bez szkła do 15 MB (nazwy) i 17 MB (ikony) — `--run` 3 min, także po przeładowaniu konfiguracji: 21,6 / 24,6 MB ze szkłem, 13,5 / 16,2 MB bez
 - [x] Opcja `replace_right_click` (konfiguracja i edytor, domyślnie wyłączona): koło od razu po wciśnięciu prawego przycisku; systemowy prawy przycisk nie dociera do programów (poza oknami administratora, wykluczeniami i pełnym ekranem); test fizyczną myszą
 - [x] „Właściwości” z koła działa w Eksploratorze i na pulpicie (jeden plik, kilka plików, folder, ikona na pulpicie; test fizyczną myszą)
 - [x] Akcja systemowa `context_menu` („Menu kontekstowe”) w konfiguracji i edytorze
@@ -46,9 +46,10 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - Naprawa „Właściwości” w tym etapie (decyzja użytkownika): Alt+Enter z koła nie działa w Eksploratorze (błąd od etapu 04); w Eksploratorze okno właściwości zaznaczonych elementów przez powłokę, gdzie indziej Alt+Enter.
 - Cel pamięci zmieniony (decyzja użytkownika): ze szkłem do 25 MB (zmierzone: nazwy 21,6, ikony 24,3 MB), bez szkła 15 MB nazwy / 17 MB ikony (zmierzone 13,8 / 17,0); liczy się szybkość otwarcia.
 - Nowa opcja `replace_right_click` (prośba użytkownika): koło zamiast systemowego prawego przycisku, otwarcie od razu po wciśnięciu.
-- Do etapu 09: `--run` nie startuje, gdy GetCursorPos odmawia dostępu (np. zminimalizowane RDP) — przyjąć główny monitor.
+- `--run` nie startował, gdy GetCursorPos odmawia dostępu (np. zminimalizowane RDP): naprawione w tym etapie, start na głównym monitorze.
 - Akcja `context_menu` (prośba użytkownika): wstrzyknięte prawe kliknięcie z MARKER w punkcie wciśnięcia, żeby w trybie `replace_right_click` dało się otworzyć zwykłe menu.
-- Pamięć w tle przeniesiona do etapu 09 (decyzja użytkownika przy zamknięciu): `--run` 30,9 MB od startu przed pierwszym otwarciem przy 21,6 MB w demo z tym samym startem; po akcji „Właściwości” ok. 35 MB (arkusz właściwości w procesie koła).
+- Pamięć w tle zbadana jednak w tym etapie (prośba użytkownika): 30,9 MB to stan po przeładowaniu konfiguracji — rozgrzewka renderera kolejkowała rysunki bez czekania na GPU, sterownik AMD zostawiał po każdej przebudowie 8–13 MB; czekanie na GPU po każdym rysunku rozgrzewki usuwa wzrost. Po akcji „Właściwości” pamięć rośnie o ok. 4 MB (arkusz właściwości w procesie koła).
+- Ryzyko: przeładowanie ze szkła na brak szkła zostawia potoki efektów szkła (ok. 19 zamiast 13 MB; niesprawdzone po poprawce).
 - Znane ograniczenie: w trybie `replace_right_click` migawka tła (BitBlt, 20–50 ms przez RDP) jest robiona przed otwarciem, więc otwarcie ze szkłem trwa o tyle dłużej; bez pomiaru na żywo.
 - Niestabilny test edytora (wspólny katalog tymczasowy przy testach równoległych) poprawiony: osobny katalog na każde wywołanie.
 - Podglądy wyglądu tylko lokalnie (plik HTML na LAB), nie na claude.ai (zasada użytkownika).
@@ -65,7 +66,9 @@ LAB (RDP), 1920x1080, 96 DPI, release, konfiguracja 12+12 sektorów, dwa podmenu
 | upload + rozmycie migawki | 1–3 ms |
 | pamięć prywatna demo po zamknięciu (nazwy / ikony, szkło) | 21,6 / 24,3 MB |
 | pamięć prywatna demo po zamknięciu (nazwy / ikony, bez szkła) | 13,8 / 17,0 MB |
-| pamięć prywatna `--run` (nazwy, szkło): start / po teście z „Właściwości” | 30,9 / 34,8 MB |
+| pamięć prywatna `--run` (nazwy, szkło) przed poprawką: po przeładowaniu konfiguracji / po teście z „Właściwości” | 30,9 / 34,8 MB |
+| pamięć prywatna `--run`, 3 min z przeładowaniem, po poprawce: nazwy / ikony, szkło | 21,6 / 24,6 MB |
+| pamięć prywatna `--run`, 3 min z przeładowaniem, po poprawce: nazwy / ikony, bez szkła | 13,5 / 16,2 MB |
 
 ## Podsumowanie
 (wypełnia /etap-zamknij)

@@ -76,13 +76,12 @@
 - [x] Otwarcie na żywo: mediana 6,3 ms
 - [x] Opcja „Koło zamiast prawego przycisku”
 - [x] „Właściwości” z koła w Eksploratorze i na pulpicie
-- [ ] Akcja „Menu kontekstowe”
+- [x] Akcja „Menu kontekstowe”
 - [x] Podgląd w edytorze z nowym wyglądem
-- ~~Pamięć w tle ze szkłem do 25 MB~~ (przeniesione do etapu 09; dziś ok. 31 MB w `--run`)
+- [x] Pamięć w tle: szkło 21,6 MB (nazwy) / 24,6 MB (ikony), bez szkła 13,5 / 16,2 MB
 
 ## 09 instalator-i-wydanie
 - [ ] Instalator (Inno Setup, jeden użytkownik), który wypisuje zainstalowaną wersję
-- [ ] Autostart przy logowaniu; start także gdy pozycja kursora jest niedostępna
+- [ ] Autostart przy logowaniu
 - [ ] Ikona w zasobniku systemowym (włącz/wyłącz, edytor, zamknij)
-- [ ] Pamięć w tle ze szkłem do 25 MB
 - [ ] Wydanie 1.0.0 z opisem zgodnym z README
