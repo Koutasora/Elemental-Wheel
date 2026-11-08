@@ -2032,6 +2032,14 @@ fn d2d_for(dxgi_device: &IDXGIDevice) -> Result<(ID2D1Factory1, ID2D1Device)> {
     })
 }
 
+/// Drops the shared Direct3D and Direct2D devices, so the next renderer gets fresh ones. For
+/// when the glass look is switched off: the blur effects it made stay with the old devices.
+/// Call it after the renderers that use them are gone.
+pub fn release_shared_devices() {
+    D2D_SHARED.with(|cache| *cache.borrow_mut() = None);
+    D3D_DEVICE.with(|cache| *cache.borrow_mut() = None);
+}
+
 /// Whether a wait that ends at `deadline` has run out at `now`.
 fn wait_over(deadline: Instant, now: Instant) -> bool {
     now >= deadline

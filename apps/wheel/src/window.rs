@@ -29,7 +29,7 @@ use crate::anim::{self, Anim};
 use crate::args::{DemoOptions, PanicTest, RunOptions};
 use crate::guard;
 use crate::hook::{self, HookOptions};
-use crate::render::Renderer;
+use crate::render::{self, Renderer};
 use crate::settings::Settings;
 use crate::stats::{self, OpenKind};
 use crate::theme::{self, Palette};
@@ -665,9 +665,15 @@ fn reload(hwnd: HWND, s: &mut RunState, apply_layout: bool) {
             s.inner_sectors = config.options.inner_sectors;
             s.sectors = config.options.outer_sectors;
         }
+        let glass_was_on = s.glass_level() > 0.0;
         s.config = config;
         // The old renderer goes first, a window can have only one composition target.
         s.renderer = None;
+        if glass_was_on && s.glass_level() <= 0.0 {
+            // Glass is off now; its effects stay with the shared devices, so the new renderer
+            // gets fresh ones (a one-off cost, a normal reload keeps them).
+            render::release_shared_devices();
+        }
         if apply_layout {
             let at = cursor_pos().unwrap_or_default();
             let layout = layout_at(at, s.scale_pct, s.inner_sectors, s.sectors);
