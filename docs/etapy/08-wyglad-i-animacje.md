@@ -35,6 +35,8 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - Szkło z migawki zaakceptowane przez użytkownika (runda 3: rozmycie σ 9 px, nasycenie 1.4, tint ciemny 0.45 / jasny 0.42 przy mocy 50, połysk u góry, poświata tekstu). Do poprawy: migawka BitBlt ok. 31 ms na LAB (RDP) → robiona w tle przy wciśnięciu prawego przycisku (180 ms progu wystarcza); pamięć 31 MB → rozmycie na migawce zmniejszonej 4×, zwalnianie bitmap po zamknięciu.
 - Pamięć ze szkłem (decyzja użytkownika, wariant 1): efekty rozmycia zwalniane po zamknięciu i tworzone przy wciśnięciu (w czasie progu 180 ms); cel ze szkłem najwyżej 20 MB, bez szkła 15 MB (pomiar demo po zmniejszeniu migawki: szkło 25 MB, bez szkła 14,8 MB; efekty GPU ok. 7 MB).
 - Moc przezroczystości szkła jako suwak w opcjach (`glass_pct`, decyzja użytkownika).
+- Test na żywo fizyczną myszą zamiast soak.ps1 (decyzja użytkownika: LAB w użyciu). Wynik: otwarcie 5–11 ms; pamięć w tle ze szkłem (nazwy) ok. 23,5 MB, ponad cel 20 MB (demo 18,4) — do zbadania.
+- Naprawa „Właściwości” w tym etapie (decyzja użytkownika): Alt+Enter z koła nie działa w Eksploratorze (błąd od etapu 04); w Eksploratorze okno właściwości zaznaczonych elementów przez powłokę, gdzie indziej Alt+Enter.
 - Podglądy wyglądu tylko lokalnie (plik HTML na LAB), nie na claude.ai (zasada użytkownika).
 - Poza zakresem: znany błąd po Escape (decyzja z etapu 07), zasobnik i tryb bez konsoli (etap 09).
 
