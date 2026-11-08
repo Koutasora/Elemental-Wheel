@@ -11,7 +11,9 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - [ ] Animacje wyłączane opcją `animations` (konfiguracja i edytor) i zgodne z ustawieniem Windows „Pokazuj animacje”
 - [ ] Szkło (rozmyte tło jak Vista Aero / macOS) z opcją `glass_pct` 0–100 (przezroczystość szkła; 0 = bez szkła, wygląd nieprzezroczysty) w konfiguracji i jako suwak w edytorze; bez szkła także przy wyłączonej przezroczystości Windows
 - [ ] Renderer i ikony przygotowane po wczytaniu konfiguracji: otwarcie po zmianie konfiguracji poniżej 16 ms (dziś 89 ms); układy tekstu nie tworzone przy każdym odrysowaniu
-- [ ] Pamięć prywatna w tle: bez szkła do 15 MB (widok nazw i ikon; przed etapem ikony 17 MB), ze szkłem jak najmniej, najwyżej 20 MB; mediana otwarcia nadal do 16 ms; wyniki w pliku etapu
+- [ ] Pamięć prywatna w tle: ze szkłem do 25 MB, bez szkła do 15 MB (nazwy) i 17 MB (ikony); mediana otwarcia nadal do 16 ms; wyniki w pliku etapu
+- [ ] Opcja `replace_right_click` (konfiguracja i edytor, domyślnie wyłączona): koło otwiera się od razu po wciśnięciu prawego przycisku, bez przytrzymania; systemowy prawy przycisk nie dociera do programów (poza oknami administratora, wykluczeniami i pełnym ekranem)
+- [ ] „Właściwości” z koła działa w Eksploratorze i na pulpicie (test fizyczną myszą)
 - [ ] Podgląd w edytorze zgodny z nowym wyglądem koła
 - [ ] Wygląd zatwierdzony przez użytkownika na zrzutach (jasny/ciemny, nazwy/ikony, łuk podmenu)
 - [ ] `cargo build --release`, `cargo test`, clippy `-D warnings`, `cargo fmt --check` czyste; README i CHECKLISTA zaktualizowane
@@ -37,6 +39,9 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - Moc przezroczystości szkła jako suwak w opcjach (`glass_pct`, decyzja użytkownika).
 - Test na żywo fizyczną myszą zamiast soak.ps1 (decyzja użytkownika: LAB w użyciu). Wynik: otwarcie 5–11 ms; pamięć w tle ze szkłem (nazwy) ok. 23,5 MB, ponad cel 20 MB (demo 18,4) — do zbadania.
 - Naprawa „Właściwości” w tym etapie (decyzja użytkownika): Alt+Enter z koła nie działa w Eksploratorze (błąd od etapu 04); w Eksploratorze okno właściwości zaznaczonych elementów przez powłokę, gdzie indziej Alt+Enter.
+- Cel pamięci zmieniony (decyzja użytkownika): ze szkłem do 25 MB (zmierzone: nazwy 21,6, ikony 24,3 MB), bez szkła 15 MB nazwy / 17 MB ikony (zmierzone 13,8 / 17,0); liczy się szybkość otwarcia.
+- Nowa opcja `replace_right_click` (prośba użytkownika): koło zamiast systemowego prawego przycisku, otwarcie od razu po wciśnięciu.
+- Do etapu 09: `--run` nie startuje, gdy GetCursorPos odmawia dostępu (np. zminimalizowane RDP) — przyjąć główny monitor.
 - Podglądy wyglądu tylko lokalnie (plik HTML na LAB), nie na claude.ai (zasada użytkownika).
 - Poza zakresem: znany błąd po Escape (decyzja z etapu 07), zasobnik i tryb bez konsoli (etap 09).
 
