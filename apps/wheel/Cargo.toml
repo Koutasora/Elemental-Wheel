@@ -47,3 +47,6 @@ features = [
     "Win32_UI_Shell_Common",
     "Win32_UI_WindowsAndMessaging",
 ]
+
+[build-dependencies]
+winresource = "=0.1.34"

@@ -24,6 +24,16 @@ use wheel_core::{Source, ThemeChoice, config};
 
 use model::{ExternalChange, Model, Selection, read_stamp};
 
+/// The largest image of the application icon is a PNG; the window icon is decoded from it.
+fn window_icon() -> egui::IconData {
+    let ico: &[u8] = include_bytes!("../../../assets/elemental-wheel.ico");
+    let png_start = ico
+        .windows(8)
+        .position(|w| w == b"\x89PNG\r\n\x1a\n")
+        .expect("the icon holds a PNG image");
+    eframe::icon_data::from_png_bytes(&ico[png_start..]).expect("the icon PNG decodes")
+}
+
 const TITLE: &str = "Elemental Wheel – edytor";
 /// How often the config file is checked for a change made outside the editor.
 const CHECK_INTERVAL: Duration = Duration::from_secs(2);
@@ -139,6 +149,7 @@ fn main() -> ExitCode {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(TITLE)
+            .with_icon(window_icon())
             .with_inner_size([1100.0, 720.0])
             .with_min_inner_size([820.0, 520.0]),
         ..Default::default()
