@@ -5,7 +5,6 @@ mod actions;
 mod anim;
 mod args;
 mod backdrop;
-mod fit;
 mod guard;
 mod hook;
 mod icons;

@@ -8,6 +8,7 @@ use std::mem::ManuallyDrop;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use wheel_core::fit;
 use wheel_core::icon::IconSizes;
 use wheel_core::{Config, Hit, Layout, SubArc, ViewMode, arc_for_hit};
 
@@ -73,7 +74,6 @@ use windows_numerics::{Matrix3x2, Vector2};
 
 use crate::anim::{self, Anim};
 use crate::backdrop;
-use crate::fit;
 use crate::icons::{Icons, TileIcon};
 use crate::theme::{self, GlassStyle, Palette};
 

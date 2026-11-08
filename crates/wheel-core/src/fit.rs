@@ -1,5 +1,6 @@
 //! Label fitting: picks line split and font scale from measured text sizes. Pure logic, so it is
-//! tested with a fake measure function instead of DirectWrite.
+//! tested with a fake measure function instead of DirectWrite. Shared by the wheel and the editor
+//! preview.
 
 /// Smallest font scale (relative to the base size) tried before falling back to ellipsis
 /// trimming; callers can raise it with an absolute minimum size.
