@@ -2,7 +2,17 @@
 
 Action wheel opened by holding the right mouse button, laid out like the circle of fifths (Windows 10/11).
 
-Status: stage 08, choosing a sector runs its action (program, file, URL, shortcut, edit command, text, command, system action); outer sectors can have a submenu arc of up to 5 tiles; tiles show names or icons. The wheel is drawn as glass over a blurred copy of the screen under it, with short animations. A separate editor window edits the tiles and options.
+Status: version 1.0.0. Choosing a sector runs its action (program, file, URL, shortcut, edit command, text, command, system action); outer sectors can have a submenu arc of up to 5 tiles; tiles show names or icons. The wheel is drawn as glass over a blurred copy of the screen under it, with short animations. A separate editor window edits the tiles and options.
+
+## Install
+
+Download `Elemental-Wheel-1.0.0-setup.exe` from [GitHub Releases](https://github.com/Koutasora/Elemental-Wheel/releases) and run it. No administrator rights needed.
+
+- Installs for the current user only, into `%LOCALAPPDATA%\Programs\Elemental-Wheel`: `wheel.exe` and `wheel-editor.exe`.
+- Start menu shortcuts: the wheel (`wheel.exe --run`) and the editor.
+- Task "Start at sign-in" (checked by default) starts the wheel at logon through `HKCU\...\Run`. An update keeps the earlier choice.
+- The wheel starts right after installation. An update or uninstall closes a running wheel first.
+- Uninstall in Settings > Apps. Your configuration (`%APPDATA%\Elemental-Wheel`) and logs (`%LOCALAPPDATA%\Elemental-Wheel`) are left in place.
 
 ## Build
 
@@ -45,6 +55,16 @@ target\release\wheel.exe --quit
 - The selection is printed with sectors numbered from 1 (`selected: outer 3 "Name"`, `selected: outer 10 submenu 2 "Name"`, `cancelled`). One instance at a time; `--quit` stops it.
 - `--hold-ms`, `--move-px` - hold time and movement threshold (defaults 180 and 6).
 - The action runs in the window under the cursor when the button went down. Windows blocks injected input to windows of programs run as administrator, where the wheel does not open anyway.
+
+## Tray icon
+
+`wheel.exe` has no console window in the release build; `--version`, `--quit` and `--demo` still print to the console they are started from. With `--run` it puts an icon in the notification area. Its menu:
+
+- Editor - starts `wheel-editor.exe`
+- Disable / Enable - a disabled wheel passes the right button through unchanged. The state is not saved: after a restart the wheel is enabled.
+- Quit - stops the wheel
+
+The wheel does not open over the taskbar and the notification area.
 
 ## Editor
 
@@ -137,7 +157,10 @@ Release build, 1920x1080 at 96 DPI over RDP, 12 outer and 12 inner sectors, glas
 - `crates/wheel-core` - wheel geometry, configuration and shortcut parsing
 - `apps/wheel` - background program
 - `apps/wheel-editor` - editor
+- `installer` - Inno Setup script
+- `assets` - program icon
 - `tools/soak.ps1` - soak test and measurements
+- `tools/build-installer.ps1`, `tools/make-icon.py` - installer and icon generation
 
 Concept mockup: [docs/koncept.html](docs/koncept.html) (open locally in a browser).
 
