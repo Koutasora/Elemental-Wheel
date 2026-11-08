@@ -58,6 +58,13 @@ const CONFIG_TIMER: usize = 3;
 const STATS_TIMER: usize = 4;
 /// Hides the window when the closing fade is over.
 const CLOSE_FADE_TIMER: usize = 5;
+/// Hidden `--demo-linger-ms`: logs the memory of the hidden demo every second, then ends it.
+const LINGER_TIMER: usize = 6;
+const LINGER_TICK_MS: u32 = 1000;
+/// Second trim after the wheel was hidden: the first one frees only part of the memory, the rest
+/// is released by the driver once it has gone idle.
+const TRIM_TIMER: usize = 7;
+const TRIM_DELAY_MS: u32 = 1000;
 const STATS_MS: u32 = 60_000;
 /// Wait after a change so that an editor can finish saving; further changes restart the wait.
 const CONFIG_DEBOUNCE_MS: u32 = 100;
@@ -79,6 +86,8 @@ struct State {
     /// Highlight and arc transitions; animations also fade the demo out.
     anim: Anim,
     animate: bool,
+    /// Hidden `--demo-linger-ms`: how long the process stays after the close.
+    linger_ms: Option<u32>,
     error: Option<Error>,
 }
 
@@ -161,6 +170,7 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
         config,
         anim,
         animate,
+        linger_ms: options.linger_ms,
         error: None,
     }));
 
@@ -184,6 +194,29 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
     };
     loop_result?;
     state.error.map_or(Ok(()), Err)
+}
+
+/// Ends the demo after the close: at once, or with `--demo-linger-ms` hides the window like the
+/// background process does, frees the snapshot and keeps logging memory until the time is up.
+///
+/// # Safety
+/// `hwnd` is the demo window of this thread; no `State` reference is alive.
+unsafe fn end_demo(hwnd: HWND) {
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        let Some(s) = state(hwnd).filter(|s| s.linger_ms.is_some()) else {
+            let _ = DestroyWindow(hwnd);
+            return;
+        };
+        let _ = KillTimer(Some(hwnd), POLL_TIMER);
+        let _ = ShowWindow(hwnd, SW_HIDE);
+        s.renderer.release_snapshot();
+        s.renderer.trim();
+        stats::log_memory();
+        if SetTimer(Some(hwnd), LINGER_TIMER, LINGER_TICK_MS, None) == 0 {
+            let _ = DestroyWindow(hwnd);
+        }
+    }
 }
 
 /// Creates the (hidden) non-activating topmost popup of class `class_name`; `extra` is added to
@@ -369,6 +402,7 @@ fn wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESU
             }
             WM_TIMER if wparam.0 == CLOSE_TIMER => {
                 let _ = KillTimer(Some(hwnd), CLOSE_TIMER);
+                stats::log_memory();
                 let fading =
                     state(hwnd).is_some_and(|s| s.animate && s.renderer.start_close().is_ok());
                 if fading {
@@ -383,11 +417,26 @@ fn wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESU
                         return LRESULT(0);
                     }
                 }
-                let _ = DestroyWindow(hwnd);
+                end_demo(hwnd);
                 return LRESULT(0);
             }
             WM_TIMER if wparam.0 == CLOSE_FADE_TIMER => {
-                let _ = DestroyWindow(hwnd);
+                let _ = KillTimer(Some(hwnd), CLOSE_FADE_TIMER);
+                end_demo(hwnd);
+                return LRESULT(0);
+            }
+            WM_TIMER if wparam.0 == LINGER_TIMER => {
+                // A second trim a moment after the first, as the background process does.
+                if let Some(s) = state(hwnd) {
+                    s.renderer.trim();
+                }
+                stats::log_memory();
+                if state(hwnd).is_some_and(|s| {
+                    s.linger_ms = s.linger_ms.map(|ms| ms.saturating_sub(LINGER_TICK_MS));
+                    s.linger_ms == Some(0)
+                }) {
+                    let _ = DestroyWindow(hwnd);
+                }
                 return LRESULT(0);
             }
             WM_TIMER if wparam.0 == POLL_TIMER => {
@@ -567,6 +616,8 @@ fn build_renderer(
     let renderer = Renderer::new(hwnd, layout, palette, config.clone(), glass)?;
     renderer.warm();
     renderer.draw(Hit::Center, None, &Anim::settled(Hit::Center))?;
+    // The window is still hidden here; what the warm-up left in caches is not needed any more.
+    renderer.trim();
     Ok(renderer)
 }
 
@@ -698,6 +749,24 @@ fn close_wheel(hwnd: HWND) {
         let _ = KillTimer(Some(hwnd), POLL_TIMER);
         let _ = KillTimer(Some(hwnd), CLOSE_FADE_TIMER);
         let _ = ShowWindow(hwnd, SW_HIDE);
+    }
+}
+
+/// Frees the snapshot and its effects, and once the window is hidden also the memory the
+/// graphics stack keeps for reuse. While the closing fade still runs the window is visible, and
+/// the fade timer calls this again when it ends.
+fn release_gpu(hwnd: HWND) {
+    // SAFETY: `hwnd` is the live window of this thread; the state reference is short-lived.
+    unsafe {
+        let Some(renderer) = run_state(hwnd).and_then(|s| s.renderer.as_ref()) else {
+            return;
+        };
+        renderer.release_snapshot();
+        if !IsWindowVisible(hwnd).as_bool() {
+            renderer.trim();
+            // A failure only means the second trim does not happen.
+            let _ = SetTimer(Some(hwnd), TRIM_TIMER, TRIM_DELAY_MS, None);
+        }
     }
 }
 
@@ -836,9 +905,7 @@ unsafe fn run_wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                         None => close_wheel(hwnd),
                     }
                 }
-                if let Some(Some(renderer)) = run_state(hwnd).map(|s| s.renderer.as_ref()) {
-                    renderer.release_snapshot();
-                }
+                release_gpu(hwnd);
                 return LRESULT(0);
             }
             WM_TIMER if wparam.0 == POLL_TIMER => run_state(hwnd).map_or(Ok(()), poll_run),
@@ -847,6 +914,7 @@ unsafe fn run_wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                     s.closing = false;
                 }
                 close_wheel(hwnd);
+                release_gpu(hwnd);
                 return LRESULT(0);
             }
             WM_CONFIG_CHANGED => {
@@ -856,6 +924,15 @@ unsafe fn run_wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                 } else {
                     Ok(())
                 }
+            }
+            WM_TIMER if wparam.0 == TRIM_TIMER => {
+                let _ = KillTimer(Some(hwnd), TRIM_TIMER);
+                if !IsWindowVisible(hwnd).as_bool()
+                    && let Some(renderer) = run_state(hwnd).and_then(|s| s.renderer.as_ref())
+                {
+                    renderer.trim();
+                }
+                return LRESULT(0);
             }
             WM_TIMER if wparam.0 == STATS_TIMER => {
                 stats::log_memory();

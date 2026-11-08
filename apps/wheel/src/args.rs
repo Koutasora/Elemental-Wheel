@@ -49,6 +49,9 @@ pub struct DemoOptions {
     /// Hidden flag `--demo-close-ms N` (`--demo` only): close the demo (with the closing fade)
     /// after N ms instead of 10 s.
     pub close_ms: Option<u32>,
+    /// Hidden flag `--demo-linger-ms N` (`--demo` only): after the close, keep the process
+    /// alive N ms with the window hidden, as in the background, and log its memory every second.
+    pub linger_ms: Option<u32>,
     /// Hidden flag `--glass <0..100>`: how transparent the glass is (see `glass_level`).
     pub glass: Option<u8>,
 }
@@ -112,6 +115,7 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
     let mut no_anim = false;
     let mut force_anim = false;
     let mut close_ms = None;
+    let mut linger_ms = None;
     let mut glass = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -128,6 +132,10 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
             "--demo-close-ms" => {
                 let text = value(&mut args, &arg)?;
                 close_ms = Some(number(&text, "--demo-close-ms")?.clamp(1, 60_000) as u32);
+            }
+            "--demo-linger-ms" => {
+                let text = value(&mut args, &arg)?;
+                linger_ms = Some(number(&text, "--demo-linger-ms")?.clamp(1, 600_000) as u32);
             }
             "--glass" => {
                 let text = value(&mut args, &arg)?;
@@ -200,13 +208,19 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
         no_anim,
         force_anim,
         close_ms,
+        linger_ms,
         glass,
     };
-    if !demo && (at.is_some() || demo_hit.is_some() || no_anim || force_anim || close_ms.is_some())
+    if !demo
+        && (at.is_some()
+            || demo_hit.is_some()
+            || no_anim
+            || force_anim
+            || close_ms.is_some()
+            || linger_ms.is_some())
     {
-        return Err(
-            "--at, --demo-hit, --no-anim, --force-anim and --demo-close-ms need --demo".to_string(),
-        );
+        return Err("--at, --demo-hit, --no-anim, --force-anim, --demo-close-ms and              --demo-linger-ms need --demo"
+            .to_string());
     }
     if demo && matches!(test_panic, Some(PanicTest::Hook | PanicTest::Action)) {
         return Err("--test-panic hook and action need --run".to_string());
@@ -459,6 +473,11 @@ mod tests {
         assert_eq!(quick.close_ms, Some(300));
         assert!(parse_strs(&["--run", "--no-anim"]).is_err());
         assert!(parse_strs(&["--demo", "--demo-close-ms", "x"]).is_err());
+        assert_eq!(
+            demo(&["--demo", "--demo-linger-ms", "5000"]).linger_ms,
+            Some(5000)
+        );
+        assert!(parse_strs(&["--run", "--demo-linger-ms", "5000"]).is_err());
         assert_eq!(o.glass_level(50), 0.0);
         assert_eq!(demo(&["--demo"]).glass_level(50), 0.5);
         assert_eq!(demo(&["--demo"]).glass_level(80), 0.8);

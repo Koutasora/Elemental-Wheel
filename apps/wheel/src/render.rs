@@ -65,7 +65,7 @@ use windows::Win32::Graphics::Dxgi::Common::{
 use windows::Win32::Graphics::Dxgi::{
     CreateDXGIFactory2, DXGI_CREATE_FACTORY_FLAGS, DXGI_PRESENT, DXGI_SCALING_STRETCH,
     DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL, DXGI_USAGE_RENDER_TARGET_OUTPUT,
-    IDXGIDevice, IDXGIFactory2, IDXGISurface, IDXGISwapChain1,
+    IDXGIDevice, IDXGIDevice3, IDXGIFactory2, IDXGISurface, IDXGISwapChain1,
 };
 use windows::core::{Error, Interface, Result, w};
 use windows_numerics::{Matrix3x2, Vector2};
@@ -127,6 +127,7 @@ pub struct Renderer {
     /// Created once, reset for every fade.
     fade: IDCompositionAnimation,
     grow: IDCompositionAnimation,
+    dxgi_device: IDXGIDevice3,
 }
 
 /// Everything needed to paint the wheel on a Direct2D device context. The window-bound part
@@ -180,15 +181,14 @@ struct Painter {
 /// `result`; every frame then only paints that bitmap.
 struct Frost {
     style: GlassStyle,
-    /// Second context: bakes label halos while `Painter::ctx` is in the middle of a frame.
-    aux: ID2D1DeviceContext,
-    aux_brush: ID2D1SolidColorBrush,
-    /// Gaussian blur of the snapshot (input 0, set per snapshot).
-    blur: ID2D1Effect,
-    /// Saturation and brightness of the blur.
-    tone: ID2D1Effect,
-    /// Soft shadow of a label, for its halo.
-    shadow: ID2D1Effect,
+    d2d_device: ID2D1Device,
+    /// Standard deviation of the snapshot blur, in px of the shrunk snapshot.
+    sigma: f32,
+    /// The blur pipeline of the snapshot; it exists from the snapshot to its release, because
+    /// the effects keep a lot of GPU memory.
+    blur: RefCell<Option<Blur>>,
+    /// What bakes label halos; it exists only while halos are being baked (`Painter::warm`).
+    halo_tools: RefCell<Option<HaloTools>>,
     /// The blurred snapshot of the current open (or press); it exists only while the wheel is
     /// shown or about to be.
     snap: RefCell<Option<Snap>>,
@@ -203,6 +203,23 @@ struct Frost {
     margin: i32,
     /// Standard deviation of the label halo, in px.
     halo_sigma: f32,
+}
+
+/// Effects that turn a snapshot into the blurred backdrop.
+struct Blur {
+    /// Gaussian blur of the snapshot (input 0, set per snapshot).
+    blur: ID2D1Effect,
+    /// Saturation and brightness of the blur.
+    tone: ID2D1Effect,
+}
+
+/// Direct2D objects that render label halos.
+struct HaloTools {
+    /// Second context: bakes label halos while `Painter::ctx` is in the middle of a frame.
+    aux: ID2D1DeviceContext,
+    aux_brush: ID2D1SolidColorBrush,
+    /// Soft shadow of a label, for its halo.
+    shadow: ID2D1Effect,
 }
 
 /// The blurred desktop for one open, `SCALE` times smaller than the screen.
@@ -281,6 +298,7 @@ impl Renderer {
                 scale,
                 fade,
                 grow,
+                dxgi_device: dxgi_device.cast()?,
             })
         }
     }
@@ -309,6 +327,18 @@ impl Renderer {
     pub fn snapshot(&self, left: i32, top: i32) -> Option<(f64, f64)> {
         let margin = self.painter.frost.as_ref()?.margin;
         self.take_snapshot(left, top, margin)
+    }
+
+    /// Hands memory that Direct2D and the graphics driver keep for reuse back to the system; call
+    /// it when the wheel is hidden. The next draw rebuilds what it needs, a little slower.
+    pub fn trim(&self) {
+        // SAFETY: plain COM calls on objects owned by `self`.
+        unsafe {
+            if let Ok(device) = self.painter.ctx.GetDevice() {
+                device.ClearResources(0);
+            }
+            self.dxgi_device.Trim();
+        }
     }
 
     /// Frees the snapshot (the wheel closed, or the press did not open it).
@@ -646,19 +676,24 @@ impl Painter {
             result_side,
             D2D1_BITMAP_OPTIONS_TARGET,
         )?;
+        let mut effects = frost.blur.borrow_mut();
+        if effects.is_none() {
+            *effects = Some(frost.new_blur(&self.ctx)?);
+        }
+        let Blur { blur, tone } = effects.as_ref().expect("just made");
         // SAFETY: `small` holds the whole bitmap at `source_side` * 4 bytes per row.
         unsafe { source.CopyFromMemory(None, small.as_ptr().cast(), source_side * 4)? };
         // SAFETY: the device context and the effect chain are owned by `self` and valid; EndDraw
         // closes the BeginDraw.
         unsafe {
-            frost.blur.SetInput(0, &source, true);
+            blur.SetInput(0, &source, true);
             self.ctx.SetTarget(&result);
             self.ctx.BeginDraw();
             let offset = Vector2 {
                 X: -(pad as f32),
                 Y: -(pad as f32),
             };
-            let drawn = frost.tone.GetOutput().map(|output| {
+            let drawn = tone.GetOutput().map(|output| {
                 self.ctx.DrawImage(
                     &output,
                     Some(&offset),
@@ -670,7 +705,7 @@ impl Painter {
             let ended = self.ctx.EndDraw(None, None);
             self.ctx.SetTarget(None::<&ID2D1Image>);
             // Lets go of the input, so that the effect does not keep the snapshot alive.
-            frost.blur.SetInput(0, None::<&ID2D1Image>, true);
+            blur.SetInput(0, None::<&ID2D1Image>, true);
             drawn?;
             ended?;
         }
@@ -717,6 +752,7 @@ impl Painter {
         self.glass.set(false);
         if let Some(frost) = &self.frost {
             frost.snap.replace(None);
+            frost.blur.replace(None);
         }
     }
 
@@ -743,7 +779,7 @@ impl Painter {
                 self.paint(&target, hit, Some(arc), &Anim::settled(hit))?;
             }
         }
-        if self.frost.is_some() {
+        if let Some(frost) = &self.frost {
             // The effects run and the glass fills are drawn once, over a corner of the desktop.
             self.take_snapshot(0, 0, 0)?;
             if self.place_snapshot(0, 0) {
@@ -754,6 +790,7 @@ impl Painter {
                 self.release_snapshot();
                 drawn?;
             }
+            frost.halo_tools.replace(None);
         }
         Ok(())
     }
@@ -1506,66 +1543,6 @@ impl Frost {
         let c = size as f32 / 2.0;
         // SAFETY: plain COM calls with valid arguments; every result is checked via `?`.
         unsafe {
-            let aux = d2d_device.CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE)?;
-            aux.SetDpi(96.0, 96.0);
-            aux.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
-            let aux_brush = aux.CreateSolidColorBrush(&style.halo, None)?;
-
-            let blur = ctx.CreateEffect(&CLSID_D2D1GaussianBlur)?;
-            set_effect(
-                &blur,
-                D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION.0,
-                D2D1_PROPERTY_TYPE_FLOAT,
-                &[sigma / backdrop::SCALE as f32],
-            )?;
-            // Hard borders: the padding keeps them outside the window.
-            set_effect(
-                &blur,
-                D2D1_GAUSSIANBLUR_PROP_BORDER_MODE.0,
-                D2D1_PROPERTY_TYPE_ENUM,
-                &[f32::from_bits(D2D1_BORDER_MODE_HARD.0 as u32)],
-            )?;
-
-            // Saturation and brightness in one color matrix (rows: input R, G, B, A, offset).
-            let tone = ctx.CreateEffect(&CLSID_D2D1ColorMatrix)?;
-            tone.SetInput(0, &blur.GetOutput()?, true);
-            let luma = [0.2126, 0.7152, 0.0722];
-            let mut matrix = [0.0f32; 20];
-            for (input, weight) in luma.into_iter().enumerate() {
-                for output in 0..3 {
-                    let own = if input == output {
-                        style.saturation
-                    } else {
-                        0.0
-                    };
-                    matrix[input * 4 + output] =
-                        style.gain * ((1.0 - style.saturation) * weight + own);
-                }
-            }
-            matrix[3 * 4 + 3] = 1.0;
-            matrix[16..19].fill(style.lift);
-            set_effect(
-                &tone,
-                D2D1_COLORMATRIX_PROP_COLOR_MATRIX.0,
-                D2D1_PROPERTY_TYPE_MATRIX_5X4,
-                &matrix,
-            )?;
-
-            let shadow = aux.CreateEffect(&CLSID_D2D1Shadow)?;
-            set_effect(
-                &shadow,
-                D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION.0,
-                D2D1_PROPERTY_TYPE_FLOAT,
-                &[halo_sigma],
-            )?;
-            let h = style.halo;
-            set_effect(
-                &shadow,
-                D2D1_SHADOW_PROP_COLOR.0,
-                D2D1_PROPERTY_TYPE_VECTOR4,
-                &[h.r, h.g, h.b, h.a],
-            )?;
-
             let white = |a| D2D1_COLOR_F {
                 r: 1.0,
                 g: 1.0,
@@ -1619,11 +1596,10 @@ impl Frost {
 
             Ok(Frost {
                 style,
-                aux,
-                aux_brush,
-                blur,
-                tone,
-                shadow,
+                d2d_device: d2d_device.clone(),
+                sigma,
+                blur: RefCell::new(None),
+                halo_tools: RefCell::new(None),
                 snap: RefCell::new(None),
                 sheen,
                 sheen_shape: path.cast()?,
@@ -1634,8 +1610,96 @@ impl Frost {
         }
     }
 
+    /// The blur pipeline for `ctx`, the context the snapshot is drawn with.
+    fn new_blur(&self, ctx: &ID2D1DeviceContext) -> Result<Blur> {
+        let style = &self.style;
+        // SAFETY: plain COM calls with valid arguments; every result is checked via `?`.
+        unsafe {
+            let blur = ctx.CreateEffect(&CLSID_D2D1GaussianBlur)?;
+            set_effect(
+                &blur,
+                D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION.0,
+                D2D1_PROPERTY_TYPE_FLOAT,
+                &[self.sigma / backdrop::SCALE as f32],
+            )?;
+            // Hard borders: the padding keeps them outside the window.
+            set_effect(
+                &blur,
+                D2D1_GAUSSIANBLUR_PROP_BORDER_MODE.0,
+                D2D1_PROPERTY_TYPE_ENUM,
+                &[f32::from_bits(D2D1_BORDER_MODE_HARD.0 as u32)],
+            )?;
+
+            // Saturation and brightness in one color matrix (rows: input R, G, B, A, offset).
+            let tone = ctx.CreateEffect(&CLSID_D2D1ColorMatrix)?;
+            tone.SetInput(0, &blur.GetOutput()?, true);
+            let luma = [0.2126, 0.7152, 0.0722];
+            let mut matrix = [0.0f32; 20];
+            for (input, weight) in luma.into_iter().enumerate() {
+                for output in 0..3 {
+                    let own = if input == output {
+                        style.saturation
+                    } else {
+                        0.0
+                    };
+                    matrix[input * 4 + output] =
+                        style.gain * ((1.0 - style.saturation) * weight + own);
+                }
+            }
+            matrix[3 * 4 + 3] = 1.0;
+            matrix[16..19].fill(style.lift);
+            set_effect(
+                &tone,
+                D2D1_COLORMATRIX_PROP_COLOR_MATRIX.0,
+                D2D1_PROPERTY_TYPE_MATRIX_5X4,
+                &matrix,
+            )?;
+            Ok(Blur { blur, tone })
+        }
+    }
+
+    fn new_halo_tools(&self) -> Result<HaloTools> {
+        // SAFETY: plain COM calls with valid arguments; every result is checked via `?`.
+        unsafe {
+            let aux = self
+                .d2d_device
+                .CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE)?;
+            aux.SetDpi(96.0, 96.0);
+            aux.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
+            let aux_brush = aux.CreateSolidColorBrush(&self.style.halo, None)?;
+            let shadow = aux.CreateEffect(&CLSID_D2D1Shadow)?;
+            set_effect(
+                &shadow,
+                D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION.0,
+                D2D1_PROPERTY_TYPE_FLOAT,
+                &[self.halo_sigma],
+            )?;
+            let h = self.style.halo;
+            set_effect(
+                &shadow,
+                D2D1_SHADOW_PROP_COLOR.0,
+                D2D1_PROPERTY_TYPE_VECTOR4,
+                &[h.r, h.g, h.b, h.a],
+            )?;
+            Ok(HaloTools {
+                aux,
+                aux_brush,
+                shadow,
+            })
+        }
+    }
+
     /// Renders the halo of a label: its text blurred into a soft shadow, drawn twice for strength.
     fn halo(&self, layout: &IDWriteTextLayout, width: f32, height: f32) -> Result<Halo> {
+        let mut tools = self.halo_tools.borrow_mut();
+        if tools.is_none() {
+            *tools = Some(self.new_halo_tools()?);
+        }
+        let HaloTools {
+            aux,
+            aux_brush,
+            shadow,
+        } = tools.as_ref().expect("just made");
         let margin = (3.0 * self.halo_sigma).ceil();
         let (w, h) = (
             (width + 2.0 * margin).ceil(),
@@ -1644,35 +1708,35 @@ impl Frost {
         // SAFETY: plain COM calls on the aux context, which is not drawing anything else; each
         // BeginDraw is closed by its EndDraw before the next call.
         unsafe {
-            let text = new_bitmap(&self.aux, w as u32, h as u32, D2D1_BITMAP_OPTIONS_TARGET)?;
-            let bitmap = new_bitmap(&self.aux, w as u32, h as u32, D2D1_BITMAP_OPTIONS_TARGET)?;
+            let text = new_bitmap(aux, w as u32, h as u32, D2D1_BITMAP_OPTIONS_TARGET)?;
+            let bitmap = new_bitmap(aux, w as u32, h as u32, D2D1_BITMAP_OPTIONS_TARGET)?;
             let clear = D2D1_COLOR_F {
                 r: 0.0,
                 g: 0.0,
                 b: 0.0,
                 a: 0.0,
             };
-            self.aux.SetTarget(&text);
-            self.aux.BeginDraw();
-            self.aux.Clear(Some(&clear));
-            self.aux.DrawTextLayout(
+            aux.SetTarget(&text);
+            aux.BeginDraw();
+            aux.Clear(Some(&clear));
+            aux.DrawTextLayout(
                 Vector2 {
                     X: margin,
                     Y: margin,
                 },
                 layout,
-                &self.aux_brush,
+                aux_brush,
                 D2D1_DRAW_TEXT_OPTIONS_CLIP,
             );
-            self.aux.EndDraw(None, None)?;
+            aux.EndDraw(None, None)?;
 
-            self.shadow.SetInput(0, &text, true);
-            let output = self.shadow.GetOutput()?;
-            self.aux.SetTarget(&bitmap);
-            self.aux.BeginDraw();
-            self.aux.Clear(Some(&clear));
+            shadow.SetInput(0, &text, true);
+            let output = shadow.GetOutput()?;
+            aux.SetTarget(&bitmap);
+            aux.BeginDraw();
+            aux.Clear(Some(&clear));
             for _ in 0..2 {
-                self.aux.DrawImage(
+                aux.DrawImage(
                     &output,
                     None,
                     None,
@@ -1680,8 +1744,8 @@ impl Frost {
                     D2D1_COMPOSITE_MODE_SOURCE_OVER,
                 );
             }
-            let ended = self.aux.EndDraw(None, None);
-            self.aux.SetTarget(None::<&ID2D1Image>);
+            let ended = aux.EndDraw(None, None);
+            aux.SetTarget(None::<&ID2D1Image>);
             ended?;
             Ok(Halo {
                 bitmap,
