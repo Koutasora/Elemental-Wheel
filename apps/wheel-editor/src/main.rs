@@ -227,6 +227,8 @@ enum Dialog {
     External,
     /// Saving would overwrite a file changed outside the editor.
     Overwrite,
+    /// "Przywróć domyślne" on the options tab.
+    Defaults,
 }
 
 /// A message in the bottom bar.
@@ -425,7 +427,11 @@ impl App {
                     .auto_shrink(false)
                     .show(ui, |ui| match self.tab {
                         Tab::Tile => panel::show(ui, &mut self.model),
-                        Tab::Options => options::show(ui, &mut self.model),
+                        Tab::Options => {
+                            if options::show(ui, &mut self.model) {
+                                self.dialog = Some(Dialog::Defaults);
+                            }
+                        }
                     });
             });
     }
@@ -474,12 +480,46 @@ impl App {
         self.last_check = Instant::now();
     }
 
+    fn defaults_dialog(&mut self, ctx: &Context) {
+        let mut choice = None;
+        let response = Modal::new(Id::unique("dialog")).show(ctx, |ui| {
+            ui.set_width(340.0);
+            ui.heading("Przywróć domyślne");
+            ui.add_space(6.0);
+            ui.label(
+                "Przywrócić domyślne kafelki i opcje? Obecne ustawienia zostaną zastąpione po zapisaniu.",
+            );
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                if ui.button("Przywróć").clicked() {
+                    choice = Some(true);
+                }
+                if ui.button("Anuluj").clicked() {
+                    choice = Some(false);
+                }
+            });
+        });
+        if choice.is_none() && response.should_close() {
+            choice = Some(false);
+        }
+        match choice {
+            None => return,
+            Some(true) => self.model.reset_to_defaults(),
+            Some(false) => {}
+        }
+        self.dialog = None;
+    }
+
     fn dialog(&mut self, ctx: &Context) {
         let Some(kind) = &self.dialog else {
             return;
         };
         if matches!(kind, Dialog::External | Dialog::Overwrite) {
             self.external_dialog(ctx);
+            return;
+        }
+        if matches!(kind, Dialog::Defaults) {
+            self.defaults_dialog(ctx);
             return;
         }
         let closing = matches!(kind, Dialog::Close);

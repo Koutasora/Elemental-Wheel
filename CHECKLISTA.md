@@ -88,6 +88,7 @@
 - [x] Opcje koła z koła (akcja systemowa) i z zasobnika
 - [x] Tryb bez konsoli
 - [x] Ikona programu (exe, zasobnik, instalator)
+- [x] Przywróć domyślne (cała konfiguracja) w edytorze
 - [x] Test instalacji, aktualizacji i odinstalowania na LAB
 - [ ] Test fizyczną myszą zainstalowanej wersji
 - [ ] Wydanie 1.0.0 z opisem zgodnym z README

@@ -36,7 +36,8 @@ fn windows_transparency() -> bool {
     status != ERROR_SUCCESS || data != 0
 }
 
-pub fn show(ui: &mut Ui, model: &mut Model) {
+/// Returns whether "Przywróć domyślne" was clicked; the caller asks for confirmation.
+pub fn show(ui: &mut Ui, model: &mut Model) -> bool {
     ui.heading("Opcje koła");
 
     caption(ui, "Motyw");
@@ -147,4 +148,9 @@ pub fn show(ui: &mut Ui, model: &mut Model) {
     if ui.button("Dodaj program").clicked() {
         o.excluded.push(String::new());
     }
+
+    ui.add_space(16.0);
+    ui.separator();
+    ui.add_space(8.0);
+    ui.button("Przywróć domyślne").clicked()
 }

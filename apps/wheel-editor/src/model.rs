@@ -249,6 +249,13 @@ impl Model {
         *self = Model::open(std::mem::take(&mut self.path));
     }
 
+    /// Replaces the whole configuration (tiles and options) with the defaults. Nothing is written
+    /// until the next save; "Wczytaj ponownie" brings the file back.
+    pub fn reset_to_defaults(&mut self) {
+        self.config = Config::default();
+        self.selection = Selection::None;
+    }
+
     pub fn is_dirty(&self) -> bool {
         self.config != self.saved
     }
@@ -518,6 +525,33 @@ mod tests {
         assert_eq!(m.source, Source::Defaults);
         assert!(m.load_error.is_none() && !m.is_dirty());
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn reset_to_defaults_replaces_everything_and_marks_dirty() {
+        let mut m = model();
+        m.config.options.scale_pct = 120;
+        m.save().unwrap();
+        m.set_selection(Selection::Outer(9));
+        m.clear_slot();
+        m.reset_to_defaults();
+        assert_eq!(m.config, Config::default());
+        assert!(m.is_dirty());
+        assert_eq!(m.selection, Selection::None);
+        assert!(m.selected().is_none());
+    }
+
+    #[test]
+    fn reset_to_defaults_can_be_undone_by_reload_and_keeps_the_file() {
+        let path = dir("reset-reload").join("config.json");
+        let mut m = Model::open(path.clone());
+        m.config.options.scale_pct = 120;
+        m.save().unwrap();
+        m.reset_to_defaults();
+        assert!(m.is_dirty());
+        m.reload();
+        assert_eq!(m.config.options.scale_pct, 120);
+        assert!(!m.is_dirty());
     }
 
     #[test]
