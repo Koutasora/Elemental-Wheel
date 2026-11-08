@@ -45,4 +45,29 @@ Poprawić znane błędy i braki z wydania 1.0.0 i wydać wersję 1.0.1 z nowym i
 - Wzmianki w etapach 01–08: „claude.ai” → „w sieci”, „scratchpad” → „folder tymczasowy”, bez „przez Claude”; treść decyzji bez zmian.
 
 ## Podsumowanie
-(wypełnia /etap-zamknij)
+### Decyzje
+- Autostart w edytorze zmienia wpis HKCU Run od razu, bez „Zapisz” (nie jest częścią `config.json`), ten sam wpis co instalator.
+- Jedna kopia edytora tylko bez `--config`, żeby testy nie dotykały edytora użytkownika; `--tab` drugiego uruchomienia pomijane.
+- Logika dopasowania nazw (`fit`) przeniesiona do `wheel-core`, wspólna dla koła i podglądu.
+- Błąd po Escape nie jest już opisany jako znany (potwierdzone przez użytkownika): 48/48 par i 119 cykli `soak.ps1` bez błędu, przyczyna nieustalona, kod bez zmian.
+- Pamięć szkła: przy przejściu szkła z włączonego na wyłączone wspólne urządzenia D3D/D2D tworzone od nowa; zwykłe przeładowanie zatrzymuje je jak dotąd.
+- Dostęp do opcji niezależny od liczby sektorów (decyzja użytkownika): podpis „O – opcje” pod „Anuluj” przez 10 s i klawisz O; kafelek „Opcje koła” i zasobnik zostają.
+- Szkic wydania v1.0.0 usunięty, publikowane od razu v1.0.1.
+
+### Zrobione
+- Edytor: przełącznik „Uruchamiaj przy logowaniu”, jedna kopia z wyciąganiem okna, łamanie nazw w podglądzie jak w kole, podpis w podglądzie.
+- Koło: klawisz O (tylko pierwsze wciśnięcie, z Ctrl/Alt/Win i przy zamkniętym kole przechodzi), podpis z wygaszaniem, zwalnianie pamięci szkła (nazwy 18,6 → 13,2 MB, ikony 18,1 → 12,7 MB).
+- Dokumentacja: README (opcje edytora, klawisz O, bez „Known issues”), CHECKLISTA, wzmianki o narzędziu usunięte z plików etapów 01–08.
+- Wersja 1.0.1: instalator 4,14 MB, aktualizacja z 1.0.0 przy działającym kole sprawdzona na LAB (konfiguracja i autostart bez zmian), szkic wydania v1.0.1 z SHA-256.
+- Testy: 69 + 150 + 38 (8 ignorowanych), clippy, fmt; testy wejściem wstrzykiwanym (Escape, start, klawisz O w Notatniku); test fizyczną myszą użytkownika bez uwag.
+
+### Otwarte sprawy
+- Publikacja wydania v1.0.1 po scaleniu PR.
+- `tools/soak.ps1` ma limit pamięci 15 MB sprzed szkła (cel ze szkłem 25 MB), więc daje FAIL przy szkle.
+- Edytor bez tłumaczeń (etykiety tylko po polsku).
+
+### Ryzyka
+- Przyczyna dawnego błędu po Escape nieustalona; testy tylko wejściem wstrzykiwanym, użytkownik nie zgłasza problemu.
+- Pojedyncze nieotwarcie koła zaraz po starcie ze szkłem (raz w pomiarach pamięci), niepowtarzalne w 40 próbach.
+- Jedna kopia edytora rozpoznaje okno po tytule: edytor testowy z `--config` może zostać wyciągnięty zamiast domyślnego.
+- Brak podpisu cyfrowego instalatora (SmartScreen).
