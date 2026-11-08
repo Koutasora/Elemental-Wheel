@@ -57,6 +57,7 @@ pub fn run(action: &Action, target: isize, press: Point, wheel: isize) {
         let done = guard::try_run("action thread", "thread ended", || {
             guard::fire(PanicTest::Action);
             wait_hidden(HWND(wheel as *mut _));
+            crate::select::wait();
             if let Err(e) = execute(
                 &action,
                 HWND(target as *mut _),
@@ -191,6 +192,10 @@ fn system(action: SystemAction, target: HWND, press: Point) -> Result<(), String
         SystemAction::ContextMenu => {
             focus(target);
             send_right_click(press);
+            Ok(())
+        }
+        SystemAction::WheelOptions => {
+            crate::tray::open_editor(Some("opcje"));
             Ok(())
         }
     }

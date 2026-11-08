@@ -126,6 +126,7 @@ pub fn system_glyph(action: SystemAction) -> char {
         SystemAction::VolumeDown => '\u{E993}',
         SystemAction::Screenshot => '\u{E722}',
         SystemAction::ContextMenu => '\u{E712}',
+        SystemAction::WheelOptions => '\u{E713}',
     }
 }
 

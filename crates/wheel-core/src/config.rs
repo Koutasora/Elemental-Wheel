@@ -110,11 +110,13 @@ pub enum SystemAction {
     VolumeDown,
     Screenshot,
     ContextMenu,
+    /// Opens the editor on the options tab.
+    WheelOptions,
 }
 
 impl SystemAction {
     /// Every action, in the order shown in lists.
-    pub const ALL: [SystemAction; 9] = [
+    pub const ALL: [SystemAction; 10] = [
         SystemAction::Lock,
         SystemAction::CloseWindow,
         SystemAction::MinimizeWindow,
@@ -124,6 +126,7 @@ impl SystemAction {
         SystemAction::VolumeDown,
         SystemAction::Screenshot,
         SystemAction::ContextMenu,
+        SystemAction::WheelOptions,
     ];
 }
 
@@ -374,6 +377,7 @@ impl Default for Config {
                     Item::url("Dźwięk", "ms-settings:sound"),
                     Item::url("Bluetooth", "ms-settings:bluetooth"),
                     Item::url("Aktualizacje", "ms-settings:windowsupdate"),
+                    Item::system("Opcje koła", SystemAction::WheelOptions),
                 ],
                 ..Item::url("Ustawienia", "ms-settings:")
             },
@@ -796,7 +800,10 @@ mod tests {
         let settings = c.outer_item(9).unwrap();
         assert_eq!(settings.name, "Ustawienia");
         let sub: Vec<&str> = settings.submenu.iter().map(|s| s.name.as_str()).collect();
-        assert_eq!(sub, ["Ekran", "Dźwięk", "Bluetooth", "Aktualizacje"]);
+        assert_eq!(
+            sub,
+            ["Ekran", "Dźwięk", "Bluetooth", "Aktualizacje", "Opcje koła"]
+        );
         assert!(c.outer.iter().filter(|i| !i.submenu.is_empty()).count() == 1);
     }
 

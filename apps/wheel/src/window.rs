@@ -33,6 +33,7 @@ use crate::render::Renderer;
 use crate::settings::Settings;
 use crate::stats::{self, OpenKind};
 use crate::theme::{self, Palette};
+use crate::tray;
 use crate::watch::Watcher;
 
 /// Class name of the `--run` window; `--quit` finds the running instance by it.
@@ -595,6 +596,7 @@ pub fn run_background(options: &RunOptions, config_path: PathBuf) -> Result<()> 
     };
     let watcher = Watcher::start(&watch_dir, hwnd, WM_CONFIG_CHANGED);
     let loop_result = hook::start(hook_options, hwnd, config).and_then(|hook| {
+        tray::add(hwnd, options.wheel.config.clone());
         let result = message_loop();
         hook.stop();
         result
@@ -984,7 +986,16 @@ unsafe fn run_wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                 let _ = DestroyWindow(hwnd);
                 return LRESULT(0);
             }
+            tray::WM_TRAY => {
+                tray::on_message(hwnd, wparam, lparam);
+                return LRESULT(0);
+            }
+            m if m != 0 && m == tray::taskbar_created() => {
+                tray::readd(hwnd);
+                return LRESULT(0);
+            }
             WM_DESTROY => {
+                tray::remove(hwnd);
                 PostQuitMessage(0);
                 return LRESULT(0);
             }

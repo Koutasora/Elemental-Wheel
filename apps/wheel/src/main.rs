@@ -1,3 +1,6 @@
+// In release builds there is no console window; the command line modes attach to the parent console.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod actions;
 mod anim;
 mod args;
@@ -9,9 +12,11 @@ mod icons;
 mod instance;
 mod properties;
 mod render;
+mod select;
 mod settings;
 mod stats;
 mod theme;
+mod tray;
 mod watch;
 mod watchdog;
 mod window;
@@ -20,12 +25,21 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use args::{Command, RunOptions};
+use windows::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole, FreeConsole};
+
+/// Lets `--version`, `--quit` and the like print to the console they were started from. Without a
+/// parent console (Explorer, autostart) it fails and the output goes nowhere, which `std` accepts.
+fn attach_parent_console() {
+    // SAFETY: plain call.
+    let _ = unsafe { AttachConsole(ATTACH_PARENT_PROCESS) };
+}
 
 fn main() -> ExitCode {
+    attach_parent_console();
     match args::parse(std::env::args().skip(1)) {
         Ok(Command::Info) => {
             println!(
-                "Elemental Wheel (stage 05). Options for --demo and --run: \
+                "Elemental Wheel. Options for --demo and --run: \
                  [--theme system|light|dark] [--scale 60..140] [--sectors 4..12] \
                  [--config <path>] [--log <path>].\n  \
                  They override config.json (default %APPDATA%\\Elemental-Wheel\\config.json).\n  \
@@ -119,6 +133,10 @@ fn run(options: &RunOptions) -> ExitCode {
         std::process::id(),
         path.display()
     );
+    // Closing the terminal or Ctrl+C must not kill the wheel and leave its icon behind; from here
+    // on the messages go to the log only.
+    // SAFETY: plain call.
+    let _ = unsafe { FreeConsole() };
     match window::run_background(options, path) {
         Ok(()) => {
             wheel_core::log_line!("wheel stopped");

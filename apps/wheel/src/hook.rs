@@ -63,6 +63,23 @@ const WM_EFFECTS: u32 = WM_APP + 1;
 /// Posted to the hook thread by the UI thread after a panic in the window procedure: reset the
 /// trigger, so that the wheel that is no longer shown cannot select anything.
 const WM_RECOVER: u32 = WM_APP + 3;
+/// The wheel is switched on (tray menu). When off, every mouse and keyboard event passes
+/// unchanged; the hooks stay installed.
+static ENABLED: AtomicBool = AtomicBool::new(true);
+
+pub fn is_enabled() -> bool {
+    ENABLED.load(Ordering::Relaxed)
+}
+
+/// Switches the wheel on or off. Switching off also resets the trigger and closes a wheel
+/// that is open.
+pub fn set_enabled(enabled: bool) {
+    ENABLED.store(enabled, Ordering::Relaxed);
+    if !enabled {
+        request_recover();
+    }
+}
+
 /// Id of the hook thread (0 = not running), for `request_recover`.
 static HOOK_THREAD: AtomicU32 = AtomicU32::new(0);
 /// The timer fires `HoldElapsed` with `GetTickCount`, which is coarser than the event times, so
@@ -150,6 +167,7 @@ impl HookThread {
 /// Starts the hook thread; `window` is the wheel window that receives open / close messages.
 pub fn start(config: HookOptions, window: HWND, settings: Arc<WheelConfig>) -> Result<HookThread> {
     publish(settings);
+    crate::select::start();
     let window = window.0 as isize;
     STALL_PENDING.store(config.stall_hook_once, Ordering::Relaxed);
     let (tx, rx) = mpsc::channel();
@@ -233,6 +251,9 @@ impl HookState {
     fn on_mouse(&mut self, msg: u32, info: &MSLLHOOKSTRUCT) -> bool {
         // SAFETY: plain call.
         self.last_event = unsafe { GetTickCount() };
+        if !is_enabled() {
+            return false;
+        }
         let pos = Point::new(info.pt.x, info.pt.y);
         let time = info.time;
         let kind = match msg {
@@ -281,6 +302,9 @@ impl HookState {
                             o.outer_sectors,
                         ));
                     }
+                    // Explorer and the desktop select the item under the pointer, as the right
+                    // button would; the action of the wheel waits for that.
+                    crate::select::begin(self.target, info.pt);
                     // The wheel opens at this point once the hold time has elapsed (at once
                     // when it replaces the right button); the window takes the desktop
                     // snapshot meanwhile, and the open message queued right after the press
@@ -305,6 +329,9 @@ impl HookState {
     fn on_key(&mut self, msg: u32, info: &KBDLLHOOKSTRUCT) -> bool {
         // SAFETY: plain call.
         self.last_event = unsafe { GetTickCount() };
+        if !is_enabled() {
+            return false;
+        }
         if info.vkCode != u32::from(VK_ESCAPE.0) {
             return false;
         }
@@ -342,6 +369,11 @@ impl HookState {
         let Some(pid) = window_pid(root) else {
             return false;
         };
+        // The tray menu of this program, and the notification area (its icons open menus on the
+        // right button).
+        if passes_regardless(pid == std::process::id(), &window_class(root)) {
+            return true;
+        }
         let info = self.process_info(pid);
         if info.elevated {
             return true;
@@ -864,6 +896,25 @@ pub fn is_shell_class(class: &str) -> bool {
     )
 }
 
+/// Classes of the notification area and its overflow flyout: the right button there belongs to
+/// the tray icons.
+fn is_tray_class(class: &str) -> bool {
+    matches!(
+        class,
+        "Shell_TrayWnd"
+            | "Shell_SecondaryTrayWnd"
+            | "NotifyIconOverflowWindow"
+            | "TopLevelWindowForOverflowXamlIsland"
+    )
+}
+
+/// Whether the right button reaches a window of this class unchanged whatever the settings: the
+/// notification area, and the popup menus (`#32768`) of this very process (the tray menu). Other
+/// windows of this process (the fading wheel, property sheets) are handled as usual.
+fn passes_regardless(own_process: bool, class: &str) -> bool {
+    is_tray_class(class) || (own_process && class == "#32768")
+}
+
 /// Class name of a window (empty if unreadable).
 pub fn window_class(hwnd: HWND) -> String {
     let mut class = [0u16; 64];
@@ -956,6 +1007,40 @@ fn process_integrity(process: HANDLE) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tray_classes_pass_but_the_desktop_and_explorer_windows_do_not() {
+        for class in [
+            "Shell_TrayWnd",
+            "Shell_SecondaryTrayWnd",
+            "NotifyIconOverflowWindow",
+            "TopLevelWindowForOverflowXamlIsland",
+        ] {
+            assert!(is_tray_class(class), "{class}");
+        }
+        for class in ["Progman", "WorkerW", "CabinetWClass", ""] {
+            assert!(!is_tray_class(class), "{class}");
+        }
+    }
+
+    #[test]
+    fn only_own_popup_menus_pass_among_the_windows_of_this_process() {
+        assert!(passes_regardless(true, "#32768"));
+        assert!(!passes_regardless(false, "#32768"));
+        assert!(!passes_regardless(true, "#32770"));
+        assert!(!passes_regardless(true, "CabinetWClass"));
+        assert!(passes_regardless(false, "Shell_TrayWnd"));
+    }
+
+    #[test]
+    fn switching_off_and_on_is_remembered() {
+        // The only test touching ENABLED, so parallel tests cannot interfere.
+        assert!(is_enabled());
+        set_enabled(false);
+        assert!(!is_enabled());
+        set_enabled(true);
+        assert!(is_enabled());
+    }
 
     #[test]
     fn normalize_maps_pixels_to_their_center() {

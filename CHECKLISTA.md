@@ -82,7 +82,14 @@
 - [x] Pamięć w tle: szkło 22,9 MB (nazwy) / 25,0 MB (ikony), bez szkła 13,4 / 16,7 MB (po wyłączeniu szkła w działającym kole do restartu 19,3 / 22,3 MB)
 
 ## 09 instalator-i-wydanie
-- [ ] Instalator (Inno Setup, jeden użytkownik), który wypisuje zainstalowaną wersję
-- [ ] Autostart przy logowaniu
-- [ ] Ikona w zasobniku systemowym (włącz/wyłącz, edytor, zamknij)
-- [ ] Wydanie 1.0.0 z opisem zgodnym z README
+- [x] Instalator (Inno Setup, jeden użytkownik), który wypisuje zainstalowaną wersję
+- [x] Autostart przy logowaniu
+- [x] Ikona w zasobniku systemowym (włącz/wyłącz, edytor, zamknij)
+- [x] Opcje koła z koła (akcja systemowa) i z zasobnika
+- [x] Tryb bez konsoli
+- [x] Ikona programu (exe, zasobnik, instalator)
+- [x] Przywróć domyślne (cała konfiguracja) w edytorze
+- [x] Koło zaznacza plik pod kursorem w Eksploratorze i na pulpicie
+- [x] Test instalacji, aktualizacji i odinstalowania na LAB
+- [x] Test fizyczną myszą zainstalowanej wersji
+- [x] Wydanie 1.0.0 z opisem zgodnym z README (szkic na GitHubie, publikacja po scaleniu PR)
