@@ -57,7 +57,7 @@ Program nie robi (wersja 1):
 - Wersja 1 tylko Windows 10/11.
 - Licencja MIT (prośba użytkownika).
 - Makieta `docs/koncept.html` bez zewnętrznych czcionek i bez ścieżek z LAB: działa offline, nic nie wysyła.
-- Podglądy i makiety tylko lokalnie (plik HTML otwierany w przeglądarce), bez publikowania na claude.ai.
+- Podglądy i makiety tylko lokalnie (plik HTML otwierany w przeglądarce), bez publikowania w sieci.
 
 ## Podsumowanie
 
@@ -69,7 +69,7 @@ Decyzje:
 - 12 sektorów jak koło kwintowe, wybór po kierunku; wyzwalacz: przytrzymanie prawego 180 ms, ruch > 6 px = zwykłe przeciąganie.
 - Pierścień wewnętrzny domyślnie z komendami edycji (Cofnij lewo, Ponów prawo); okno koła bez aktywacji.
 - Widok nazwy/ikony i rozmiar 60–140% w opcjach (prośba użytkownika); tylko Windows 10/11; licencja MIT.
-- Makiety i podglądy tylko lokalnie, bez publikowania na claude.ai i bez zewnętrznych zasobów.
+- Makiety i podglądy tylko lokalnie, bez publikowania w sieci i bez zewnętrznych zasobów.
 
 Zrobione:
 - Koncept zatwierdzony na interaktywnej makiecie `docs/koncept.html` (układ, wyzwalacz, edytor kafelka, tabele

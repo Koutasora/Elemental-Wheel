@@ -23,7 +23,7 @@ anulowania, z nazwami kafelków, w przezroczystym oknie, które nie zabiera foku
 - [x] `apps/wheel`: rysowanie Direct2D + DirectComposition (przezroczystość alfa), tekst DirectWrite; kolory motywów z `docs/koncept.html`, jeden akcent
 - [x] `apps/wheel`: argumenty `--demo`, `--theme`, `--scale`, `--sectors`; motyw systemu z rejestru (`AppsUseLightTheme`); podświetlenie sektora pod kursorem
 - [x] `CHECKLISTA.md` (punkty 02 + liczba sektorów), `README.md` (status, argumenty)
-- Sprawdzenie: tester: build, testy, clippy, fmt; skrypt PowerShell porównuje okno na pierwszym planie przed i po `--demo`; zrzuty ekranu w scratchpadzie pokazane przed zamknięciem
+- Sprawdzenie: tester: build, testy, clippy, fmt; skrypt PowerShell porównuje okno na pierwszym planie przed i po `--demo`; zrzuty ekranu w folderze tymczasowym pokazane przed zamknięciem
 
 ## Decyzje
 - Widok ikon przeniesiony do etapu 05 (zgodnie z checklistą); w 02 tylko nazwy, bo ikony z .exe wymagają modelu akcji z etapu 04.
@@ -51,7 +51,7 @@ Decyzje:
 - Okno WS_EX_NOACTIVATE + DirectComposition z alfą; podświetlenie przez odpytywanie kursora co 16 ms, wybór po kierunku także poza kołem.
 - Kafelki nieprzezroczyste; nazwy dopasowywane (dwie linie, czcionka do 75%, przesunięcie ku krawędzi tylko gdy trzeba); „Właściwości” → „Właśc.”.
 - Ustawienia na razie w argumentach; opcje w konfiguracji w etapie 04, edytowalne nazwy wszystkich elementów w 04/06.
-- Wygląd przyjęty jako użytkowy; efekty i animacje w nowym etapie 09 wyglad-i-animacje (dodany przez Claude na prośbę użytkownika).
+- Wygląd przyjęty jako użytkowy; efekty i animacje w nowym etapie 09 wyglad-i-animacje (dodany na prośbę użytkownika).
 
 Zrobione:
 - `wheel-core`: liczba sektorów jako parametr, `layout.rs` (promienie z DPI i skali, łuki sektorów), nazwy demo.

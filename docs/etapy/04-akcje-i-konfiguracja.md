@@ -29,7 +29,7 @@ są w `%APPDATA%\Elemental-Wheel\config.json` z wersją schematu, zapisem atomow
 - [x] `apps/wheel/src/window.rs`, `args.rs`, `main.rs`: wczytanie konfiguracji, odświeżenie przy otwarciu, `--config`, akcja po wyborze; wypisywany wybór numerowany od 1 (otwarta sprawa z 03)
 - [x] Domyślny pierścień zewnętrzny tylko z elementami Windows: Notatnik, Kalkulator, Ustawienia, Menedżer zadań zamiast Blendera, Abletona, Godota i VS Code
 - [x] `CHECKLISTA.md`, `README.md` (konfiguracja, typy akcji, `--config`)
-- Sprawdzenie: tester: build, testy, clippy, fmt; skrypt PowerShell z `--accept-injected` i testowym `config.json` w scratchpadzie (wszystkie typy akcji poza `lock`, `show_desktop`, `volume_up`/`volume_down`; komendy edycji w Notatniku i Eksploratorze; wykluczenia; błędny plik i `.bak`; UTF-16; polskie nazwy na zrzucie; Edge w F11; stan wyciszenia przez Core Audio); fizyczna mysz w etapie 05 (decyzja użytkownika)
+- Sprawdzenie: tester: build, testy, clippy, fmt; skrypt PowerShell z `--accept-injected` i testowym `config.json` w folderze tymczasowym (wszystkie typy akcji poza `lock`, `show_desktop`, `volume_up`/`volume_down`; komendy edycji w Notatniku i Eksploratorze; wykluczenia; błędny plik i `.bak`; UTF-16; polskie nazwy na zrzucie; Edge w F11; stan wyciszenia przez Core Audio); fizyczna mysz w etapie 05 (decyzja użytkownika)
 
 ## Decyzje
 - Domyślny pierścień zewnętrzny tylko z elementami Windows (Notatnik, Kalkulator, Ustawienia, Menedżer zadań zamiast Blendera, Abletona, Godota, VS Code): domyślna konfiguracja ma działać na każdym komputerze; użytkownik dopasuje ją sam (decyzja użytkownika).
@@ -67,7 +67,7 @@ Zrobione:
 - `wheel-core`: `config.rs` (model, walidacja, wczytanie, zapis atomowy, `.bak`, kodowanie), `keys.rs` (skróty), `demo.rs` usunięty; 63 testy.
 - `wheel`: `actions.rs` (8 typów akcji, 12 komend edycji, 8 akcji systemowych), `settings.rs` (`--config`, nakładanie argumentów, odświeżanie), `watch.rs` (obserwator), wykluczenia i pełny ekran w `hook.rs`; wybór numerowany od 1; 35 testów.
 - Razem 98 testów, clippy `-D warnings` i fmt czyste; README i CHECKLISTA zaktualizowane.
-- Test automatyczny na LAB (SendInput, konfiguracja w scratchpadzie, `%APPDATA%` nietknięty), wszystko PASS: komendy edycji w Notatniku i Eksploratorze (zmień nazwę, właściwości, kopiuj/wklej), okno w tle pod kursorem, `paste_text` z przywróceniem schowka, `command` bez okna konsoli, program/folder/adres, zamknij/minimalizuj (pulpit bez okna zamykania systemu), zrzut ekranu, wyciszenie (Core Audio, stan przywrócony), wykluczenia od pierwszego wciśnięcia w obie strony, `.bak`, UTF-16, polskie nazwy na kole (zrzut), Edge w F11, zmaksymalizowany Notatnik, regresje z etapu 03.
+- Test automatyczny na LAB (SendInput, konfiguracja w folderze tymczasowym, `%APPDATA%` nietknięty), wszystko PASS: komendy edycji w Notatniku i Eksploratorze (zmień nazwę, właściwości, kopiuj/wklej), okno w tle pod kursorem, `paste_text` z przywróceniem schowka, `command` bez okna konsoli, program/folder/adres, zamknij/minimalizuj (pulpit bez okna zamykania systemu), zrzut ekranu, wyciszenie (Core Audio, stan przywrócony), wykluczenia od pierwszego wciśnięcia w obie strony, `.bak`, UTF-16, polskie nazwy na kole (zrzut), Edge w F11, zmaksymalizowany Notatnik, regresje z etapu 03.
 - Dwa przeglądy managera; poprawione: `.bak`, wyścig przy odświeżaniu, kodowanie, schowek, pulpit, pełny ekran, `cmd.exe`, wypisy poza hakiem.
 
 Otwarte sprawy:

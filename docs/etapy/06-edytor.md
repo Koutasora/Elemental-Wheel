@@ -16,7 +16,7 @@ Poprawiony `save()`: do `.bak` trafia tylko poprawny plik.
 - [x] Zapis: walidacja przed zapisem (przy błędzie plik zostaje nietknięty), znacznik niezapisanych zmian, pytanie przy zamykaniu z niezapisanymi zmianami; `save()` kopiuje do `.bak` tylko poprawny istniejący plik
 - [x] Testy: `save()` i `.bak` w `wheel-core`; logika modelu edytora bez okna (zmiana typu akcji, podmenu, zmiana liczby sektorów)
 - [x] `cargo build --release`, `cargo test`, clippy `-D warnings` i `cargo fmt --check` czyste
-- [x] Test na LAB z konfiguracją w scratchpadzie (`%APPDATA%` nietknięty): zrzuty edytora, zapis, przeładowanie w działającym kole (ręcznie przez użytkownika)
+- [x] Test na LAB z konfiguracją w folderze tymczasowym (`%APPDATA%` nietknięty): zrzuty edytora, zapis, przeładowanie w działającym kole (ręcznie przez użytkownika)
 - [x] Układ okna zatwierdzony przez użytkownika na zrzucie przed dopracowaniem
 - [x] `README.md` i `CHECKLISTA.md` zaktualizowane
 
@@ -32,7 +32,7 @@ Poprawiony `save()`: do `.bak` trafia tylko poprawny plik.
 - [x] Podgląd zgodny z kołem: zaokrąglone rogi kafelków, podświetlenie kafelka pod kursorem, zaznaczenie obramowaniem w akcencie, nazwa zaznaczonego kafelka w środku
 - [x] Liczba sektorów pierścienia wewnętrznego jako opcja `inner_sectors` 4–12 (domyślnie 12, niezależna od zewnętrznego): `wheel-core` (konfiguracja, układ, geometria, trafianie), rysowanie w kole, podgląd i panel opcji edytora, README; testy
 - [x] `README.md`, `CHECKLISTA.md`
-- Sprawdzenie: tester: build, testy, clippy, fmt; skrypt PowerShell: edytor z `--config` w scratchpadzie, zrzuty, sprawdzenie zapisu, `.bak` i przeładowania w `wheel.exe` (`--accept-injected`); na końcu krótki test ręczny użytkownika
+- Sprawdzenie: tester: build, testy, clippy, fmt; skrypt PowerShell: edytor z `--config` w folderze tymczasowym, zrzuty, sprawdzenie zapisu, `.bak` i przeładowania w `wheel.exe` (`--accept-injected`); na końcu krótki test ręczny użytkownika
 
 ## Decyzje
 - Opcje programu i przeciąganie plików na sloty w tym etapie (są w makiecie; decyzja użytkownika).
