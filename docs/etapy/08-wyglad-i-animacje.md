@@ -11,7 +11,7 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - [ ] Animacje wyłączane opcją `animations` (konfiguracja i edytor) i zgodne z ustawieniem Windows „Pokazuj animacje”
 - [ ] Szkło (rozmyte tło jak Vista Aero / macOS) z opcją `glass_pct` 0–100 (przezroczystość szkła; 0 = bez szkła, wygląd nieprzezroczysty) w konfiguracji i jako suwak w edytorze; bez szkła także przy wyłączonej przezroczystości Windows
 - [ ] Renderer i ikony przygotowane po wczytaniu konfiguracji: otwarcie po zmianie konfiguracji poniżej 16 ms (dziś 89 ms); układy tekstu nie tworzone przy każdym odrysowaniu
-- [ ] Pamięć prywatna w widoku ikon do 15 MB (dziś 17 MB); mediana otwarcia nadal do 16 ms; wyniki w pliku etapu
+- [ ] Pamięć prywatna w tle: bez szkła do 15 MB (widok nazw i ikon; przed etapem ikony 17 MB), ze szkłem jak najmniej, najwyżej 20 MB; mediana otwarcia nadal do 16 ms; wyniki w pliku etapu
 - [ ] Podgląd w edytorze zgodny z nowym wyglądem koła
 - [ ] Wygląd zatwierdzony przez użytkownika na zrzutach (jasny/ciemny, nazwy/ikony, łuk podmenu)
 - [ ] `cargo build --release`, `cargo test`, clippy `-D warnings`, `cargo fmt --check` czyste; README i CHECKLISTA zaktualizowane
@@ -33,6 +33,7 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - Wygląd, runda 2 (użytkownik): bardziej zaokrąglone rogi kafelków i próba efektu szkła (prawdziwe rozmycie tła); minimum czcionki 8 px zamiast 9 (przy 60% 9 px obcinało nazwy), cień w jasnym motywie o połowę słabszy.
 - Szkło systemowe (HostBackdropBrush) odrzucone: rozmycie za mocne i nieregulowane, wymaga nieudokumentowanego API; zamiast niego migawka ekranu pod kołem przy otwarciu, rozmycie i nasycenie w D2D, połysk i poświata tekstu (cel jakości: Vista Aero / macOS, decyzja użytkownika).
 - Szkło z migawki zaakceptowane przez użytkownika (runda 3: rozmycie σ 9 px, nasycenie 1.4, tint ciemny 0.45 / jasny 0.42 przy mocy 50, połysk u góry, poświata tekstu). Do poprawy: migawka BitBlt ok. 31 ms na LAB (RDP) → robiona w tle przy wciśnięciu prawego przycisku (180 ms progu wystarcza); pamięć 31 MB → rozmycie na migawce zmniejszonej 4×, zwalnianie bitmap po zamknięciu.
+- Pamięć ze szkłem (decyzja użytkownika, wariant 1): efekty rozmycia zwalniane po zamknięciu i tworzone przy wciśnięciu (w czasie progu 180 ms); cel ze szkłem najwyżej 20 MB, bez szkła 15 MB (pomiar demo po zmniejszeniu migawki: szkło 25 MB, bez szkła 14,8 MB; efekty GPU ok. 7 MB).
 - Moc przezroczystości szkła jako suwak w opcjach (`glass_pct`, decyzja użytkownika).
 - Podglądy wyglądu tylko lokalnie (plik HTML na LAB), nie na claude.ai (zasada użytkownika).
 - Poza zakresem: znany błąd po Escape (decyzja z etapu 07), zasobnik i tryb bez konsoli (etap 09).
