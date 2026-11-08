@@ -21,7 +21,7 @@ Poprawić znane błędy i braki z wydania 1.0.0 i wydać wersję 1.0.1 z nowym i
 - [x] Błąd po Escape: diagnoza `tools/soak.ps1` i ślad w `apps/wheel/src/hook.rs`, `window.rs`; jedna runda, potem decyzja
 - [x] Pamięć szkła: zwalnianie zasobów szkła po `glass_pct = 0` w `apps/wheel/src/window.rs` lub rendererze
 - [x] Usunięcie wzmianek z `docs/etapy/01..08`
-- [ ] Podpis i klawisz O: `crates/wheel-core/src/trigger.rs` (efekt, testy), `apps/wheel/src/hook.rs` (klawisz O jak Escape), `render.rs`/`anim.rs` (podpis, zanikanie), podgląd w edytorze, README, CHECKLISTA; zrzut do akceptacji, test na LAB wejściem wstrzykiwanym (edytor na Opcjach, litera nie trafia do Notatnika); potem ponownie instalator i szkic 1.0.1
+- [x] Podpis i klawisz O: `crates/wheel-core/src/trigger.rs` (efekt, testy), `apps/wheel/src/hook.rs` (klawisz O jak Escape), `render.rs`/`anim.rs` (podpis, zanikanie), podgląd w edytorze, README, CHECKLISTA; zrzut do akceptacji, test na LAB wejściem wstrzykiwanym (edytor na Opcjach, litera nie trafia do Notatnika); potem ponownie instalator i szkic 1.0.1
 - [x] Wersja 1.0.1: `Cargo.toml`, `tools/build-installer.ps1`, test aktualizacji, README, CHECKLISTA, szkic wydania
 - Sprawdzenie: `cargo test`, clippy, fmt; `soak.ps1` dla Escape (po zgodzie, przejmuje pulpit); pomiar pamięci `--stats`; zrzut podglądu z długimi nazwami do akceptacji; instalacja 1.0.1 na 1.0.0 przy działającym kole
 
@@ -39,6 +39,7 @@ Poprawić znane błędy i braki z wydania 1.0.0 i wydać wersję 1.0.1 z nowym i
 - Dostęp do opcji niezależny od liczby sektorów (decyzja użytkownika): kafelek „Opcje koła” znika przy mniejszej liczbie sektorów, więc podpis „O – opcje” w środku koła przy każdym otwarciu i klawisz O; kafelek i zasobnik zostają; bez opcji wyłączenia podpisu.
 - Podpis „O – opcje” widoczny 10 s po otwarciu zamiast ok. 2 s (decyzja użytkownika po zrzutach).
 - Podpis rysowany pod „Anuluj” w środku (środek przy kursorze na środku pokazuje „Anuluj”), tylko gdy kursor jest na środku; kolor przygaszony motywu, 10 px; w podglądzie edytora statycznie. Klawisz O ignorowany przy Ctrl/Alt/Win (skróty programów działają). Test na LAB wejściem wstrzykiwanym: O przy przytrzymaniu i w trybie klikania otwiera edytor `--tab opcje --config <test>`, litera nie trafia do Notatnika; O przy zamkniętym kole i Ctrl+O przechodzą.
+- Po przeglądzie managera: tylko pierwsze wciśnięcie O otwiera opcje (O trzymane przed otwarciem koła i jego powtórzenia idą do programu, bez połkniętego zwolnienia); podgląd rysuje podpis pod „Anuluj” tylko bez nazwy kafelka w środku, jak koło. Instalator 1.0.1 przebudowany, zainstalowany na LAB na działające koło (kod 0, `config.json` bez zmian), plik i SHA-256 w szkicu wydania podmienione.
 - Wzmianki w etapach 01–08: „claude.ai” → „w sieci”, „scratchpad” → „folder tymczasowy”, bez „przez Claude”; treść decyzji bez zmian.
 
 ## Podsumowanie
