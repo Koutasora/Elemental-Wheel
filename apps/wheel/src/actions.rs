@@ -9,7 +9,7 @@
 use std::thread;
 use std::time::Duration;
 
-use wheel_core::{Action, Shortcut, SystemAction, is_extended, parse_shortcut};
+use wheel_core::{Action, EditCommand, Shortcut, SystemAction, is_extended, parse_shortcut};
 use windows::Win32::Foundation::{CloseHandle, GlobalFree, HANDLE, HGLOBAL, HWND, LPARAM, WPARAM};
 use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize};
 use windows::Win32::System::DataExchange::{
@@ -26,7 +26,8 @@ use windows::Win32::System::Threading::{
     CREATE_NO_WINDOW, CreateProcessW, PROCESS_INFORMATION, STARTUPINFOW,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, SendInput,
+    INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP,
+    MAPVK_VK_TO_VSC, MapVirtualKeyW, SendInput, VIRTUAL_KEY,
 };
 use windows::Win32::UI::Shell::{
     SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW, ShellExecuteExW,
@@ -40,6 +41,7 @@ use windows::core::{PCWSTR, PWSTR, w};
 use crate::args::PanicTest;
 use crate::guard;
 use crate::hook::{MARKER, is_shell_class, window_class};
+use crate::properties::{self, Route};
 
 /// How long the clipboard keeps the pasted text before the previous text comes back.
 const CLIPBOARD_RESTORE_MS: u64 = 500;
@@ -112,6 +114,9 @@ fn execute(action: &Action, target: HWND, wheel: HWND) -> Result<(), String> {
             send_keys(&parse_shortcut(keys)?)
         }
         Action::Edit { command } => {
+            if *command == EditCommand::Properties && properties_by_shell(target) {
+                return Ok(());
+            }
             focus(target);
             send_keys(&parse_shortcut(command.shortcut())?)
         }
@@ -121,6 +126,34 @@ fn execute(action: &Action, target: HWND, wheel: HWND) -> Result<(), String> {
         }
         Action::Command { line } => command(line),
         Action::System { action } => system(*action, target),
+    }
+}
+
+/// Properties of Explorer's selection or of the desktop's, asked of the shell (see
+/// `properties.rs`). False when the window is of another kind or the shell could not be asked;
+/// the caller then sends the shortcut.
+fn properties_by_shell(target: HWND) -> bool {
+    if target.0.is_null() {
+        return false;
+    }
+    let class = window_class(target);
+    if properties::route_for(&class) != Route::Shell {
+        return false;
+    }
+    let desktop = is_shell_class(&class);
+    // SAFETY: COM is released below, on this thread, only if this call initialised it.
+    let com = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.is_ok();
+    let shown = properties::show(target, desktop);
+    if com {
+        // SAFETY: matches the successful initialisation above.
+        unsafe { CoUninitialize() };
+    }
+    match shown {
+        Ok(_) => true,
+        Err(e) => {
+            wheel_core::log_line!("{e}; sending the shortcut instead");
+            false
+        }
     }
 }
 
@@ -280,6 +313,13 @@ fn key_sequence(shortcut: &Shortcut) -> Vec<Key> {
     keys
 }
 
+/// Hardware scan code of a virtual key (0 when the key has none). Sent along with the virtual
+/// key code, because some programs read the scan code of the message.
+fn scan_code(vk: u16) -> u16 {
+    // SAFETY: plain call.
+    unsafe { MapVirtualKeyW(u32::from(vk), MAPVK_VK_TO_VSC) as u16 }
+}
+
 fn key_input(key: Key) -> INPUT {
     let mut flags = if key.up {
         KEYEVENTF_KEYUP
@@ -293,8 +333,8 @@ fn key_input(key: Key) -> INPUT {
         r#type: INPUT_KEYBOARD,
         Anonymous: INPUT_0 {
             ki: KEYBDINPUT {
-                wVk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY(key.vk),
-                wScan: 0,
+                wVk: VIRTUAL_KEY(key.vk),
+                wScan: scan_code(key.vk),
                 dwFlags: flags,
                 time: 0,
                 dwExtraInfo: MARKER,
@@ -478,6 +518,25 @@ mod tests {
     }
 
     #[test]
+    fn input_carries_scan_codes_next_to_the_virtual_keys() {
+        let down = |text: &str| {
+            let k = key_sequence(&parse_shortcut(text).unwrap());
+            // SAFETY: `key_input` always fills the keyboard member.
+            k.into_iter()
+                .map(|k| unsafe { key_input(k).Anonymous.ki })
+                .collect::<Vec<_>>()
+        };
+        let enter = down("Alt+Enter");
+        assert_eq!(
+            enter.iter().map(|k| (k.wVk.0, k.wScan)).collect::<Vec<_>>(),
+            [(0x12, 0x38), (0x0D, 0x1C), (0x0D, 0x1C), (0x12, 0x38)]
+        );
+        assert_eq!(down("Ctrl+C")[1].wScan, 0x2E);
+        // Windows keys are extended and still get a scan code.
+        assert_ne!(down("Win+D")[0].wScan, 0);
+    }
+
+    #[test]
     fn cmd_is_a_full_path() {
         let exe = cmd_exe().to_lowercase();
         assert!(exe.ends_with("cmd.exe") && exe.contains('\\'), "{exe}");
@@ -491,5 +550,59 @@ mod tests {
             "{root}"
         );
         assert_eq!(expand("plain text"), "plain text");
+    }
+
+    /// `cargo test action_handles -- --ignored --nocapture`: kernel handles and memory of the
+    /// process after many actions (each runs on a thread of its own with COM and the shell).
+    #[test]
+    #[ignore = "starts programs; prints handle counts"]
+    fn action_handles() {
+        use windows::Win32::System::ProcessStatus::{
+            GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS_EX,
+        };
+        use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessHandleCount};
+        let handles = || {
+            let mut n = 0u32;
+            let mut c = PROCESS_MEMORY_COUNTERS_EX {
+                cb: size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32,
+                ..Default::default()
+            };
+            // SAFETY: valid pseudo handle, out pointers and matching `cb`.
+            unsafe {
+                GetProcessHandleCount(GetCurrentProcess(), &mut n).unwrap();
+                GetProcessMemoryInfo(
+                    GetCurrentProcess(),
+                    (&mut c as *mut PROCESS_MEMORY_COUNTERS_EX).cast(),
+                    c.cb,
+                )
+                .unwrap();
+            }
+            format!(
+                "{n} handles, {:.1} MB private",
+                c.PrivateUsage as f64 / 1048576.0
+            )
+        };
+        let run_all = |action: &Action, times: u32| {
+            for _ in 0..times {
+                run(action, 0, 0);
+                thread::sleep(Duration::from_millis(150));
+            }
+            thread::sleep(Duration::from_millis(1000));
+        };
+        println!("start: {}", handles());
+        let command = Action::Command {
+            line: "exit".to_string(),
+        };
+        run_all(&command, 20);
+        println!("after 20 commands: {}", handles());
+        let program = Action::Program {
+            path: "cmd.exe".to_string(),
+            args: "/c exit".to_string(),
+            working_dir: None,
+        };
+        run_all(&program, 1);
+        println!("after 1 program: {}", handles());
+        run_all(&program, 20);
+        println!("after 21 programs: {}", handles());
     }
 }

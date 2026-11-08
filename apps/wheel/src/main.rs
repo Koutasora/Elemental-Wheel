@@ -7,6 +7,7 @@ mod guard;
 mod hook;
 mod icons;
 mod instance;
+mod properties;
 mod render;
 mod settings;
 mod stats;
