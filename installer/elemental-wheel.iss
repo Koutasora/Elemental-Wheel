@@ -39,6 +39,8 @@ polish.EditorShortcut=Elemental Wheel - edytor
 english.EditorShortcut=Elemental Wheel Editor
 polish.RunApp=Uruchom Elemental Wheel
 english.RunApp=Launch Elemental Wheel
+polish.WheelNotClosed=Nie udało się zamknąć Elemental Wheel. Zamknij je (ikona w zasobniku, Zamknij) i uruchom instalator ponownie.
+english.WheelNotClosed=Could not close Elemental Wheel. Close it (tray icon, Exit) and run the installer again.
 
 [Messages]
 polish.FinishedLabel=Zainstalowano Elemental Wheel {#AppVersion}.
@@ -66,20 +68,43 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: 
 [Run]
 Filename: "{app}\wheel.exe"; Parameters: "--run"; Description: "{cm:RunApp}"; Flags: nowait postinstall
 
-[UninstallRun]
-Filename: "{app}\wheel.exe"; Parameters: "--quit"; RunOnceId: "QuitWheel"; Flags: runhidden waituntilterminated
-
 [Code]
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+// The wheel holds this mutex until its process ends (apps/wheel/src/instance.rs).
+const
+  WheelMutex = 'Local\ElementalWheel';
+
+// `--quit` returns once the wheel window is gone, but the process lingers for a moment.
+function StopWheel(Exe: String): Boolean;
 var
-  Wheel: String;
-  ResultCode: Integer;
+  ResultCode, I: Integer;
 begin
-  Wheel := ExpandConstant('{app}\wheel.exe');
-  if FileExists(Wheel) then
+  if CheckForMutexes(WheelMutex) then
   begin
-    Exec(Wheel, '--quit', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-    Sleep(500);
+    if FileExists(Exe) then
+      Exec(Exe, '--quit', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    for I := 1 to 50 do
+    begin
+      if not CheckForMutexes(WheelMutex) then
+        Break;
+      Sleep(100);
+    end;
   end;
+  Result := not CheckForMutexes(WheelMutex);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
   Result := '';
+  if not StopWheel(ExpandConstant('{app}\wheel.exe')) then
+    Result := CustomMessage('WheelNotClosed');
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usUninstall then
+    if not StopWheel(ExpandConstant('{app}\wheel.exe')) then
+    begin
+      SuppressibleMsgBox(CustomMessage('WheelNotClosed'), mbError, MB_OK, IDOK);
+      Abort;
+    end;
 end;
