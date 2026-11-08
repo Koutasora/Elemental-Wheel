@@ -1,6 +1,7 @@
 // In release builds there is no console window; `--version` attaches to the parent console.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod autostart;
 mod icons;
 mod messages;
 mod model;
@@ -290,6 +291,7 @@ struct App {
     icons: icons::Icons,
     last_check: Instant,
     was_focused: bool,
+    autostart: options::Autostart,
 }
 
 impl App {
@@ -305,6 +307,7 @@ impl App {
             icons: icons::Icons::new(icon_font),
             last_check: Instant::now(),
             was_focused: true,
+            autostart: options::Autostart::read(),
         }
     }
 
@@ -428,8 +431,11 @@ impl App {
                     .show(ui, |ui| match self.tab {
                         Tab::Tile => panel::show(ui, &mut self.model),
                         Tab::Options => {
-                            if options::show(ui, &mut self.model) {
+                            if options::show(ui, &mut self.model, &mut self.autostart) {
                                 self.dialog = Some(Dialog::Defaults);
+                            }
+                            if let Some(e) = self.autostart.error.take() {
+                                self.status = Some(Status::error(e));
                             }
                         }
                     });
