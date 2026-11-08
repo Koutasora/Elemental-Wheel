@@ -167,6 +167,7 @@ impl HookThread {
 /// Starts the hook thread; `window` is the wheel window that receives open / close messages.
 pub fn start(config: HookOptions, window: HWND, settings: Arc<WheelConfig>) -> Result<HookThread> {
     publish(settings);
+    crate::select::start();
     let window = window.0 as isize;
     STALL_PENDING.store(config.stall_hook_once, Ordering::Relaxed);
     let (tx, rx) = mpsc::channel();
@@ -301,6 +302,9 @@ impl HookState {
                             o.outer_sectors,
                         ));
                     }
+                    // Explorer and the desktop select the item under the pointer, as the right
+                    // button would; the action of the wheel waits for that.
+                    crate::select::begin(self.target, info.pt);
                     // The wheel opens at this point once the hold time has elapsed (at once
                     // when it replaces the right button); the window takes the desktop
                     // snapshot meanwhile, and the open message queued right after the press

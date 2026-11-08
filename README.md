@@ -49,6 +49,7 @@ target\release\wheel.exe --quit
 - Hold the right button for 180 ms without moving: the wheel opens under the cursor; release selects the sector in that direction.
 - With `replace_right_click` the wheel opens on the press itself and the right button never reaches programs (their context menu is available through a `context_menu` tile); the exceptions below still apply. `hold_ms` and `move_px` are ignored.
 - Short click and drag with the right button (moved more than 6 px before 180 ms) reach programs unchanged.
+- In Explorer and on the desktop the wheel selects the item under the pointer when it opens, as the right button does (an item already selected keeps the selection).
 - Release in the centre right after opening keeps the wheel open: left click selects; left click in the centre or outside, right click or Esc closes. Release in the centre after the pointer has been on the tiles closes the wheel. Esc while holding cancels.
 - Submenu: pointing at an outer sector with a submenu (marked at its outer edge) opens an arc of up to 5 tiles in the same direction. Releasing or clicking on a tile, or releasing further out in its direction, selects it; the sector itself keeps its own action. Moving to another sector closes the arc.
 - The right button also passes through unchanged over windows of programs run as administrator, over programs on the exclusion list and over full screen windows (`disable_in_fullscreen`).

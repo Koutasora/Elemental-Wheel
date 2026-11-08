@@ -12,6 +12,7 @@ mod icons;
 mod instance;
 mod properties;
 mod render;
+mod select;
 mod settings;
 mod stats;
 mod theme;
