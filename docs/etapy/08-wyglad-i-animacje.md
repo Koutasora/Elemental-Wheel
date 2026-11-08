@@ -5,28 +5,33 @@ Dopracowany wygląd koła, krótkie animacje (otwarcie, zamknięcie, podświetle
 pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 
 ## Kryteria zamknięcia
-- [ ] Kafelki nieprzezroczyste i czytelne na każdym tle (dziś przez pierścień wewnętrzny prześwituje tło); delikatny cień koła, podświetlenie w kolorze akcentu, motyw jasny i ciemny
-- [ ] Minimalna bezwzględna wielkość czcionki (przy 60–75% nie schodzi do ok. 5 px)
-- [ ] Animacje: otwarcie (zanikanie + lekkie skalowanie, ok. 120 ms), zamknięcie (zanikanie, ok. 80 ms), płynne podświetlenie, wysunięcie łuku podmenu; akcja startuje od razu, zamknięcie jej nie opóźnia
-- [ ] Animacje wyłączane opcją `animations` (konfiguracja i edytor) i zgodne z ustawieniem Windows „Pokazuj animacje”
-- [ ] Szkło (rozmyte tło jak Vista Aero / macOS) z opcją `glass_pct` 0–100 (przezroczystość szkła; 0 = bez szkła, wygląd nieprzezroczysty) w konfiguracji i jako suwak w edytorze; bez szkła także przy wyłączonej przezroczystości Windows
-- [ ] Renderer i ikony przygotowane po wczytaniu konfiguracji: otwarcie po zmianie konfiguracji poniżej 16 ms (dziś 89 ms); układy tekstu nie tworzone przy każdym odrysowaniu
-- [ ] Pamięć prywatna w tle: ze szkłem do 25 MB, bez szkła do 15 MB (nazwy) i 17 MB (ikony); mediana otwarcia nadal do 16 ms; wyniki w pliku etapu
-- [ ] Opcja `replace_right_click` (konfiguracja i edytor, domyślnie wyłączona): koło otwiera się od razu po wciśnięciu prawego przycisku, bez przytrzymania; systemowy prawy przycisk nie dociera do programów (poza oknami administratora, wykluczeniami i pełnym ekranem)
-- [ ] „Właściwości” z koła działa w Eksploratorze i na pulpicie (test fizyczną myszą)
-- [ ] Podgląd w edytorze zgodny z nowym wyglądem koła
-- [ ] Wygląd zatwierdzony przez użytkownika na zrzutach (jasny/ciemny, nazwy/ikony, łuk podmenu)
+- [x] Kafelki czytelne na każdym tle (podkład pod kafelkami, rowki zamiast prześwitu); delikatny cień koła, podświetlenie w kolorze akcentu, motyw jasny i ciemny
+- [x] Minimalna bezwzględna wielkość czcionki (8 px × DPI, niezależnie od rozmiaru koła)
+- [x] Animacje: otwarcie (zanikanie + skala 0,92→1, 120 ms), zamknięcie (zanikanie, 80 ms), płynne podświetlenie (90 ms), wysunięcie łuku podmenu (110 ms); akcja startuje od razu, zamknięcie jej nie opóźnia
+- [x] Animacje wyłączane opcją `animations` (konfiguracja i edytor) i zgodne z ustawieniem Windows „Efekty animacji”
+- [x] Szkło (rozmyte tło jak Vista Aero / macOS) z opcją `glass_pct` 0–100 (0 = bez szkła) w konfiguracji i jako suwak w edytorze; bez szkła także przy wyłączonej przezroczystości Windows
+- [x] Renderer i ikony przygotowane po wczytaniu konfiguracji (otwarcie nie buduje renderera); układy tekstu i geometrie nie tworzone przy każdym odrysowaniu
+- [x] Mediana otwarcia do 16 ms (na żywo, fizyczna mysz, szkło: 6,3 ms, maks. 19,6 ms przy pierwszym otwarciu)
+- ~~Pamięć prywatna w tle: ze szkłem do 25 MB, bez szkła do 15 MB (nazwy) i 17 MB (ikony)~~ (przeniesione do etapu 09, decyzja użytkownika: w `--run` 30,9 MB od startu, w demo 21,6 MB; patrz Pomiary)
+- [x] Opcja `replace_right_click` (konfiguracja i edytor, domyślnie wyłączona): koło od razu po wciśnięciu prawego przycisku; systemowy prawy przycisk nie dociera do programów (poza oknami administratora, wykluczeniami i pełnym ekranem); test fizyczną myszą
+- [x] „Właściwości” z koła działa w Eksploratorze i na pulpicie (jeden plik, kilka plików, folder, ikona na pulpicie; test fizyczną myszą)
+- [ ] Akcja systemowa `context_menu` („Menu kontekstowe”) w konfiguracji i edytorze
+- [x] Podgląd w edytorze zgodny z nowym wyglądem koła (szkło nad tłem próbnym, suwak działa od razu)
+- [x] Wygląd zatwierdzony przez użytkownika na zrzutach (szkło runda 3: „wygląda bardzo dobrze”)
 - [ ] `cargo build --release`, `cargo test`, clippy `-D warnings`, `cargo fmt --check` czyste; README i CHECKLISTA zaktualizowane
 
 ## Plan
 - [x] `apps/wheel/src/render.rs`, `theme.rs`: nieprzezroczyste wypełnienia, cień, akcent, minimalna czcionka; zrzuty do akceptacji przed animacjami
-- [ ] `apps/wheel/src/window.rs`, `render.rs`: animacje otwarcia i zamknięcia przez DirectComposition (przezroczystość i skala, bez ponownego rysowania klatek), podświetlenie i łuk przez interpolację na istniejącym zegarze 16 ms
-- [ ] `crates/wheel-core/src/config.rs`, `apps/wheel-editor/src/options.rs`: opcje `animations` (domyślnie włączona) i `glass_pct` (suwak w edytorze), testy
-- [ ] `apps/wheel/src/window.rs`, `render.rs`, `icons.rs`: renderer i ikony po wczytaniu konfiguracji, pamięć podręczna układów tekstu, mniejsze bitmapy ikon
-- [ ] `apps/wheel-editor/src/preview.rs`: ten sam wygląd
-- [ ] Pomiary `tools/soak.ps1` (wejście wstrzykiwane: najpierw uprzedzenie i czekanie na zgodę użytkownika)
+- [x] `render.rs`, `theme.rs`, `backdrop.rs`: zaokrąglone kafelki, szkło z migawki tła (rozmycie D2D, połysk, poświata tekstu)
+- [x] `apps/wheel/src/window.rs`, `render.rs`, `anim.rs`: animacje otwarcia i zamknięcia przez DirectComposition, podświetlenie i łuk przez interpolację na zegarze 16 ms
+- [x] `crates/wheel-core/src/config.rs`, `look.rs`, `apps/wheel-editor/src/options.rs`: opcje `animations`, `glass_pct`, `replace_right_click`, testy
+- [x] `window.rs`, `render.rs`, `hook.rs`: migawka przy wciśnięciu, renderer po wczytaniu konfiguracji, wspólne urządzenie D3D/D2D, trim po zamknięciu
+- [x] `apps/wheel-editor/src/preview.rs`: ten sam wygląd
+- [x] `apps/wheel/src/properties.rs`, `actions.rs`: „Właściwości” przez powłokę, kody skanowania w skrótach
+- [ ] `actions.rs`, `config.rs`: akcja `context_menu`
+- [x] ~~Pomiary `tools/soak.ps1`~~ test na żywo fizyczną myszą z `--stats` (decyzja użytkownika)
 - [ ] README, CHECKLISTA
-- Sprawdzenie: tester: build, testy, clippy, fmt; zrzuty z `--demo` z konfiguracją w scratchpadzie (`%APPDATA%` nietknięty); pomiary `soak.ps1`
+- Sprawdzenie: tester: build, testy, clippy, fmt; zrzuty offscreen i `--demo` z konfiguracją w scratchpadzie (`%APPDATA%` nietknięty); test na żywo `--run --stats` z konfiguracją w scratchpadzie
 
 ## Decyzje
 - Kolejność etapów zamieniona (decyzja użytkownika): 08 wyglad-i-animacje, 09 instalator-i-wydanie, żeby jedno wydanie 1.0.0 na końcu miało gotowy wygląd.
@@ -42,8 +47,23 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - Cel pamięci zmieniony (decyzja użytkownika): ze szkłem do 25 MB (zmierzone: nazwy 21,6, ikony 24,3 MB), bez szkła 15 MB nazwy / 17 MB ikony (zmierzone 13,8 / 17,0); liczy się szybkość otwarcia.
 - Nowa opcja `replace_right_click` (prośba użytkownika): koło zamiast systemowego prawego przycisku, otwarcie od razu po wciśnięciu.
 - Do etapu 09: `--run` nie startuje, gdy GetCursorPos odmawia dostępu (np. zminimalizowane RDP) — przyjąć główny monitor.
+- Akcja `context_menu` (prośba użytkownika): wstrzyknięte prawe kliknięcie z MARKER w punkcie wciśnięcia, żeby w trybie `replace_right_click` dało się otworzyć zwykłe menu.
+- Pamięć w tle przeniesiona do etapu 09 (decyzja użytkownika przy zamknięciu): `--run` 30,9 MB od startu przed pierwszym otwarciem przy 21,6 MB w demo z tym samym startem; po akcji „Właściwości” ok. 35 MB (arkusz właściwości w procesie koła).
 - Podglądy wyglądu tylko lokalnie (plik HTML na LAB), nie na claude.ai (zasada użytkownika).
 - Poza zakresem: znany błąd po Escape (decyzja z etapu 07), zasobnik i tryb bez konsoli (etap 09).
+
+## Pomiary
+LAB (RDP), 1920x1080, 96 DPI, release, konfiguracja 12+12 sektorów, dwa podmenu, szkło 50.
+
+| | wynik |
+|---|---|
+| otwarcie na żywo (`--run --stats`, fizyczna mysz, 8 otwarć) | mediana 6,3 ms, maks. 19,6 ms (pierwsze) |
+| wcześniejsza seria na żywo (48 otwarć, poprzednia wersja) | 5–11 ms |
+| migawka tła przy wciśnięciu (BitBlt przez RDP) | 20–50 ms, poza ścieżką otwarcia |
+| upload + rozmycie migawki | 1–3 ms |
+| pamięć prywatna demo po zamknięciu (nazwy / ikony, szkło) | 21,6 / 24,3 MB |
+| pamięć prywatna demo po zamknięciu (nazwy / ikony, bez szkła) | 13,8 / 17,0 MB |
+| pamięć prywatna `--run` (nazwy, szkło): start / po teście z „Właściwości” | 30,9 / 34,8 MB |
 
 ## Podsumowanie
 (wypełnia /etap-zamknij)
