@@ -96,8 +96,8 @@
 
 ## 10 poprawki-po-wydaniu
 - [x] Przełącznik autostartu w edytorze (Opcje)
-- [x] Jedna kopia edytora, drugie uruchomienie wyciąga okno
-- [x] Długie nazwy w podglądzie łamane jak w kole
+- [ ] Jedna kopia edytora, drugie uruchomienie wyciąga okno
+- [ ] Długie nazwy w podglądzie łamane jak w kole
 - [x] Błąd po Escape: nie występuje (48 par i 119 cykli soak.ps1 bez błędu)
 - [x] Pamięć po wyłączeniu szkła bez restartu
 - [ ] Wydanie 1.0.1 (instalator, test aktualizacji z 1.0.0)
