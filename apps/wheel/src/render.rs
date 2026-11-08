@@ -13,7 +13,7 @@ use wheel_core::{Config, Hit, Layout, SubArc, ViewMode, arc_for_hit};
 
 use std::time::Instant;
 
-use windows::Win32::Foundation::{E_FAIL, HMODULE, HWND};
+use windows::Win32::Foundation::{E_FAIL, HMODULE, HWND, S_FALSE};
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D_RECT_F, D2D_SIZE_F, D2D_SIZE_U, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_BORDER_MODE_HARD,
     D2D1_COLOR_F, D2D1_COMPOSITE_MODE_SOURCE_COPY, D2D1_COMPOSITE_MODE_SOURCE_OVER,
@@ -44,7 +44,8 @@ use windows::Win32::Graphics::Direct2D::{
 };
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP};
 use windows::Win32::Graphics::Direct3D11::{
-    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11CreateDevice, ID3D11Device,
+    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_QUERY_DESC, D3D11_QUERY_EVENT, D3D11_SDK_VERSION,
+    D3D11CreateDevice, ID3D11Device,
 };
 use windows::Win32::Graphics::DirectComposition::{
     DCompositionCreateDevice, IDCompositionAnimation, IDCompositionDevice,
@@ -105,6 +106,8 @@ const PARENT_TINT: f32 = 0.22;
 const PARENT_GLASS_ALPHA: f32 = 0.3;
 /// Standard deviation of the blur of the desktop snapshot at 100% scale and 96 DPI, in px.
 const BLUR_SIGMA: f32 = 9.0;
+/// Longest wait for the GPU between the steps of `Painter::warm`, in milliseconds.
+const GPU_WAIT_MS: u128 = 200;
 /// Standard deviation of the halo behind label text, in px at the same scale.
 const HALO_SIGMA: f32 = 1.8;
 /// The sheen of the disc is its part inside an ellipse of this height (share of the radius) whose
@@ -755,7 +758,9 @@ impl Painter {
     }
 
     /// Draws every label and submenu once into a scratch bitmap, and runs the glass pipeline
-    /// once, so that their caches and GPU pipelines exist before the first open.
+    /// once, so that their caches and GPU pipelines exist before the first open. The GPU is let
+    /// to catch up after every drawing: with work queued up the driver keeps allocating new
+    /// buffers, and the memory it grew to stays with the process after the trim.
     fn warm(&self) -> Result<()> {
         let target = new_bitmap(&self.ctx, self.size, self.size, D2D1_BITMAP_OPTIONS_TARGET)?;
         let n = self.layout.outer_sectors();
@@ -764,6 +769,7 @@ impl Painter {
             .chain((0..n).map(Hit::Outer));
         for hit in hits {
             self.paint(&target, hit, None, &Anim::settled(hit))?;
+            wait_for_gpu();
         }
         let mut first_arc = None;
         for parent in 0..n {
@@ -775,6 +781,7 @@ impl Painter {
             for j in 0..arc.count {
                 let hit = Hit::Sub(parent, j);
                 self.paint(&target, hit, Some(arc), &Anim::settled(hit))?;
+                wait_for_gpu();
             }
         }
         if let Some(frost) = &self.frost {
@@ -2014,6 +2021,46 @@ fn d2d_for(dxgi_device: &IDXGIDevice) -> Result<(ID2D1Factory1, ID2D1Device)> {
         *cache = Some((key, factory.clone(), device.clone()));
         Ok((factory, device))
     })
+}
+
+/// Waits (at most `GPU_WAIT_MS`) until the GPU has run everything queued on the shared device;
+/// does nothing if the wait cannot be set up.
+fn wait_for_gpu() {
+    let Some(device) = D3D_DEVICE.with(|cache| cache.borrow().clone()) else {
+        return;
+    };
+    let desc = D3D11_QUERY_DESC {
+        Query: D3D11_QUERY_EVENT,
+        MiscFlags: 0,
+    };
+    let mut query = None;
+    // SAFETY: plain COM calls; `query` is a valid out pointer and outlives the polling.
+    unsafe {
+        let Ok(context) = device.GetImmediateContext() else {
+            return;
+        };
+        if device.CreateQuery(&desc, Some(&mut query)).is_err() {
+            return;
+        }
+        let Some(query) = query else { return };
+        context.End(&query);
+        context.Flush();
+        // GetData answers S_FALSE while the work is still running, which the safe wrapper
+        // reports as success; so the raw call.
+        let finished = || {
+            (Interface::vtable(&context).GetData)(
+                Interface::as_raw(&context),
+                Interface::as_raw(&query),
+                std::ptr::null_mut(),
+                0,
+                0,
+            ) != S_FALSE
+        };
+        let started = Instant::now();
+        while !finished() && started.elapsed().as_millis() < GPU_WAIT_MS {
+            std::thread::yield_now();
+        }
+    }
 }
 
 thread_local! {

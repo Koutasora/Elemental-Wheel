@@ -300,6 +300,16 @@ fn cursor_pos() -> Result<POINT> {
     Ok(pt)
 }
 
+/// Where the background process takes its first layout from: the cursor, or when Windows refuses
+/// to give it (disconnected or minimised remote session) the origin, which lies on the primary
+/// monitor.
+fn start_point(cursor: Result<POINT>) -> POINT {
+    cursor.unwrap_or_else(|e| {
+        wheel_core::log_line!("cannot read the cursor position ({e}); using the primary monitor");
+        POINT::default()
+    })
+}
+
 /// Wheel layout for the monitor under `pt` (96 DPI if its DPI cannot be read).
 pub fn layout_at(pt: POINT, scale_pct: u16, inner_sectors: u8, outer_sectors: u8) -> Layout {
     Layout::new(
@@ -525,7 +535,7 @@ pub fn run_background(options: &RunOptions, config_path: PathBuf) -> Result<()> 
     };
     let o = &config.options;
     let (scale_pct, inner_sectors, sectors) = (o.scale_pct, o.inner_sectors, o.outer_sectors);
-    let layout = layout_at(cursor_pos()?, scale_pct, inner_sectors, sectors);
+    let layout = layout_at(start_point(cursor_pos()), scale_pct, inner_sectors, sectors);
     let size = layout.size_px() as i32;
     let hwnd = create_popup(RUN_CLASS, run_wnd_proc, WS_EX_TRANSPARENT, (0, 0, size))?;
 
@@ -976,5 +986,23 @@ unsafe fn run_wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
             let _ = DestroyWindow(hwnd);
         }
         LRESULT(0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows::Win32::Foundation::E_ACCESSDENIED;
+
+    #[test]
+    fn start_point_keeps_the_cursor() {
+        let at = POINT { x: -1500, y: 40 };
+        assert_eq!(start_point(Ok(at)), at);
+    }
+
+    #[test]
+    fn start_point_falls_back_to_the_origin_when_the_cursor_is_denied() {
+        let denied = Err(Error::from(E_ACCESSDENIED));
+        assert_eq!(start_point(denied), POINT { x: 0, y: 0 });
     }
 }
