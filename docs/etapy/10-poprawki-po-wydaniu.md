@@ -5,13 +5,13 @@ Poprawić znane błędy i braki z wydania 1.0.0 i wydać wersję 1.0.1 z nowym i
 
 ## Kryteria zamknięcia
 - [x] Edytor ma przełącznik autostartu: zmienia wpis HKCU Run, zgodny z wyborem z instalatora
-- [ ] Drugie uruchomienie edytora pokazuje działające okno zamiast drugiej kopii
+- [x] Drugie uruchomienie edytora pokazuje działające okno zamiast drugiej kopii
 - [x] Długie nazwy w podglądzie edytora łamią się jak w kole i nie wychodzą poza kafelek
 - [x] Błąd po Escape: przyczyna znaleziona i poprawiona (48 par „otwórz, Escape, otwórz” bez błędu) albo opisana w Decyzjach jako znana, z wynikiem diagnozy
 - [x] Wyłączenie szkła w działającym kole zwalnia pamięć bez restartu (bez szkła do 15/17 MB) albo decyzja o pozostawieniu
 - [x] Usunięte wzmianki „claude.ai”, „scratchpad”, „dodany przez Claude” z plików etapów 01–08
 - [x] Wersja 1.0.1 w obu exe, instalator zbudowany, aktualizacja z 1.0.0 sprawdzona na LAB, szkic wydania v1.0.1
-- [ ] Podpis „O – opcje” w środku koła przy każdym otwarciu, znika po 10 s; klawisz O przy otwartym kole zamyka koło i otwiera edytor na zakładce Opcje, litera nie trafia do programu pod kołem; wygląd zaakceptowany na zrzucie
+- [x] Podpis „O – opcje” w środku koła przy każdym otwarciu, znika po 10 s; klawisz O przy otwartym kole zamyka koło i otwiera edytor na zakładce Opcje, litera nie trafia do programu pod kołem; wygląd zaakceptowany na zrzucie
 - [x] Testy, clippy i fmt przechodzą; README i CHECKLISTA zgodne ze zmianami
 
 ## Plan
@@ -41,6 +41,7 @@ Poprawić znane błędy i braki z wydania 1.0.0 i wydać wersję 1.0.1 z nowym i
 - Podpis rysowany pod „Anuluj” w środku (środek przy kursorze na środku pokazuje „Anuluj”), tylko gdy kursor jest na środku; kolor przygaszony motywu, 10 px; w podglądzie edytora statycznie. Klawisz O ignorowany przy Ctrl/Alt/Win (skróty programów działają). Test na LAB wejściem wstrzykiwanym: O przy przytrzymaniu i w trybie klikania otwiera edytor `--tab opcje --config <test>`, litera nie trafia do Notatnika; O przy zamkniętym kole i Ctrl+O przechodzą.
 - Po przeglądzie managera: tylko pierwsze wciśnięcie O otwiera opcje (O trzymane przed otwarciem koła i jego powtórzenia idą do programu, bez połkniętego zwolnienia); podgląd rysuje podpis pod „Anuluj” tylko bez nazwy kafelka w środku, jak koło. Instalator 1.0.1 przebudowany, zainstalowany na LAB na działające koło (kod 0, `config.json` bez zmian), plik i SHA-256 w szkicu wydania podmienione.
 - Użytkownik potwierdził: błąd po Escape nie jest już opisany jako znany; szkic wydania v1.0.0 usunięty (publikowane będzie od razu v1.0.1).
+- Test fizyczną myszą użytkownika na zainstalowanej 1.0.1: podpis, klawisz O i wyciąganie okna edytora (Menu Start, zasobnik, klawisz O) działają; wygląd podpisu zaakceptowany.
 - Wzmianki w etapach 01–08: „claude.ai” → „w sieci”, „scratchpad” → „folder tymczasowy”, bez „przez Claude”; treść decyzji bez zmian.
 
 ## Podsumowanie

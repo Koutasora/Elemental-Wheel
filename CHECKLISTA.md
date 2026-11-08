@@ -96,10 +96,10 @@
 
 ## 10 poprawki-po-wydaniu
 - [x] Przełącznik autostartu w edytorze (Opcje)
-- [ ] Jedna kopia edytora, drugie uruchomienie wyciąga okno
+- [x] Jedna kopia edytora, drugie uruchomienie wyciąga okno
 - [x] Długie nazwy w podglądzie łamane jak w kole
 - [x] Podpis „O – opcje” w kole (10 s) i klawisz O otwierający opcje (test wstrzykiwany: przytrzymanie, tryb klikania, zamknięte koło, Ctrl+O)
-- [ ] Akceptacja wyglądu podpisu i test fizyczną myszą wersji z podpisem
+- [x] Akceptacja wyglądu podpisu i test fizyczną myszą wersji z podpisem
 - [x] Błąd po Escape: nie występuje (48 par i 119 cykli soak.ps1 bez błędu)
 - [x] Pamięć po wyłączeniu szkła bez restartu
 - [x] Wydanie 1.0.1 (instalator, test aktualizacji z 1.0.0; szkic na GitHubie, publikacja po scaleniu PR)
