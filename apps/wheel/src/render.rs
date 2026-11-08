@@ -470,9 +470,7 @@ impl Painter {
         let size = layout.size_px();
         // SAFETY: plain COM calls with valid arguments; every result is checked via `?`.
         unsafe {
-            let d2d_factory: ID2D1Factory1 =
-                D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, None)?;
-            let d2d_device = d2d_factory.CreateDevice(dxgi_device)?;
+            let (d2d_factory, d2d_device) = d2d_for(dxgi_device)?;
             let ctx = d2d_device.CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE)?;
             // The target is in physical pixels, so one D2D unit is one pixel.
             ctx.SetDpi(96.0, 96.0);
@@ -1992,8 +1990,58 @@ fn text_format(
     }
 }
 
-/// Hardware device, or the WARP software rasterizer when there is no usable GPU.
+thread_local! {
+    /// Direct2D factory and device made for a Direct3D device (identified by its pointer), kept
+    /// for the renderers that follow, like the Direct3D device itself.
+    static D2D_SHARED: RefCell<Option<(usize, ID2D1Factory1, ID2D1Device)>> =
+        const { RefCell::new(None) };
+}
+
+/// The Direct2D factory and device for `dxgi_device`, shared by the renderers on this thread.
+fn d2d_for(dxgi_device: &IDXGIDevice) -> Result<(ID2D1Factory1, ID2D1Device)> {
+    let key = dxgi_device.as_raw() as usize;
+    D2D_SHARED.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some((_, factory, device)) = cache.as_ref().filter(|(k, ..)| *k == key) {
+            return Ok((factory.clone(), device.clone()));
+        }
+        // SAFETY: plain COM calls with valid arguments.
+        let (factory, device) = unsafe {
+            let factory: ID2D1Factory1 = D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, None)?;
+            let device = factory.CreateDevice(dxgi_device)?;
+            (factory, device)
+        };
+        *cache = Some((key, factory.clone(), device.clone()));
+        Ok((factory, device))
+    })
+}
+
+thread_local! {
+    /// The device of this thread, kept across renderers (see `create_d3d_device`).
+    static D3D_DEVICE: RefCell<Option<ID3D11Device>> = const { RefCell::new(None) };
+}
+
+/// The Direct3D device of the calling thread, made on first use and shared by the renderers that
+/// follow (a renderer is rebuilt on every configuration change). A device made anew each time
+/// leaves a few MB of driver and shader memory behind in the process; a lost device is replaced.
 fn create_d3d_device() -> Result<ID3D11Device> {
+    D3D_DEVICE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        // SAFETY: plain COM call.
+        if let Some(device) = cache
+            .as_ref()
+            .filter(|d| unsafe { d.GetDeviceRemovedReason() }.is_ok())
+        {
+            return Ok(device.clone());
+        }
+        let device = new_d3d_device()?;
+        *cache = Some(device.clone());
+        Ok(device)
+    })
+}
+
+/// Hardware device, or the WARP software rasterizer when there is no usable GPU.
+fn new_d3d_device() -> Result<ID3D11Device> {
     let mut last = Error::from(E_FAIL);
     for driver in [D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP] {
         let mut device = None;

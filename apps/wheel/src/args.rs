@@ -50,7 +50,8 @@ pub struct DemoOptions {
     /// after N ms instead of 10 s.
     pub close_ms: Option<u32>,
     /// Hidden flag `--demo-linger-ms N` (`--demo` only): after the close, keep the process
-    /// alive N ms with the window hidden, as in the background, and log its memory every second.
+    /// alive N ms with the window hidden, as in the background (warmed up and trimmed as at the
+    /// start of `--run`), and log its memory every second.
     pub linger_ms: Option<u32>,
     /// Hidden flag `--glass <0..100>`: how transparent the glass is (see `glass_level`).
     pub glass: Option<u8>,

@@ -148,6 +148,12 @@ pub fn run_demo(options: &DemoOptions, config_path: PathBuf) -> Result<()> {
         options.glass_level(config.options.glass_pct),
     )
     .and_then(|r| {
+        if options.linger_ms.is_some() {
+            // As the background process starts: warm up, first frame, trim.
+            r.warm();
+            r.draw(Hit::Center, None, &Anim::settled(Hit::Center))?;
+            r.trim();
+        }
         // The window is still hidden, so the snapshot shows the desktop without it.
         log_glass("demo", r.prepare(left, top));
         r.prepare_open(animate)?;
@@ -618,6 +624,10 @@ fn build_renderer(
     renderer.draw(Hit::Center, None, &Anim::settled(Hit::Center))?;
     // The window is still hidden here; what the warm-up left in caches is not needed any more.
     renderer.trim();
+    // The second trim, as after a close (the first frees only part of the memory); it is skipped
+    // if the wheel is shown by then.
+    // SAFETY: `hwnd` is the live window of this thread. A failure only means no second trim.
+    let _ = unsafe { SetTimer(Some(hwnd), TRIM_TIMER, TRIM_DELAY_MS, None) };
     Ok(renderer)
 }
 
