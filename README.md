@@ -37,7 +37,7 @@ target\release\wheel.exe --quit
 ```
 
 - Hold the right button for 180 ms without moving: the wheel opens under the cursor; release selects the sector in that direction.
-- With `replace_right_click` the wheel opens on the press itself and the right button never reaches programs (no context menu); the exceptions below still apply. `hold_ms` and `move_px` are ignored.
+- With `replace_right_click` the wheel opens on the press itself and the right button never reaches programs (their context menu is available through a `context_menu` tile); the exceptions below still apply. `hold_ms` and `move_px` are ignored.
 - Short click and drag with the right button (moved more than 6 px before 180 ms) reach programs unchanged.
 - Release in the centre right after opening keeps the wheel open: left click selects; left click in the centre or outside, right click or Esc closes. Release in the centre after the pointer has been on the tiles closes the wheel. Esc while holding cancels.
 - Submenu: pointing at an outer sector with a submenu (marked at its outer edge) opens an arc of up to 5 tiles in the same direction. Releasing or clicking on a tile, or releasing further out in its direction, selects it; the sector itself keeps its own action. Moving to another sector closes the arc.
@@ -106,8 +106,9 @@ target\release\wheel-editor.exe --version
 - `submenu`: up to 5 items of an outer sector, shown as an arc centred on its direction; submenu items cannot have their own submenu.
 - `view`: `names` or `icons`. In the icon view a tile shows `icon` if set (`.ico`, `.exe` or `.dll`, optionally `,index`; `%VARIABLES%` expand), otherwise the icon of the program, file or folder, a built-in symbol for edit commands, system actions, URLs, shortcuts, text and commands, or the first letter of the name. The centre shows the name of the tile under the cursor.
 - Action types: `none`, `program` (`path`, `args`, `working_dir`), `open` (file or folder), `url`, `shortcut` (`keys`, e.g. `Ctrl+Shift+V`, `Win+V`, `F2`), `edit`, `paste_text` (`text`; the clipboard is restored afterwards), `command` (`line`, run with `cmd /c` without a window), `system`.
+- Property windows opened with `properties` belong to the wheel and close when it stops.
 - `edit` commands: `cut`, `copy`, `paste`, `paste_plain`, `delete`, `undo`, `redo`, `select_all`, `save`, `find`, `rename`, `properties`.
-- `system` actions: `lock`, `close_window`, `minimize_window`, `show_desktop`, `volume_mute`, `volume_up`, `volume_down`, `screenshot`, `context_menu`.
+- `system` actions: `lock`, `close_window`, `minimize_window`, `show_desktop`, `volume_mute`, `volume_up`, `volume_down`, `screenshot`, `context_menu` (a right click at the point where the wheel was opened; the pointer moves there).
 - `program` and `open` paths and arguments expand `%VARIABLES%`.
 - `excluded` lists program file names (case does not matter).
 - `glass_pct` (0 to 100, default 50): how transparent the glass of the wheel is; 0 gives the opaque look. Without Windows transparency (Settings > Personalization > Colors) the wheel is opaque.

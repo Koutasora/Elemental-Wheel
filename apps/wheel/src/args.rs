@@ -220,7 +220,7 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String>
             || close_ms.is_some()
             || linger_ms.is_some())
     {
-        return Err("--at, --demo-hit, --no-anim, --force-anim, --demo-close-ms and              --demo-linger-ms need --demo"
+        return Err("--at, --demo-hit, --no-anim, --force-anim, --demo-close-ms and --demo-linger-ms need --demo"
             .to_string());
     }
     if demo && matches!(test_panic, Some(PanicTest::Hook | PanicTest::Action)) {

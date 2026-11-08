@@ -101,7 +101,7 @@ pub fn show(ui: &mut Ui, model: &mut Model) {
 
     ui.add_space(8.0);
     ui.checkbox(&mut o.replace_right_click, "Koło zamiast prawego przycisku");
-    ui.label("Prawy przycisk zawsze otwiera koło; menu kontekstowe programów nie jest dostępne.");
+    ui.label("Prawy przycisk zawsze otwiera koło; menu kontekstowe programów daje akcja „Menu kontekstowe”.");
 
     // The thresholds do not apply when the wheel replaces the right button.
     ui.add_enabled_ui(!o.replace_right_click, |ui| {
