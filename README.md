@@ -152,10 +152,6 @@ Release build, 1920x1080 at 96 DPI over RDP, 12 outer and 12 inner sectors, glas
 | private memory in the background, names / icons view, glass | 22.9 / 25.0 MB |
 | private memory in the background, names / icons view, no glass | 13.4 / 16.7 MB |
 
-## Known issues
-
-- Holding the right button right after the wheel was closed with Escape sometimes does not open it; the next hold does.
-
 ## Layout
 
 - `crates/wheel-core` - wheel geometry, configuration and shortcut parsing

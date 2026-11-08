@@ -66,7 +66,7 @@
 - [x] Log w `%LOCALAPPDATA%\Elemental-Wheel` (koło i edytor), limit 1 MB, `--log`
 - [x] Panika w haku, oknie koła i akcji przechwycona i zapisana w logu; koło działa dalej
 - [x] Narzędzie `tools/soak.ps1` (test i pomiary); test wielogodzinny pominięty (decyzja)
-- [ ] Znany błąd: przytrzymanie tuż po zamknięciu koła Escape czasem nie otwiera koła
+- [x] Znany błąd: przytrzymanie tuż po zamknięciu koła Escape czasem nie otwiera koła (nie występuje, sprawdzone w etapie 10)
 
 ## 08 wyglad-i-animacje
 - [x] Podkład pod kafelkami, cień, zaokrąglone kafelki, znacznik podmenu nie zasłania nazwy
@@ -98,6 +98,6 @@
 - [x] Przełącznik autostartu w edytorze (Opcje)
 - [x] Jedna kopia edytora, drugie uruchomienie wyciąga okno
 - [x] Długie nazwy w podglądzie łamane jak w kole
-- [ ] Błąd po Escape: poprawka albo diagnoza
+- [x] Błąd po Escape: nie występuje (48 par i 119 cykli soak.ps1 bez błędu)
 - [ ] Pamięć po wyłączeniu szkła bez restartu
 - [ ] Wydanie 1.0.1 (instalator, test aktualizacji z 1.0.0)
