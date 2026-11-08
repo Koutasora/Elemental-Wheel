@@ -6,11 +6,12 @@ Poprawić znane błędy i braki z wydania 1.0.0 i wydać wersję 1.0.1 z nowym i
 ## Kryteria zamknięcia
 - [x] Edytor ma przełącznik autostartu: zmienia wpis HKCU Run, zgodny z wyborem z instalatora
 - [ ] Drugie uruchomienie edytora pokazuje działające okno zamiast drugiej kopii
-- [ ] Długie nazwy w podglądzie edytora łamią się jak w kole i nie wychodzą poza kafelek
+- [x] Długie nazwy w podglądzie edytora łamią się jak w kole i nie wychodzą poza kafelek
 - [x] Błąd po Escape: przyczyna znaleziona i poprawiona (48 par „otwórz, Escape, otwórz” bez błędu) albo opisana w Decyzjach jako znana, z wynikiem diagnozy
 - [x] Wyłączenie szkła w działającym kole zwalnia pamięć bez restartu (bez szkła do 15/17 MB) albo decyzja o pozostawieniu
 - [x] Usunięte wzmianki „claude.ai”, „scratchpad”, „dodany przez Claude” z plików etapów 01–08
 - [x] Wersja 1.0.1 w obu exe, instalator zbudowany, aktualizacja z 1.0.0 sprawdzona na LAB, szkic wydania v1.0.1
+- [ ] Podpis „O – opcje” w środku koła przy każdym otwarciu, znika po ok. 2 s; klawisz O przy otwartym kole zamyka koło i otwiera edytor na zakładce Opcje, litera nie trafia do programu pod kołem; wygląd zaakceptowany na zrzucie
 - [x] Testy, clippy i fmt przechodzą; README i CHECKLISTA zgodne ze zmianami
 
 ## Plan
@@ -20,6 +21,7 @@ Poprawić znane błędy i braki z wydania 1.0.0 i wydać wersję 1.0.1 z nowym i
 - [x] Błąd po Escape: diagnoza `tools/soak.ps1` i ślad w `apps/wheel/src/hook.rs`, `window.rs`; jedna runda, potem decyzja
 - [x] Pamięć szkła: zwalnianie zasobów szkła po `glass_pct = 0` w `apps/wheel/src/window.rs` lub rendererze
 - [x] Usunięcie wzmianek z `docs/etapy/01..08`
+- [ ] Podpis i klawisz O: `crates/wheel-core/src/trigger.rs` (efekt, testy), `apps/wheel/src/hook.rs` (klawisz O jak Escape), `render.rs`/`anim.rs` (podpis, zanikanie), podgląd w edytorze, README, CHECKLISTA; zrzut do akceptacji, test na LAB wejściem wstrzykiwanym (edytor na Opcjach, litera nie trafia do Notatnika); potem ponownie instalator i szkic 1.0.1
 - [x] Wersja 1.0.1: `Cargo.toml`, `tools/build-installer.ps1`, test aktualizacji, README, CHECKLISTA, szkic wydania
 - Sprawdzenie: `cargo test`, clippy, fmt; `soak.ps1` dla Escape (po zgodzie, przejmuje pulpit); pomiar pamięci `--stats`; zrzut podglądu z długimi nazwami do akceptacji; instalacja 1.0.1 na 1.0.0 przy działającym kole
 
@@ -33,6 +35,8 @@ Poprawić znane błędy i braki z wydania 1.0.0 i wydać wersję 1.0.1 z nowym i
 - Pamięć szkła: przy przełączeniu szkła z włączonego na wyłączone w działającym kole wspólne urządzenia D3D i D2D są tworzone od nowa (efekty rozmycia zostawały w nich); zwykłe przeładowanie zatrzymuje urządzenia jak dotąd (nowe urządzenie przy każdym przeładowaniu zostawiało pamięć w sterowniku). Pomiar `--run --stats`, 10+10 otwarć, po ok. 70 s: nazwy 18,6 → 13,2 MB, ikony 18,1 → 12,7 MB (uruchomione bez szkła: 12,5 / 11,7 MB); ponowne włączenie szkła działa. Konfiguracja pomiaru: 8+8 sektorów bez podmenu (inna niż w etapie 08, 12+12 z podmenu), więc liczby nie są porównywalne z tabelą w README.
 - Pojedyncze nieotwarcie koła zaraz po starcie ze szkłem (2 przytrzymania w jednym z 9 przebiegów pomiaru pamięci) nie powtórzyło się: 10 uruchomień × 4 przytrzymania, 40/40; przyczyna nieznana, zapisane jako ryzyko.
 - Wydanie 1.0.1: instalator 4,14 MB, aktualizacja z 1.0.0 przy działającym kole na LAB (cicha instalacja ok. 4 s, obie exe 1.0.1, wpis Run i `config.json` bez zmian, koło uruchomione ponownie, jedna kopia); szkic wydania v1.0.1 z celem `main` i SHA-256, publikuje użytkownik po scaleniu PR; szkic v1.0.0 zostaje do decyzji użytkownika.
+- Łamanie nazw w podglądzie zaakceptowane przez użytkownika; obcięte nazwy można skrócić w edytorze.
+- Dostęp do opcji niezależny od liczby sektorów (decyzja użytkownika): kafelek „Opcje koła” znika przy mniejszej liczbie sektorów, więc podpis „O – opcje” w środku koła przy każdym otwarciu (ok. 2 s) i klawisz O; kafelek i zasobnik zostają; bez opcji wyłączenia podpisu.
 - Wzmianki w etapach 01–08: „claude.ai” → „w sieci”, „scratchpad” → „folder tymczasowy”, bez „przez Claude”; treść decyzji bez zmian.
 
 ## Podsumowanie
