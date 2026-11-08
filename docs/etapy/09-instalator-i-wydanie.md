@@ -52,4 +52,33 @@ instaluje się instalatorem Inno Setup dla jednego użytkownika; wydanie 1.0.0.
 - Szkic wydania: https://github.com/Koutasora/Elemental-Wheel/releases (v1.0.0, Elemental-Wheel-1.0.0-setup.exe, SHA-256 62b5ca9b54ff3448866413f5abcd2d8492e7d85668e66d0f22ce07734761e8f7).
 
 ## Podsumowanie
-(wypełnia /etap-zamknij)
+
+### Decyzje
+- Instalator Inno Setup dla jednego użytkownika, bez administratora, `%LOCALAPPDATA%\Programs\Elemental-Wheel`; autostart jako zadanie (HKCU Run, domyślnie zaznaczone, aktualizacja pamięta wybór); konfiguracja i logi zostają po odinstalowaniu.
+- Instalator i deinstalator po `--quit` czekają do 5 s na zwolnienie mutexu `Local\ElementalWheel`: proces trzyma `wheel.exe` ok. 0,5 s po zniknięciu okna, Restart Manager przerywał aktualizację, deinstalator zostawiał plik. Przy niepowodzeniu deinstalacja nie startuje (`InitializeUninstall`).
+- Ikona programu wariant 1 (zaakceptowana przez użytkownika), generowana `tools/make-icon.py` bez zależności; w exe przez `winresource` (zasób nr 1), w zasobniku przez `LoadImageW` (bez manifestu comctl32 v6).
+- Hak przepuszcza zdarzenia nad paskiem zadań i obszarem powiadomień oraz nad menu własnego procesu (`#32768`), żeby prawy klik na ikonie nie otwierał koła.
+- Rozszerzenia z testu użytkownika: „Opcje koła” (akcja `wheel_options`, kafelek w łuku „Ustawienia”, pozycja „Opcje” w zasobniku), „Przywróć domyślne” resetuje całą konfigurację (wybór użytkownika), zaznaczanie elementu pod kursorem w Eksploratorze i na pulpicie przez UI Automation przy wciśnięciu prawego.
+- `--run` odłącza konsolę po starcie; szkic wydania z celem `main`, publikuje użytkownik po scaleniu PR.
+
+### Zrobione
+- Tryb bez konsoli (`windows_subsystem`, `AttachConsole` dla `--version`, `--demo`, `--quit`).
+- Zasobnik `tray.rs`: Edytor, Opcje, Wyłącz/Włącz, Zamknij; ponowne dodanie po restarcie Eksploratora.
+- Wersja 1.0.0 w obu exe (z danymi wersji i ikoną), ikona okna edytora.
+- `installer/elemental-wheel.iss`, `tools/build-installer.ps1` (build, porównanie wersji, ISCC, ścieżka i rozmiar); instalator 4,14 MB.
+- Edytor: `--tab kafelek|opcje`, „Przywróć domyślne” z potwierdzeniem.
+- `select.rs`: zaznaczanie w wątku MTA, 4–11 ms, akcja czeka najwyżej 500 ms.
+- Testy: 81 + 130 + 35 (8 ignorowanych), clippy, fmt; test instalacji, dwóch aktualizacji przy działającym kole i odinstalowania na LAB; test fizyczną myszą użytkownika bez uwag.
+- README (Install, Tray icon, budowanie instalatora), CHECKLISTA; szkic wydania v1.0.0 z SHA-256.
+
+### Otwarte sprawy
+- Publikacja wydania v1.0.0 po scaleniu PR.
+- Na później: przełącznik autostartu w edytorze, edytor z drugiej kopii programu, znany błąd po Escape (etap 07), łamanie długich nazw w podglądzie.
+- Wyłączenie szkła w działającym kole zostawia ok. 6 MB do restartu (etap 08).
+- Wzmianki „claude.ai”, „scratchpad”, „dodany przez Claude” w zamkniętych plikach etapów 01–08 (sprzed etapu, nieruszane).
+
+### Ryzyka
+- Zaznaczanie zależy od UI Automation Eksploratora: pierwszy przebieg testu na świeżym folderze bywa `NoItem`; w trybie `replace_right_click` ścieżka rezerwowa (`FindAll`) nietestowana.
+- Brak podpisu cyfrowego instalatora i exe: SmartScreen może ostrzegać przy pierwszym uruchomieniu.
+- Komunikat niepowodzenia zamknięcia koła w instalatorze (wiszące koło > 5 s) nietestowany.
+- Start z autostartu po ponownym zalogowaniu sprawdzony tylko przez obecność wpisu Run.
