@@ -31,6 +31,8 @@ instaluje się instalatorem Inno Setup dla jednego użytkownika; wydanie 1.0.0.
 - Wydanie jako szkic na GitHubie; publikuje użytkownik po scaleniu PR.
 - Ikona programu (wariant 1, zaakceptowany przez użytkownika: „ikona idealna”): koło w kolorze akcentu #2851d0, 12 sektorów, górny sektor biały, biały środek; generowana skryptem `tools/make-icon.py` (SVG i ICO z tej samej geometrii, bez zależności).
 - Zasobnik: ikona ładowana `LoadImageW` (zasób nr 1 exe, rozmiar z DPI), bo `LoadIconMetric` wymaga comctl32 v6 i manifestu (exe nie startował); hak przepuszcza zdarzenia nad paskiem zadań i obszarem powiadomień (klasy Shell_TrayWnd, Shell_SecondaryTrayWnd, NotifyIconOverflowWindow, TopLevelWindowForOverflowXamlIsland) i nad oknami własnego procesu (menu zasobnika), żeby prawy klik na ikonie nie otwierał koła.
+- Test instalatora (tester): `--quit` kończy się po zniknięciu okna, a proces trzyma `wheel.exe` jeszcze ok. 0,5 s; aktualizacja przy działającym kole przerywana przez Restart Manager, deinstalator zostawiał `wheel.exe`. Poprawka: instalator i deinstalator po `--quit` czekają na zwolnienie mutexu `Local\ElementalWheel` (do 5 s), inaczej czytelny komunikat.
+- Aktualizacja zachowuje wybór zadania „Uruchamiaj przy logowaniu” z poprzedniej instalacji (standardowe zachowanie Inno Setup, zostaje); pozostałość `is-*-uninstall.tmp` w `%TEMP%` to zwykłe zachowanie Inno Setup.
 
 ## Podsumowanie
 (wypełnia /etap-zamknij)
