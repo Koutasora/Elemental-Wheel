@@ -3,6 +3,7 @@
 
 mod autostart;
 mod icons;
+mod instance;
 mod messages;
 mod model;
 mod options;
@@ -141,6 +142,18 @@ fn main() -> ExitCode {
         }
         Ok(Command::Run(arg, log, tab)) => {
             start_log(log);
+            // An explicit --config (tests) never meets the user's editor.
+            if arg.is_none() {
+                match instance::acquire() {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        wheel_core::log_line!("editor already running; bringing it to the front");
+                        instance::show_running(TITLE, "wheel-editor.exe");
+                        return ExitCode::SUCCESS;
+                    }
+                    Err(e) => wheel_core::log_line!("editor: cannot take the mutex: {e}"),
+                }
+            }
             match config_path(arg) {
                 Ok(path) => (path, tab),
                 Err(e) => {
