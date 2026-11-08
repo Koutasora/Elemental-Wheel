@@ -15,7 +15,7 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - ~~Pamięć prywatna w tle: ze szkłem do 25 MB, bez szkła do 15 MB (nazwy) i 17 MB (ikony)~~ (przeniesione do etapu 09, decyzja użytkownika: w `--run` 30,9 MB od startu, w demo 21,6 MB; patrz Pomiary)
 - [x] Opcja `replace_right_click` (konfiguracja i edytor, domyślnie wyłączona): koło od razu po wciśnięciu prawego przycisku; systemowy prawy przycisk nie dociera do programów (poza oknami administratora, wykluczeniami i pełnym ekranem); test fizyczną myszą
 - [x] „Właściwości” z koła działa w Eksploratorze i na pulpicie (jeden plik, kilka plików, folder, ikona na pulpicie; test fizyczną myszą)
-- [ ] Akcja systemowa `context_menu` („Menu kontekstowe”) w konfiguracji i edytorze
+- [x] Akcja systemowa `context_menu` („Menu kontekstowe”) w konfiguracji i edytorze
 - [x] Podgląd w edytorze zgodny z nowym wyglądem koła (szkło nad tłem próbnym, suwak działa od razu)
 - [x] Wygląd zatwierdzony przez użytkownika na zrzutach (szkło runda 3: „wygląda bardzo dobrze”)
 - [x] `cargo build --release`, `cargo test`, clippy `-D warnings`, `cargo fmt --check` czyste (tester i manager: 66 + 130 + 30 testów); README i CHECKLISTA zaktualizowane
@@ -28,7 +28,7 @@ pierwszego otwarcia po zmianie konfiguracji, bez zmiany działania.
 - [x] `window.rs`, `render.rs`, `hook.rs`: migawka przy wciśnięciu, renderer po wczytaniu konfiguracji, wspólne urządzenie D3D/D2D, trim po zamknięciu
 - [x] `apps/wheel-editor/src/preview.rs`: ten sam wygląd
 - [x] `apps/wheel/src/properties.rs`, `actions.rs`: „Właściwości” przez powłokę, kody skanowania w skrótach
-- [ ] `actions.rs`, `config.rs`: akcja `context_menu`
+- [x] `actions.rs`, `hook.rs`, `config.rs`: akcja `context_menu`
 - [x] ~~Pomiary `tools/soak.ps1`~~ test na żywo fizyczną myszą z `--stats` (decyzja użytkownika)
 - [x] README, CHECKLISTA
 - Sprawdzenie: tester: build, testy, clippy, fmt; zrzuty offscreen i `--demo` z konfiguracją w scratchpadzie (`%APPDATA%` nietknięty); test na żywo `--run --stats` z konfiguracją w scratchpadzie
