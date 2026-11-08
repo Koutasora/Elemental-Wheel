@@ -51,9 +51,10 @@ target\release\wheel.exe --quit
 - Short click and drag with the right button (moved more than 6 px before 180 ms) reach programs unchanged.
 - In Explorer and on the desktop the wheel selects the item under the pointer when it opens, as the right button does (an item already selected keeps the selection).
 - Release in the centre right after opening keeps the wheel open: left click selects; left click in the centre or outside, right click or Esc closes. Release in the centre after the pointer has been on the tiles closes the wheel. Esc while holding cancels.
+- O while the wheel is open (held or after a release in the centre) closes it and opens the editor on the "Opcje" tab; the letter does not reach the program. The centre shows "O – opcje" for 10 s after opening. With Ctrl, Alt or Win held, or with the wheel closed, O works as usual.
 - Submenu: pointing at an outer sector with a submenu (marked at its outer edge) opens an arc of up to 5 tiles in the same direction. Releasing or clicking on a tile, or releasing further out in its direction, selects it; the sector itself keeps its own action. Moving to another sector closes the arc.
 - The right button also passes through unchanged over windows of programs run as administrator, over programs on the exclusion list and over full screen windows (`disable_in_fullscreen`).
-- The selection is printed with sectors numbered from 1 (`selected: outer 3 "Name"`, `selected: outer 10 submenu 2 "Name"`, `cancelled`). One instance at a time; `--quit` stops it.
+- The selection is printed with sectors numbered from 1 (`selected: outer 3 "Name"`, `selected: outer 10 submenu 2 "Name"`, `cancelled`, `options`). One instance at a time; `--quit` stops it.
 - `--hold-ms`, `--move-px` - hold time and movement threshold (defaults 180 and 6).
 - The action runs in the window under the cursor when the button went down. Windows blocks injected input to windows of programs run as administrator, where the wheel does not open anyway.
 

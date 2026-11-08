@@ -11,7 +11,7 @@ Poprawić znane błędy i braki z wydania 1.0.0 i wydać wersję 1.0.1 z nowym i
 - [x] Wyłączenie szkła w działającym kole zwalnia pamięć bez restartu (bez szkła do 15/17 MB) albo decyzja o pozostawieniu
 - [x] Usunięte wzmianki „claude.ai”, „scratchpad”, „dodany przez Claude” z plików etapów 01–08
 - [x] Wersja 1.0.1 w obu exe, instalator zbudowany, aktualizacja z 1.0.0 sprawdzona na LAB, szkic wydania v1.0.1
-- [ ] Podpis „O – opcje” w środku koła przy każdym otwarciu, znika po ok. 2 s; klawisz O przy otwartym kole zamyka koło i otwiera edytor na zakładce Opcje, litera nie trafia do programu pod kołem; wygląd zaakceptowany na zrzucie
+- [ ] Podpis „O – opcje” w środku koła przy każdym otwarciu, znika po 10 s; klawisz O przy otwartym kole zamyka koło i otwiera edytor na zakładce Opcje, litera nie trafia do programu pod kołem; wygląd zaakceptowany na zrzucie
 - [x] Testy, clippy i fmt przechodzą; README i CHECKLISTA zgodne ze zmianami
 
 ## Plan
@@ -36,7 +36,9 @@ Poprawić znane błędy i braki z wydania 1.0.0 i wydać wersję 1.0.1 z nowym i
 - Pojedyncze nieotwarcie koła zaraz po starcie ze szkłem (2 przytrzymania w jednym z 9 przebiegów pomiaru pamięci) nie powtórzyło się: 10 uruchomień × 4 przytrzymania, 40/40; przyczyna nieznana, zapisane jako ryzyko.
 - Wydanie 1.0.1: instalator 4,14 MB, aktualizacja z 1.0.0 przy działającym kole na LAB (cicha instalacja ok. 4 s, obie exe 1.0.1, wpis Run i `config.json` bez zmian, koło uruchomione ponownie, jedna kopia); szkic wydania v1.0.1 z celem `main` i SHA-256, publikuje użytkownik po scaleniu PR; szkic v1.0.0 zostaje do decyzji użytkownika.
 - Łamanie nazw w podglądzie zaakceptowane przez użytkownika; obcięte nazwy można skrócić w edytorze.
-- Dostęp do opcji niezależny od liczby sektorów (decyzja użytkownika): kafelek „Opcje koła” znika przy mniejszej liczbie sektorów, więc podpis „O – opcje” w środku koła przy każdym otwarciu (ok. 2 s) i klawisz O; kafelek i zasobnik zostają; bez opcji wyłączenia podpisu.
+- Dostęp do opcji niezależny od liczby sektorów (decyzja użytkownika): kafelek „Opcje koła” znika przy mniejszej liczbie sektorów, więc podpis „O – opcje” w środku koła przy każdym otwarciu i klawisz O; kafelek i zasobnik zostają; bez opcji wyłączenia podpisu.
+- Podpis „O – opcje” widoczny 10 s po otwarciu zamiast ok. 2 s (decyzja użytkownika po zrzutach).
+- Podpis rysowany pod „Anuluj” w środku (środek przy kursorze na środku pokazuje „Anuluj”), tylko gdy kursor jest na środku; kolor przygaszony motywu, 10 px; w podglądzie edytora statycznie. Klawisz O ignorowany przy Ctrl/Alt/Win (skróty programów działają). Test na LAB wejściem wstrzykiwanym: O przy przytrzymaniu i w trybie klikania otwiera edytor `--tab opcje --config <test>`, litera nie trafia do Notatnika; O przy zamkniętym kole i Ctrl+O przechodzą.
 - Wzmianki w etapach 01–08: „claude.ai” → „w sieci”, „scratchpad” → „folder tymczasowy”, bez „przez Claude”; treść decyzji bez zmian.
 
 ## Podsumowanie
