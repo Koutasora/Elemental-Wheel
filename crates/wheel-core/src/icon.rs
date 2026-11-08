@@ -125,6 +125,7 @@ pub fn system_glyph(action: SystemAction) -> char {
         SystemAction::VolumeUp => '\u{E995}',
         SystemAction::VolumeDown => '\u{E993}',
         SystemAction::Screenshot => '\u{E722}',
+        SystemAction::ContextMenu => '\u{E712}',
     }
 }
 
@@ -158,7 +159,7 @@ mod tests {
         EditCommand::Properties,
     ];
 
-    const SYSTEM: [SystemAction; 8] = [
+    const SYSTEM: [SystemAction; 9] = [
         SystemAction::Lock,
         SystemAction::CloseWindow,
         SystemAction::MinimizeWindow,
@@ -167,6 +168,7 @@ mod tests {
         SystemAction::VolumeUp,
         SystemAction::VolumeDown,
         SystemAction::Screenshot,
+        SystemAction::ContextMenu,
     ];
 
     fn glyph(spec: IconSpec) -> char {
@@ -219,7 +221,7 @@ mod tests {
             .iter()
             .map(|a| glyph(spec_for(&item("x", Action::System { action: *a }))))
             .collect();
-        assert_eq!(system.len(), 8);
+        assert_eq!(system.len(), 9);
         assert!(edit.is_disjoint(&system));
     }
 

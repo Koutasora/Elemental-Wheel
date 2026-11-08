@@ -9,7 +9,7 @@
 use std::thread;
 use std::time::Duration;
 
-use wheel_core::{Action, EditCommand, Shortcut, SystemAction, is_extended, parse_shortcut};
+use wheel_core::{Action, EditCommand, Point, Shortcut, SystemAction, is_extended, parse_shortcut};
 use windows::Win32::Foundation::{CloseHandle, GlobalFree, HANDLE, HGLOBAL, HWND, LPARAM, WPARAM};
 use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize};
 use windows::Win32::System::DataExchange::{
@@ -40,15 +40,15 @@ use windows::core::{PCWSTR, PWSTR, w};
 
 use crate::args::PanicTest;
 use crate::guard;
-use crate::hook::{MARKER, is_shell_class, window_class};
+use crate::hook::{MARKER, is_shell_class, send_right_click, window_class};
 use crate::properties::{self, Route};
 
 /// How long the clipboard keeps the pasted text before the previous text comes back.
 const CLIPBOARD_RESTORE_MS: u64 = 500;
 
 /// Runs `action` against `target` (the top-level window under the cursor when the right button
-/// went down, as `HWND` bits). It starts once the wheel window `wheel` is hidden.
-pub fn run(action: &Action, target: isize, wheel: isize) {
+/// went down, as `HWND` bits) and `press` (where it went down). It starts once the wheel window `wheel` is hidden.
+pub fn run(action: &Action, target: isize, press: Point, wheel: isize) {
     if matches!(action, Action::None) {
         return;
     }
@@ -57,7 +57,12 @@ pub fn run(action: &Action, target: isize, wheel: isize) {
         let done = guard::try_run("action thread", "thread ended", || {
             guard::fire(PanicTest::Action);
             wait_hidden(HWND(wheel as *mut _));
-            if let Err(e) = execute(&action, HWND(target as *mut _), HWND(wheel as *mut _)) {
+            if let Err(e) = execute(
+                &action,
+                HWND(target as *mut _),
+                press,
+                HWND(wheel as *mut _),
+            ) {
                 wheel_core::log_line!("action failed: {e}");
             }
         });
@@ -95,7 +100,7 @@ fn wait_hidden(wheel: HWND) {
     }
 }
 
-fn execute(action: &Action, target: HWND, wheel: HWND) -> Result<(), String> {
+fn execute(action: &Action, target: HWND, press: Point, wheel: HWND) -> Result<(), String> {
     match action {
         Action::None => Ok(()),
         Action::Program {
@@ -125,7 +130,7 @@ fn execute(action: &Action, target: HWND, wheel: HWND) -> Result<(), String> {
             paste_text(text, wheel)
         }
         Action::Command { line } => command(line),
-        Action::System { action } => system(*action, target),
+        Action::System { action } => system(*action, target, press),
     }
 }
 
@@ -157,7 +162,7 @@ fn properties_by_shell(target: HWND) -> bool {
     }
 }
 
-fn system(action: SystemAction, target: HWND) -> Result<(), String> {
+fn system(action: SystemAction, target: HWND, press: Point) -> Result<(), String> {
     let keys = |text: &str| parse_shortcut(text).and_then(|s| send_keys(&s));
     match action {
         SystemAction::Lock => {
@@ -183,6 +188,11 @@ fn system(action: SystemAction, target: HWND) -> Result<(), String> {
         SystemAction::VolumeUp => keys("VolumeUp"),
         SystemAction::VolumeDown => keys("VolumeDown"),
         SystemAction::Screenshot => keys("Win+Shift+S"),
+        SystemAction::ContextMenu => {
+            focus(target);
+            send_right_click(press);
+            Ok(())
+        }
     }
 }
 
@@ -584,7 +594,7 @@ mod tests {
         };
         let run_all = |action: &Action, times: u32| {
             for _ in 0..times {
-                run(action, 0, 0);
+                run(action, 0, Point::new(0, 0), 0);
                 thread::sleep(Duration::from_millis(150));
             }
             thread::sleep(Duration::from_millis(1000));

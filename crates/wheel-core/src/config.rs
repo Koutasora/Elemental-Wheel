@@ -109,11 +109,12 @@ pub enum SystemAction {
     VolumeUp,
     VolumeDown,
     Screenshot,
+    ContextMenu,
 }
 
 impl SystemAction {
     /// Every action, in the order shown in lists.
-    pub const ALL: [SystemAction; 8] = [
+    pub const ALL: [SystemAction; 9] = [
         SystemAction::Lock,
         SystemAction::CloseWindow,
         SystemAction::MinimizeWindow,
@@ -122,6 +123,7 @@ impl SystemAction {
         SystemAction::VolumeUp,
         SystemAction::VolumeDown,
         SystemAction::Screenshot,
+        SystemAction::ContextMenu,
     ];
 }
 
@@ -1249,6 +1251,21 @@ mod tests {
         assert_eq!(c.outer[10].icon.as_deref(), Some("m.png"));
         assert_eq!(c.outer.len(), 12);
         assert_eq!(c.version, 1);
+    }
+
+    #[test]
+    fn context_menu_system_action_round_trips() {
+        let json = r#"{"outer":[{"name":"M","action":{"type":"system","action":"context_menu"}}]}"#;
+        let (c, w) = Config::parse(json).unwrap();
+        assert!(w.is_empty());
+        let action = Action::System {
+            action: SystemAction::ContextMenu,
+        };
+        assert_eq!(c.outer[0].action, action);
+        assert!(SystemAction::ALL.contains(&SystemAction::ContextMenu));
+        let text = serde_json::to_string(&c).unwrap();
+        assert!(text.contains(r#""action":"context_menu""#));
+        assert_eq!(Config::parse(&text).unwrap().0.outer[0].action, action);
     }
 
     #[test]

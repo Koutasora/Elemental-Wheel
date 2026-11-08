@@ -199,6 +199,8 @@ struct HookState {
     /// Top-level window under the cursor at the last right press (`HWND` bits): the target of
     /// the action.
     target: isize,
+    /// Where that press happened (screen pixels): the `context_menu` action clicks there.
+    press: Point,
     /// (pid, what is known about the process, tick of the check)
     process_cache: Vec<(u32, ProcessInfo, u64)>,
 }
@@ -260,6 +262,7 @@ impl HookState {
                     }
                     let root = root_window_at(info.pt);
                     self.target = root.0 as isize;
+                    self.press = pos;
                     self.passthrough_right = self.should_pass(root, settings.as_deref());
                     if self.passthrough_right {
                         self.trigger.reset();
@@ -537,6 +540,7 @@ fn thread_main(
         swallow_escape: false,
         own_integrity: own_integrity(),
         target: 0,
+        press: Point::new(0, 0),
         process_cache: Vec::new(),
     };
     if let Err(e) = state.install() {
@@ -652,15 +656,15 @@ fn run_effect(effect: Effect) {
         // The window stays open and follows the cursor by itself; nothing to do.
         Effect::EnterClickMode => {}
         Effect::Select(hit) => {
-            let (Some((window, target)), Some(config)) =
-                (with_state(|s| (s.window, s.target)), current())
+            let (Some((window, target, press)), Some(config)) =
+                (with_state(|s| (s.window, s.target, s.press)), current())
             else {
                 return;
             };
             print_line(&selection_text(hit, &config));
             post_to_window(window, WM_WHEEL_CLOSE, 0, 0);
             if let Some(item) = wheel_core::item_for_hit(hit, &config) {
-                actions::run(&item.action, target, window.0 as isize);
+                actions::run(&item.action, target, press, window.0 as isize);
             }
         }
         Effect::Cancel => {
@@ -724,16 +728,26 @@ fn normalize(pos: i32, origin: i32, extent: i32) -> i32 {
     ((rel * 65536 + 32768) / extent).clamp(0, 65535) as i32
 }
 
-fn mouse_input(pos: Point, button: MOUSE_EVENT_FLAGS) -> INPUT {
+/// The virtual screen: left, top, width, height.
+type Desktop = (i32, i32, i32, i32);
+
+fn desktop() -> Desktop {
     // SAFETY: plain metric queries.
-    let (x, y, w, h) = unsafe {
+    unsafe {
         (
             GetSystemMetrics(SM_XVIRTUALSCREEN),
             GetSystemMetrics(SM_YVIRTUALSCREEN),
             GetSystemMetrics(SM_CXVIRTUALSCREEN),
             GetSystemMetrics(SM_CYVIRTUALSCREEN),
         )
-    };
+    }
+}
+
+fn mouse_input(pos: Point, button: MOUSE_EVENT_FLAGS) -> INPUT {
+    mouse_input_in(pos, desktop(), button)
+}
+
+fn mouse_input_in(pos: Point, (x, y, w, h): Desktop, button: MOUSE_EVENT_FLAGS) -> INPUT {
     INPUT {
         r#type: INPUT_MOUSE,
         Anonymous: INPUT_0 {
@@ -747,6 +761,20 @@ fn mouse_input(pos: Point, button: MOUSE_EVENT_FLAGS) -> INPUT {
             },
         },
     }
+}
+
+/// A right click at `pos`: both events move the cursor there. Marked as ours, so the hook lets
+/// it through to the program.
+fn right_click_inputs(pos: Point, desk: Desktop) -> [INPUT; 2] {
+    [
+        mouse_input_in(pos, desk, MOUSEEVENTF_RIGHTDOWN),
+        mouse_input_in(pos, desk, MOUSEEVENTF_RIGHTUP),
+    ]
+}
+
+/// Clicks the right button at `pos` (the context menu of the program under it).
+pub fn send_right_click(pos: Point) {
+    send_mouse(&right_click_inputs(pos, desktop()));
 }
 
 fn send_mouse(inputs: &[INPUT]) {
@@ -948,6 +976,25 @@ mod tests {
         assert!(right_edge > 65500);
         assert_eq!(normalize(-5000, -1920, 3840), 0);
         assert_eq!(normalize(9000, -1920, 3840), 65535);
+    }
+
+    #[test]
+    fn right_click_moves_to_the_point_and_is_marked() {
+        let desk = (-1920, 0, 3840, 1080);
+        let [down, up] = right_click_inputs(Point::new(0, 540), desk);
+        for (input, button) in [(down, MOUSEEVENTF_RIGHTDOWN), (up, MOUSEEVENTF_RIGHTUP)] {
+            assert_eq!(input.r#type, INPUT_MOUSE);
+            // SAFETY: built as a mouse input.
+            let mi = unsafe { input.Anonymous.mi };
+            assert_eq!(mi.dx, normalize(0, -1920, 3840));
+            assert_eq!(mi.dy, normalize(540, 0, 1080));
+            assert!((32000..33500).contains(&mi.dx));
+            assert_eq!(
+                mi.dwFlags,
+                MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | button
+            );
+            assert_eq!(mi.dwExtraInfo, MARKER);
+        }
     }
 
     #[test]

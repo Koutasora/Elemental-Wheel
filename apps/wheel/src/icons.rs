@@ -502,7 +502,7 @@ mod tests {
         EditCommand::Properties,
     ];
 
-    const SYSTEM: [SystemAction; 8] = [
+    const SYSTEM: [SystemAction; 9] = [
         SystemAction::Lock,
         SystemAction::CloseWindow,
         SystemAction::MinimizeWindow,
@@ -511,6 +511,7 @@ mod tests {
         SystemAction::VolumeUp,
         SystemAction::VolumeDown,
         SystemAction::Screenshot,
+        SystemAction::ContextMenu,
     ];
 
     #[test]

@@ -107,7 +107,7 @@ target\release\wheel-editor.exe --version
 - `view`: `names` or `icons`. In the icon view a tile shows `icon` if set (`.ico`, `.exe` or `.dll`, optionally `,index`; `%VARIABLES%` expand), otherwise the icon of the program, file or folder, a built-in symbol for edit commands, system actions, URLs, shortcuts, text and commands, or the first letter of the name. The centre shows the name of the tile under the cursor.
 - Action types: `none`, `program` (`path`, `args`, `working_dir`), `open` (file or folder), `url`, `shortcut` (`keys`, e.g. `Ctrl+Shift+V`, `Win+V`, `F2`), `edit`, `paste_text` (`text`; the clipboard is restored afterwards), `command` (`line`, run with `cmd /c` without a window), `system`.
 - `edit` commands: `cut`, `copy`, `paste`, `paste_plain`, `delete`, `undo`, `redo`, `select_all`, `save`, `find`, `rename`, `properties`.
-- `system` actions: `lock`, `close_window`, `minimize_window`, `show_desktop`, `volume_mute`, `volume_up`, `volume_down`, `screenshot`.
+- `system` actions: `lock`, `close_window`, `minimize_window`, `show_desktop`, `volume_mute`, `volume_up`, `volume_down`, `screenshot`, `context_menu`.
 - `program` and `open` paths and arguments expand `%VARIABLES%`.
 - `excluded` lists program file names (case does not matter).
 - `glass_pct` (0 to 100, default 50): how transparent the glass of the wheel is; 0 gives the opaque look. Without Windows transparency (Settings > Personalization > Colors) the wheel is opaque.

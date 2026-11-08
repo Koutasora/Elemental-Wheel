@@ -133,6 +133,7 @@ pub fn system_label(action: SystemAction) -> &'static str {
         SystemAction::VolumeUp => "Głośniej",
         SystemAction::VolumeDown => "Ciszej",
         SystemAction::Screenshot => "Zrzut ekranu",
+        SystemAction::ContextMenu => "Menu kontekstowe",
     }
 }
 
