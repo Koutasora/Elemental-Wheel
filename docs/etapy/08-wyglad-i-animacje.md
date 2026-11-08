@@ -75,4 +75,37 @@ LAB (RDP), 1920x1080, 96 DPI, release, konfiguracja 12+12 sektorów, dwa podmenu
 | budowa renderera przy przeładowaniu (z czekaniem na GPU) | 230–410 ms |
 
 ## Podsumowanie
-(wypełnia /etap-zamknij)
+
+### Decyzje
+- Kolejność etapów zamieniona: wygląd przed instalatorem, jedno wydanie 1.0.0 na końcu (Inno Setup, jeden użytkownik).
+- Szkło z migawki ekranu pod kołem (rozmycie i nasycenie w D2D, połysk, poświata tekstu) zamiast systemowego HostBackdropBrush (za mocne rozmycie, nieudokumentowane API); cel jakości Vista Aero / macOS, zaakceptowane przez użytkownika.
+- Migawka robiona przy wciśnięciu prawego przycisku (w czasie progu 180 ms), zmniejszona 4×, zwalniana po zamknięciu.
+- Nowe opcje: `glass_pct` (suwak), `animations`, `replace_right_click`; nowa akcja `context_menu`.
+- „Właściwości” w Eksploratorze i na pulpicie przez powłokę (błąd od etapu 04), gdzie indziej Alt+Enter z kodami skanowania.
+- Cel pamięci zmieniony przez użytkownika: ze szkłem 25 MB, bez szkła 15/17 MB (nazwy/ikony), bez szkła liczone po uruchomieniu bez szkła.
+- Test na żywo fizyczną myszą z `--stats` zamiast `soak.ps1`.
+- Etap 09 w skróconym zakresie (patrz Decyzje).
+
+### Zrobione
+- Wygląd: podkład z rowkami, cień, zaokrąglone kafelki, minimalna czcionka 8 px, równe glify, znacznik podmenu nie zasłania nazwy.
+- Szkło z poziomem przezroczystości, wygląd nieprzezroczysty przy `glass_pct` 0 i wyłączonej przezroczystości Windows.
+- Animacje: otwarcie 120 ms, zamknięcie 80 ms, podświetlenie 90 ms, łuk 110 ms (DirectComposition i zegar 16 ms), zgodne z ustawieniem Windows.
+- Renderer gotowy przed pierwszym otwarciem, wspólne urządzenie D3D/D2D, trim po zamknięciu, czekanie na GPU w rozgrzewce (łącznie do 300 ms).
+- Edytor: suwak szkła, pola „Animacje” i „Koło zamiast prawego przycisku”, podgląd z nowym wyglądem.
+- Start `--run` bez dostępu do kursora (główny monitor).
+- Pomiary: otwarcie na żywo mediana 6,3 ms; pamięć w tle 22,9/25,0 MB ze szkłem, 13,4/16,7 MB bez (nazwy/ikony).
+- README, CHECKLISTA; 69 + 130 + 30 testów, clippy, fmt.
+
+### Otwarte sprawy
+- Etap 09: instalator, autostart, zasobnik, wydanie 1.0.0.
+- Wyłączenie szkła w działającym kole zostawia ok. 6 MB do restartu.
+- Znany błąd po Escape (z etapu 07).
+- Podgląd w edytorze łamie długie nazwy w środku słowa.
+
+### Ryzyka
+- Migawka statyczna: zmiany pod kołem w trakcie otwarcia niewidoczne; przez RDP 20–50 ms.
+- W trybie `replace_right_click` otwarcie ze szkłem czeka na migawkę (bez pomiaru na żywo).
+- Wyniki pamięci zależą od sterownika (AMD na LAB); utrata urządzenia (TDR) nietestowana.
+- Animacje sprawdzone tylko na zrzutach demo (na LAB animacje Windows wyłączone).
+- „Właściwości” dla wielu kart Eksploratora niesprawdzone; arkusz właściwości działa w procesie koła (+ok. 4 MB).
+- Start bez kursora sprawdzony tylko testem jednostkowym.
