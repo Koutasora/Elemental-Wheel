@@ -40,7 +40,7 @@ english.EditorShortcut=Elemental Wheel Editor
 polish.RunApp=Uruchom Elemental Wheel
 english.RunApp=Launch Elemental Wheel
 polish.WheelNotClosed=Nie udało się zamknąć Elemental Wheel. Zamknij je (ikona w zasobniku, Zamknij) i uruchom instalator ponownie.
-english.WheelNotClosed=Could not close Elemental Wheel. Close it (tray icon, Exit) and run the installer again.
+english.WheelNotClosed=Could not close Elemental Wheel. Close it (tray icon, Zamknij) and run the installer again.
 
 [Messages]
 polish.FinishedLabel=Zainstalowano Elemental Wheel {#AppVersion}.
@@ -99,12 +99,9 @@ begin
     Result := CustomMessage('WheelNotClosed');
 end;
 
-procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+function InitializeUninstall(): Boolean;
 begin
-  if CurUninstallStep = usUninstall then
-    if not StopWheel(ExpandConstant('{app}\wheel.exe')) then
-    begin
-      SuppressibleMsgBox(CustomMessage('WheelNotClosed'), mbError, MB_OK, IDOK);
-      Abort;
-    end;
+  Result := StopWheel(ExpandConstant('{app}\wheel.exe'));
+  if not Result then
+    SuppressibleMsgBox(CustomMessage('WheelNotClosed'), mbError, MB_OK, IDOK);
 end;

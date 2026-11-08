@@ -1,4 +1,4 @@
-//! Embeds the application icon (resource 1, which `tray.rs` and Explorer use) and the version info.
+//! Embeds the application icon (resource 1, which Explorer and the title bar use) and the version info.
 
 fn main() {
     println!("cargo:rerun-if-changed=../../assets/elemental-wheel.ico");

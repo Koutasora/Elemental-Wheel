@@ -247,7 +247,7 @@ pub fn open_editor(tab: Option<&str>) {
         unsafe {
             MessageBoxW(
                 None,
-                w!("Nie można uruchomić edytora (brak pliku wheel-editor.exe obok wheel.exe)."),
+                w!("Nie można uruchomić edytora."),
                 w!("Elemental Wheel"),
                 MB_OK | MB_ICONERROR,
             );

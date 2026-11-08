@@ -61,10 +61,10 @@ target\release\wheel.exe --quit
 
 `wheel.exe` has no console window in the release build; `--version`, `--quit` and `--demo` still print to the console they are started from. With `--run` it puts an icon in the notification area. Its menu:
 
-- Editor - starts `wheel-editor.exe`
-- Options - starts `wheel-editor.exe` on the "Opcje" tab
-- Disable / Enable - a disabled wheel passes the right button through unchanged. The state is not saved: after a restart the wheel is enabled.
-- Quit - stops the wheel
+- Edytor (Editor) - starts `wheel-editor.exe`
+- Opcje (Options) - starts `wheel-editor.exe` on the "Opcje" tab
+- Wyłącz / Włącz (Disable / Enable) - a disabled wheel passes the right button through unchanged. The state is not saved: after a restart the wheel is enabled.
+- Zamknij (Quit) - stops the wheel
 
 The wheel does not open over the taskbar and the notification area.
 

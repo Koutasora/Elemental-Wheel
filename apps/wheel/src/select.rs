@@ -315,7 +315,7 @@ mod tests {
     }
 
     /// `cargo test -p wheel -- --ignored --nocapture explorer_selection`: opens an Explorer window
-    /// on a folder with three files (in the scratchpad), selects items by their UI Automation
+    /// on a folder with three files (under `target/test-tmp`), selects items by their UI Automation
     /// position, reads the selection back through the shell and closes the window. No mouse
     /// or keyboard input is sent.
     #[test]
@@ -329,14 +329,14 @@ mod tests {
         };
         use windows::core::BOOL;
 
-        const FOLDER: &str = r"C:\Users\Kouta Lab\AppData\Local\Temp\claude\11e68c0cdc4f795d\0b9124cf-1f04-47de-9cb8-247d7b574bfe\scratchpad\sel-test";
+        const FOLDER_NAME: &str = "wheel-sel-test";
         unsafe extern "system" fn find(hwnd: HWND, found: LPARAM) -> BOOL {
             let mut title = [0u16; 128];
             // SAFETY: `found` is the `Vec<isize>` passed to `EnumWindows` below.
             unsafe {
                 let len = GetWindowTextW(hwnd, &mut title).max(0) as usize;
                 if window_class(hwnd) == "CabinetWClass"
-                    && String::from_utf16_lossy(&title[..len]).starts_with("sel-test")
+                    && String::from_utf16_lossy(&title[..len]).starts_with(FOLDER_NAME)
                 {
                     (*(found.0 as *mut Vec<isize>)).push(hwnd.0 as isize);
                 }
@@ -350,12 +350,23 @@ mod tests {
             found
         };
 
-        std::fs::create_dir_all(FOLDER).expect("folder");
+        let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("target")
+            .join("test-tmp")
+            .join(FOLDER_NAME);
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).expect("folder");
+        // Explorer wants a plain path: no `..`, no `\?\` prefix.
+        let folder = folder.canonicalize().expect("canonical folder");
+        let folder = folder.to_string_lossy();
+        let folder = folder.strip_prefix(r"\?\").unwrap_or(&folder).to_owned();
         for name in ["a.txt", "b.txt", "c.txt"] {
-            std::fs::write(format!(r"{FOLDER}\{name}"), name).expect("file");
+            std::fs::write(format!(r"{folder}\{name}"), name).expect("file");
         }
         std::process::Command::new("explorer.exe")
-            .arg(FOLDER)
+            .arg(&folder)
             .status()
             .expect("explorer");
         let mut window = HWND::default();
@@ -366,7 +377,7 @@ mod tests {
                 break;
             }
         }
-        assert!(!window.0.is_null(), "no Explorer window on sel-test");
+        assert!(!window.0.is_null(), "no Explorer window on the test folder");
         std::thread::sleep(Duration::from_millis(2000));
 
         // SAFETY: plain call; the shell is asked from this single-threaded apartment.

@@ -371,7 +371,7 @@ impl HookState {
         };
         // The tray menu of this program, and the notification area (its icons open menus on the
         // right button).
-        if pid == std::process::id() || is_tray_class(&window_class(root)) {
+        if passes_regardless(pid == std::process::id(), &window_class(root)) {
             return true;
         }
         let info = self.process_info(pid);
@@ -908,6 +908,13 @@ fn is_tray_class(class: &str) -> bool {
     )
 }
 
+/// Whether the right button reaches a window of this class unchanged whatever the settings: the
+/// notification area, and the popup menus (`#32768`) of this very process (the tray menu). Other
+/// windows of this process (the fading wheel, property sheets) are handled as usual.
+fn passes_regardless(own_process: bool, class: &str) -> bool {
+    is_tray_class(class) || (own_process && class == "#32768")
+}
+
 /// Class name of a window (empty if unreadable).
 pub fn window_class(hwnd: HWND) -> String {
     let mut class = [0u16; 64];
@@ -1014,6 +1021,15 @@ mod tests {
         for class in ["Progman", "WorkerW", "CabinetWClass", ""] {
             assert!(!is_tray_class(class), "{class}");
         }
+    }
+
+    #[test]
+    fn only_own_popup_menus_pass_among_the_windows_of_this_process() {
+        assert!(passes_regardless(true, "#32768"));
+        assert!(!passes_regardless(false, "#32768"));
+        assert!(!passes_regardless(true, "#32770"));
+        assert!(!passes_regardless(true, "CabinetWClass"));
+        assert!(passes_regardless(false, "Shell_TrayWnd"));
     }
 
     #[test]

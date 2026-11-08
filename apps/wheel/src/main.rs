@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use args::{Command, RunOptions};
-use windows::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole};
+use windows::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole, FreeConsole};
 
 /// Lets `--version`, `--quit` and the like print to the console they were started from. Without a
 /// parent console (Explorer, autostart) it fails and the output goes nowhere, which `std` accepts.
@@ -133,6 +133,10 @@ fn run(options: &RunOptions) -> ExitCode {
         std::process::id(),
         path.display()
     );
+    // Closing the terminal or Ctrl+C must not kill the wheel and leave its icon behind; from here
+    // on the messages go to the log only.
+    // SAFETY: plain call.
+    let _ = unsafe { FreeConsole() };
     match window::run_background(options, path) {
         Ok(()) => {
             wheel_core::log_line!("wheel stopped");
