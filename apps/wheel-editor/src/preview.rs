@@ -868,22 +868,35 @@ pub fn show(ui: &mut Ui, model: &Model, icons: &mut Icons) -> Outcome {
             halo,
         )
     });
-    // The options hint under the name, as the wheel shows it when it opens (without the fade).
-    let below = name_height / 2.0 + u * fit;
-    label(
-        &painter,
-        center,
-        look::OPTIONS_HINT,
-        look::OPTIONS_HINT_PX * u * fit,
-        min_font,
-        &|h, _| {
-            let reach = below + h / 2.0;
-            let width = fit::circle_width(r - pad, 2.0 * (reach + h / 2.0));
-            (width - pad, vec2(0.0, reach))
-        },
-        c32(p.muted),
-        halo,
-    );
+    // The options hint sits under the fixed centre text ("Anuluj") in the wheel, which shows
+    // while the pointer is in the centre; a tile name in the centre has no hint.
+    if name_height == 0.0 {
+        let cancel = label(
+            &painter,
+            center,
+            "Anuluj",
+            14.0 * u * fit,
+            min_font,
+            &|h, _| (fit::circle_width(r - pad, h) - pad, Vec2::ZERO),
+            text_color,
+            halo,
+        );
+        let below = cancel / 2.0 + u * fit;
+        label(
+            &painter,
+            center,
+            look::OPTIONS_HINT,
+            look::OPTIONS_HINT_PX * u * fit,
+            min_font,
+            &|h, _| {
+                let reach = below + h / 2.0;
+                let width = fit::circle_width(r - pad, 2.0 * (reach + h / 2.0));
+                (width - pad, vec2(0.0, reach))
+            },
+            c32(p.muted),
+            halo,
+        );
+    }
     out
 }
 

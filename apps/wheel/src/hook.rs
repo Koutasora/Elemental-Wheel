@@ -58,6 +58,11 @@ use crate::window::{WM_WHEEL_CLOSE, WM_WHEEL_DISCARD, WM_WHEEL_OPEN, WM_WHEEL_PR
 /// Virtual-key code of the O key (the options key of the open wheel).
 const VK_O: u32 = 0x4F;
 
+/// Marks a key as held; true when it was not held before (a press, not a repeat).
+fn first_press(held: &mut bool) -> bool {
+    !std::mem::replace(held, true)
+}
+
 /// Whether Ctrl, Alt or a Windows key is held.
 fn shortcut_modifier_held() -> bool {
     [VK_CONTROL, VK_MENU, VK_LWIN, VK_RWIN]
@@ -226,6 +231,9 @@ struct HookState {
     swallow_escape: bool,
     /// Same for the options key (O).
     swallow_options: bool,
+    /// O is physically down (set on any physical O press, also with the wheel closed): the
+    /// hook cannot tell a key repeat from a press, so only a press that finds it clear counts.
+    options_held: bool,
     own_integrity: u32,
     /// Top-level window under the cursor at the last right press (`HWND` bits): the target of
     /// the action.
@@ -360,8 +368,14 @@ impl HookState {
         };
         match msg {
             WM_KEYDOWN | WM_SYSKEYDOWN => {
+                let fresh = escape || first_press(&mut self.options_held);
                 if *swallowing {
                     return true;
+                }
+                // A repeat of O that was pressed before the wheel opened goes to the program, as
+                // its press did, so that the release is not swallowed alone.
+                if !fresh {
+                    return false;
                 }
                 // O with Ctrl, Alt or Win is a shortcut of the program under the wheel.
                 if !self.trigger.is_wheel_open() || (!escape && shortcut_modifier_held()) {
@@ -375,7 +389,12 @@ impl HookState {
                 }
                 swallow
             }
-            WM_KEYUP | WM_SYSKEYUP => std::mem::take(swallowing),
+            WM_KEYUP | WM_SYSKEYUP => {
+                if !escape {
+                    self.options_held = false;
+                }
+                std::mem::take(swallowing)
+            }
             _ => false,
         }
     }
@@ -491,6 +510,7 @@ impl HookState {
         self.passthrough_right = false;
         self.swallow_escape = false;
         self.swallow_options = false;
+        self.options_held = false;
         if let Err(e) = self.install() {
             wheel_core::log_line!("wheel: cannot reinstall the hooks: {e}");
             return;
@@ -511,6 +531,7 @@ impl HookState {
         self.passthrough_right = false;
         self.swallow_escape = false;
         self.swallow_options = false;
+        self.options_held = false;
         post_to_window(self.window, WM_WHEEL_CLOSE, 0, 0);
     }
 
@@ -598,6 +619,7 @@ fn thread_main(
         passthrough_right: false,
         swallow_escape: false,
         swallow_options: false,
+        options_held: false,
         own_integrity: own_integrity(),
         target: 0,
         press: Point::new(0, 0),
@@ -1043,6 +1065,17 @@ fn process_integrity(process: HANDLE) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_first_down_of_a_held_key_is_a_press() {
+        let mut held = false;
+        assert!(first_press(&mut held));
+        // Auto-repeats, also after the wheel opened, are not presses.
+        assert!(!first_press(&mut held));
+        assert!(!first_press(&mut held));
+        held = false; // the release
+        assert!(first_press(&mut held));
+    }
 
     #[test]
     fn tray_classes_pass_but_the_desktop_and_explorer_windows_do_not() {
