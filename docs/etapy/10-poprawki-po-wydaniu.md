@@ -63,8 +63,7 @@ Poprawić znane błędy i braki z wydania 1.0.0 i wydać wersję 1.0.1 z nowym i
 
 ### Otwarte sprawy
 - Publikacja wydania v1.0.1 po scaleniu PR.
-- `tools/soak.ps1` ma limit pamięci 15 MB sprzed szkła (cel ze szkłem 25 MB), więc daje FAIL przy szkle.
-- Edytor bez tłumaczeń (etykiety tylko po polsku).
+- Brak (po zamknięciu: limit pamięci `tools/soak.ps1` podniesiony do 32 MB jako parametr `-MaxPrivateKb`, bo testuje ze szkłem; tłumaczeń edytora nie będzie, decyzja użytkownika).
 
 ### Ryzyka
 - Przyczyna dawnego błędu po Escape nieustalona; testy tylko wejściem wstrzykiwanym, użytkownik nie zgłasza problemu.

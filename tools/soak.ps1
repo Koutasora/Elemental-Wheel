@@ -4,7 +4,7 @@
 # --stats lines of the log into CSV files and a summary. Exit code 0 = PASS, 1 = FAIL.
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\soak.ps1 -WorkDir <dir> [-Minutes 10]
-#     [-View names|icons] [-NoConfigChanges] [-ConfigEveryMinutes 2] [-Progress <file>]
+#     [-View names|icons] [-NoConfigChanges] [-ConfigEveryMinutes 2] [-Progress <file>] [-MaxPrivateKb 32768]
 param(
     [Parameter(Mandatory = $true)][string]$WorkDir,
     [int]$Minutes = 10,
@@ -12,7 +12,9 @@ param(
     [int]$ConfigEveryMinutes = 2,
     [switch]$NoConfigChanges,
     [ValidateSet('names', 'icons')][string]$View = 'icons',
-    [string]$Progress
+    [string]$Progress,
+    # Glass is on (default glass_pct 50): about 25 MB in the background, short peaks while opening.
+    [int]$MaxPrivateKb = 32768
 )
 $ErrorActionPreference = 'Stop'
 
@@ -520,7 +522,7 @@ else {
     $s.Add("handles difference last - first: $hd (allowed +-5)")
     if ($growth -gt 1024) { $fails += "private growth $growth KB > 1024 KB" }
     if ([math]::Abs($hd) -gt 5) { $fails += "handles changed by $hd (allowed +-5)" }
-    if ($pmax -gt 15360) { $fails += "private max $pmax KB > 15360 KB" }
+    if ($pmax -gt $MaxPrivateKb) { $fails += "private max $pmax KB > $MaxPrivateKb KB" }
 }
 $verdict = if ($fails.Count -eq 0) { 'PASS' } else { 'FAIL' }
 $s.Add("verdict: $verdict")
