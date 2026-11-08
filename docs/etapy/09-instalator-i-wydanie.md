@@ -29,6 +29,7 @@ instaluje się instalatorem Inno Setup dla jednego użytkownika; wydanie 1.0.0.
 - Zakres skrócony (decyzja użytkownika z etapu 08, ok. 1–1,5 h): poza zakresem przełącznik autostartu w edytorze, edytor z drugiej kopii programu, znany błąd po Escape, łamanie długich nazw w podglądzie (lista na później).
 - Konfiguracja w `%APPDATA%` zostaje po odinstalowaniu (plan zatwierdzony przez użytkownika).
 - Wydanie jako szkic na GitHubie; publikuje użytkownik po scaleniu PR.
+- Ikona programu (wariant 1, zaakceptowany przez użytkownika: „ikona idealna”): koło w kolorze akcentu #2851d0, 12 sektorów, górny sektor biały, biały środek; generowana skryptem `tools/make-icon.py` (SVG i ICO z tej samej geometrii, bez zależności).
 
 ## Podsumowanie
 (wypełnia /etap-zamknij)
